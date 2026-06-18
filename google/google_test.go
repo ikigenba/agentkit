@@ -298,6 +298,56 @@ func TestGoogleSignatureOnTextPartPreservesVisibleText(t *testing.T) {
 	}
 }
 
+func TestGoogleReplayedToolUsePlacesThoughtSignatureOnPart(t *testing.T) {
+	var calls int32
+	var sawReplay bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		call := atomic.AddInt32(&calls, 1)
+		var body map[string]any
+		decodeRequest(t, r, &body)
+
+		switch call {
+		case 1:
+			writeSSE(t, w, `{"candidates":[{"content":{"role":"model","parts":[{"functionCall":{"name":"lookup","args":{"city":"Austin"}},"thoughtSignature":"sig-on-call"}]},"finishReason":"STOP"}]}`)
+		case 2:
+			contents := field[[]any](t, body, "contents")
+			part := findFunctionCallPart(t, contents, "lookup")
+			// R-GSIG-PT07
+			if part["thoughtSignature"] != "sig-on-call" {
+				t.Fatalf("thoughtSignature was not serialized at part level: %#v", part)
+			}
+			call := field[map[string]any](t, part, "functionCall")
+			// R-GSIG-PT07
+			if _, ok := call["thoughtSignature"]; ok {
+				t.Fatalf("thoughtSignature was nested inside functionCall: %#v", call)
+			}
+			for key := range call {
+				if key != "name" && key != "args" && key != "id" {
+					t.Fatalf("functionCall carried unexpected key %q in %#v", key, call)
+				}
+			}
+			sawReplay = true
+			writeSSE(t, w, `{"candidates":[{"content":{"role":"model","parts":[{"text":"done"}]},"finishReason":"STOP"}]}`)
+		default:
+			t.Fatalf("unexpected request %d", call)
+		}
+	}))
+	defer server.Close()
+
+	tool := agentkit.RawTool("lookup", "look up weather", json.RawMessage(`{"type":"object"}`), func(ctx context.Context, input json.RawMessage) (string, error) {
+		return "sunny", nil
+	})
+	conv := &agentkit.Conversation{
+		Provider: New("key", WithBaseURL(server.URL), WithHTTPClient(server.Client())),
+		Model:    ModelFlash25,
+		Tools:    []agentkit.Tool{tool},
+	}
+	drainStream(t, conv.Send(context.Background(), "weather"))
+	if !sawReplay {
+		t.Fatalf("replay request was not inspected")
+	}
+}
+
 func TestGoogleErrorClassificationRawAndRetryInfo(t *testing.T) {
 	cases := []struct {
 		name       string
@@ -556,6 +606,32 @@ func containsKey(v any, key string) bool {
 		}
 	}
 	return false
+}
+
+func findFunctionCallPart(t *testing.T, contents []any, name string) map[string]any {
+	t.Helper()
+	for _, contentValue := range contents {
+		content, ok := contentValue.(map[string]any)
+		if !ok {
+			continue
+		}
+		parts, ok := content["parts"].([]any)
+		if !ok {
+			continue
+		}
+		for _, partValue := range parts {
+			part, ok := partValue.(map[string]any)
+			if !ok {
+				continue
+			}
+			call, ok := part["functionCall"].(map[string]any)
+			if ok && call["name"] == name {
+				return part
+			}
+		}
+	}
+	t.Fatalf("did not find functionCall part named %q in %#v", name, contents)
+	return nil
 }
 
 func requestContains(v any, key, want string) bool {

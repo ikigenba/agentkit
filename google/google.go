@@ -193,10 +193,11 @@ func partsFromMessage(message agentkit.Message) []map[string]any {
 				"args": rawObject(block.Input),
 				"id":   block.ID,
 			}
+			part := map[string]any{"functionCall": call}
 			if sig := signatures[block.ID]; sig != "" {
-				call["thoughtSignature"] = sig
+				part["thoughtSignature"] = sig
 			}
-			parts = append(parts, map[string]any{"functionCall": call})
+			parts = append(parts, part)
 		case agentkit.ToolResultBlock:
 			parts = append(parts, map[string]any{"functionResponse": map[string]any{
 				"name": block.Name,
