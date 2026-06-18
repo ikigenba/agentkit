@@ -239,6 +239,46 @@ func (c *Client) CallTool(ctx context.Context, name string, arguments json.RawMe
 	return result, nil
 }
 
+// DeleteSession best-effort terminates the current Streamable-HTTP session.
+// A 405 response is benign because some MCP servers do not implement DELETE.
+func (c *Client) DeleteSession(ctx context.Context) error {
+	if c.sessionID == "" {
+		return nil
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, c.url, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("MCP-Protocol-Version", c.protocolVersion)
+	req.Header.Set("Mcp-Session-Id", c.sessionID)
+	for k, v := range c.headers {
+		req.Header.Set(k, v)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusMethodNotAllowed || resp.StatusCode == http.StatusAccepted || resp.StatusCode == http.StatusNoContent {
+		c.sessionID = ""
+		c.ready = false
+		return nil
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		raw, _ := io.ReadAll(resp.Body)
+		return &HTTPError{
+			StatusCode:      resp.StatusCode,
+			Message:         strings.TrimSpace(string(raw)),
+			Raw:             append(json.RawMessage(nil), raw...),
+			WWWAuthenticate: resp.Header.Get("WWW-Authenticate"),
+		}
+	}
+	c.sessionID = ""
+	c.ready = false
+	return nil
+}
+
 func (c *Client) listTools(ctx context.Context, retryExpiredSession bool) ([]Tool, error) {
 	if err := c.ensureReady(ctx); err != nil {
 		return nil, err

@@ -96,7 +96,7 @@ The non-consumer-importable `internal/mcp` raw-HTTP Streamable-HTTP JSON-RPC cli
 
 **Done when:** R-711P-17EO, R-6MEW-FYIC, R-6OUP-7HZQ, and R-6RAH-Z1H4 are covered; suite green.
 
-### Phase 13 — MCP integration into the orchestrator · ⬜ not started
+### Phase 13 — MCP integration into the orchestrator · ✅ done
 *Realizes design Decision 17 (the MCP consumer surface and merge) plus its slices of Decision 7, Decision 10, Decision 11, and Decision 4. Depends on Phase 5, Phase 6, Phase 11, and Phase 12.*
 
 `Conversation.MCPServers []MCPServer` and the `MCPServer` type exist. At the `Send` boundary, AgentKit connects, handshakes, and runs `tools/list` whenever the attached set changes, caching the live session and tool snapshot (unexported) and re-discovering on change; each discovered tool is wrapped as an ordinary `Tool` (its `JSONSchema()` the server's third-party `inputSchema`), exposed as `<serverName>_<originalName>` sanitized to `^[a-zA-Z_][a-zA-Z0-9_]{0,63}$` (hash suffix on overflow) and routed back by a stored `(server, originalName)` binding, then merged into the one name-sorted `[]Tool` the loop drives. A name collision surfaces `ErrInvalidConfig` at the boundary; a `result` with `isError:true` feeds back a `ToolResultBlock{IsError:true}` while a JSON-RPC `error` or transport failure surfaces via `Stream.Err()`; MCP failures carry the `MCPServer` attribution with no new sentinel; a Gemini-unsupported MCP schema converts best-effort with a `Warning`; MCP discovery is retried but `tools/call` is not; `Close()` best-effort `DELETE`s each live session. One unreachable server is isolated to its own boundary.

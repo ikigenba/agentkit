@@ -9,6 +9,8 @@ import (
 	"iter"
 	"sort"
 	"time"
+
+	"github.com/ikigenba/agentkit/internal/mcp"
 )
 
 const defaultMaxToolIterations = 1000
@@ -41,6 +43,15 @@ type Request struct {
 	Messages []Message
 	Tools    []Tool
 	Gen      GenSettings
+}
+
+// MCPServer is a remote MCP Streamable-HTTP tool server attached to a
+// Conversation. Servers attach and detach by mutating Conversation.MCPServers
+// between turns.
+type MCPServer struct {
+	Name    string
+	URL     string
+	Headers map[string]string
 }
 
 // FinishReason is the normalized reason a round-trip ended.
@@ -182,15 +193,19 @@ type Conversation struct {
 	Gen               GenSettings
 	Retry             RetryPolicy
 	Tools             []Tool
+	MCPServers        []MCPServer
 	History           []Message
 	MaxToolIterations int
 
-	streamLive bool
-	closed     bool
-	turns      int
-	totalUsage Usage
-	totalCost  Cost
-	retryClock retryClock
+	streamLive   bool
+	closed       bool
+	turns        int
+	totalUsage   Usage
+	totalCost    Cost
+	retryClock   retryClock
+	mcpCacheKey  string
+	mcpClients   map[string]*mcp.Client
+	mcpToolCache []Tool
 }
 
 // Send starts one turn and returns its stream.
@@ -215,7 +230,7 @@ func (c *Conversation) Send(ctx context.Context, userText string) *Stream {
 	if !ok {
 		return errorStream(ErrInvalidConfig)
 	}
-	tools, err := validateAndSortTools(c.Tools)
+	tools, warnings, err := c.resolveTools(ctx)
 	if err != nil {
 		return errorStream(err)
 	}
@@ -226,7 +241,7 @@ func (c *Conversation) Send(ctx context.Context, userText string) *Stream {
 	})
 	c.streamLive = true
 
-	s := &Stream{}
+	s := &Stream{warnings: warnings}
 	s.run = func(yield func(Event) bool) (bool, error) {
 		s.log(c, LogRecord{Type: "turn_start", Provider: c.Provider.Name(), Model: c.Model})
 		success, err := c.runTurn(ctx, &history, tools, pricing, s, yield)
@@ -266,6 +281,7 @@ func (c *Conversation) Close() error {
 		return nil
 	}
 	c.closed = true
+	c.closeMCP(context.Background())
 	if c.Log != nil {
 		usage := c.totalUsage
 		cost := c.totalCost
@@ -365,7 +381,10 @@ func (c *Conversation) runTurn(ctx context.Context, history *[]Message, tools []
 				return false, nil
 			}
 
-			result := runTool(ctx, toolByName[use.Name], use)
+			result, err := runTool(ctx, toolByName[use.Name], use)
+			if err != nil {
+				return false, err
+			}
 			resultBlocks = append(resultBlocks, result)
 			toolResult := ToolResult{ID: result.ToolUseID, Name: result.Name, Output: result.Content, IsError: result.IsError}
 			s.log(c, LogRecord{Type: "tool_result", Result: &toolResult})
@@ -517,30 +536,34 @@ func toolUses(message Message) []ToolUseBlock {
 	return uses
 }
 
-func runTool(ctx context.Context, tool Tool, use ToolUseBlock) ToolResultBlock {
+func runTool(ctx context.Context, tool Tool, use ToolUseBlock) (ToolResultBlock, error) {
 	if tool == nil {
 		return ToolResultBlock{
 			ToolUseID: use.ID,
 			Name:      use.Name,
 			Content:   fmt.Sprintf("unknown tool: %s", use.Name),
 			IsError:   true,
-		}
+		}, nil
 	}
 
 	output, err := tool.Call(ctx, use.Input)
 	if err != nil {
+		var terminal terminalToolError
+		if errors.As(err, &terminal) {
+			return ToolResultBlock{}, terminal.err
+		}
 		return ToolResultBlock{
 			ToolUseID: use.ID,
 			Name:      use.Name,
 			Content:   err.Error(),
 			IsError:   true,
-		}
+		}, nil
 	}
 	return ToolResultBlock{
 		ToolUseID: use.ID,
 		Name:      use.Name,
 		Content:   output,
-	}
+	}, nil
 }
 
 func cloneMessages(messages []Message) []Message {
