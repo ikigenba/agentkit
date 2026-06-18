@@ -413,10 +413,6 @@ func parseStream(raw []byte) ([]agentkit.Event, agentkit.Message, agentkit.Finis
 			switch ev.Content.Type {
 			case "text":
 				open[ev.Index].text.WriteString(ev.Content.Text)
-			case "tool_use":
-				if len(ev.Content.Input) > 0 && string(ev.Content.Input) != "null" {
-					open[ev.Index].input.Write(ev.Content.Input)
-				}
 			case "thinking":
 				open[ev.Index].thinking.WriteString(ev.Content.Text)
 				open[ev.Index].signature.WriteString(ev.Content.Signature)

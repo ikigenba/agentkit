@@ -93,6 +93,43 @@ func TestAnthropicGoldenSSEReplayIsDeterministic(t *testing.T) {
 	}
 }
 
+func TestAnthropicToolUseInputIgnoresStartPlaceholderFragmentsOnly(t *testing.T) {
+	// R-OUE3-L8VS
+	raw, err := os.ReadFile("testdata/tool_turn.sse")
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	if !bytes.Contains(raw, []byte(`"input":{}`)) {
+		t.Fatalf("fixture does not exercise content_block_start input placeholder")
+	}
+
+	_, message, _, _, err := parseStream(raw)
+	if errors.Is(err, agentkit.ErrInvalidRequest) {
+		t.Fatalf("parseStream() returned placeholder-concatenation invalid request error: %v", err)
+	}
+	if err != nil {
+		t.Fatalf("parseStream() err = %v, want nil", err)
+	}
+
+	for _, block := range message.Blocks {
+		toolUse, ok := block.(agentkit.ToolUseBlock)
+		if !ok {
+			continue
+		}
+		if !json.Valid(toolUse.Input) {
+			t.Fatalf("ToolUseBlock.Input is invalid JSON: %s", toolUse.Input)
+		}
+		if string(toolUse.Input) != `{"city":"Tokyo"}` {
+			t.Fatalf("ToolUseBlock.Input = %s, want fragments-only JSON", toolUse.Input)
+		}
+		if bytes.HasPrefix(toolUse.Input, []byte(`{}{`)) {
+			t.Fatalf("ToolUseBlock.Input retained start placeholder: %s", toolUse.Input)
+		}
+		return
+	}
+	t.Fatalf("fixture did not assemble a tool_use block: %#v", message.Blocks)
+}
+
 func TestAnthropicUsageMappingFromRecordedResponse(t *testing.T) {
 	// R-Y810-TECF
 	// R-Y98X-7634
