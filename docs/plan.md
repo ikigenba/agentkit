@@ -26,7 +26,7 @@ The thirteen sentinel category vars, the rich `*Error` struct (all fields), and 
 
 **Done when:** R-BVYY-B2AX is covered (`errors.Is` returns true for a matching sentinel and false for a non-matching one); suite green.
 
-### Phase 3 — Pricing and cost engine · ⬜ not started
+### Phase 3 — Pricing and cost engine · ✅ done
 *Realizes design Decision 16 (baked-in pricing & cost), struct and math only. Depends on Phase 1.*
 
 `Pricing`, `RateTier`, `Cost`, `Cost.USD()`, and `Pricing.Cost(Usage)` exist — tier selection by a turn's total input tokens and exact nano-USD integer rating of every bucket (reasoning billed at the output rate). The per-provider rate tables and registry-completeness ship with the adapter phases; cumulative `TotalCost` is wired in orchestration/logging.
