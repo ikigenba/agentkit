@@ -27,7 +27,6 @@ AgentKit covers, for v1:
 - **Anthropic, Google, OpenAI, and Z.ai** as providers, each a first-class peer with at least one supported model — a provider reached through API-compatibility is no less first-class, and how it is implemented is not user-visible. The set of supported models is **fixed and curated**: AgentKit exposes a closed set of pre-approved models and the consumer selects from it — there is no raw model-string passthrough. Provider and model selection is configuration, chosen from that set. The exact supported model ids are enumerated once, in the design's per-provider model registry — not duplicated here, so the two cannot drift. Every supported model has a built-in pricing entry by construction.
 - A consumer-held state object that bundles configuration (provider, model, credentials, generation settings) and the running conversation history, threaded explicitly into each call.
 - A uniform error surface, automatic retrying of transient and rate-limit failures, uniform token-usage reporting, dollar-cost reporting from built-in per-model pricing, and full visibility of every message in the exchange.
-- A runnable example program: an ultra-simple REPL with a bash tool.
 
 It deliberately does **nothing else.** In particular:
 
@@ -40,7 +39,6 @@ It deliberately does **nothing else.** In particular:
 - **Remote MCP servers only.** AgentKit reaches MCP servers over a network connection and spawns **no** child processes; local stdio/subprocess MCP servers are out of scope.
 - **No interactive OAuth.** The consumer supplies a ready credential for a server; AgentKit does not negotiate or refresh OAuth flows on the consumer's behalf.
 - **No MCP provenance promise.** MCP tools appear in the exchange as ordinary tools; AgentKit does not promise a consumer-visible distinction between an MCP tool and a custom tool beyond the name the consumer's server-prefix gives it.
-- **MCP is not demonstrated by the shipped example.** Exercising MCP in the example program is left to a later phase.
 
 **Embeddings** are a committed future direction — AgentKit *will* support embeddings in a later phase — but they are **not part of v1** and are not promised by this version. They are distinct from the permanently-excluded items above.
 
@@ -64,7 +62,6 @@ These fixed, promised values the design must use verbatim and never re-declare:
 - **Automatic resilience.** Transient failures and rate limits are retried by AgentKit; the consumer only sees an error after retries are exhausted.
 - **Uniform usage accounting.** Each reply carries token-usage information — input, output, cached, and the like — in a uniform shape, so consumption can be tracked without provider-specific parsing.
 - **Dollar-cost accounting.** AgentKit ships built-in per-model pricing and reports the dollar cost of usage — per turn and cumulatively for the conversation — so the consumer sees spend without supplying or maintaining rate data themselves. Because every supported model has a pricing entry by construction, cost is **always** reported; there is no "cost unavailable" state.
-- **A working example.** AgentKit ships an ultra-simple REPL with a bash tool that demonstrates chat, a consumer-defined tool, and streaming together, and supports a `/model NAME` command that switches the provider/model mid-session while the conversation continues.
 
 ## Success criteria (outcomes)
 
@@ -83,4 +80,3 @@ These fixed, promised values the design must use verbatim and never re-declare:
 - Transient failures and rate limits are retried automatically, and the consumer sees an error only after retries are exhausted.
 - Each reply carries uniform token-usage information (input, output, cached, etc.).
 - AgentKit reports the dollar cost of usage from built-in per-model pricing — per turn and cumulatively — for every supported model; cost is always available (there is no unpriced supported model).
-- The shipped REPL-with-bash-tool example runs and demonstrates chat, a custom tool, and streaming end-to-end, and its `/model NAME` command switches provider/model mid-session with the conversation continuing coherently.
