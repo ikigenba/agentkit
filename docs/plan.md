@@ -12,7 +12,7 @@ Not started; the workspace holds product, design, and this plan — no code yet.
 
 ## Phases
 
-### Phase 1 — Neutral data model and tool-call ID minter · ⬜ not started
+### Phase 1 — Neutral data model and tool-call ID minter · ✅ done
 *Realizes design Decision 3 (canonical message & block data model). Depends on nothing (first phase).*
 
 The module `github.com/ikigenba/agentkit` exists (package `agentkit` at the module root, `go.mod` declaring Go 1.26) and defines the provider-agnostic data model: `Role`, `Message`, the sealed `Block` interface and its four concrete types (`TextBlock`, `ToolUseBlock`, `ToolResultBlock`, `ReasoningBlock`), plus a tool-call ID minter producing IDs in Anthropic's strict charset `^[a-zA-Z0-9_-]+$`. The value types other phases build on — `GenSettings`/`ReasoningEffort`/`Warning` (D6) and `Usage` (D8) — are defined here as type declarations; their behavioral proofs live in the orchestration and adapter phases.
