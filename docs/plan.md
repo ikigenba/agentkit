@@ -19,7 +19,7 @@ The module `github.com/ikigenba/agentkit` exists (package `agentkit` at the modu
 
 **Done when:** R-IKKQ-Z3B4 is covered (a minted `ToolUseBlock.ID` matches the charset and the paired `ToolResultBlock.ToolUseID` equals it); the package compiles and the sealed unions are enforced; suite green.
 
-### Phase 2 — Error model · ⬜ not started
+### Phase 2 — Error model · ✅ done
 *Realizes design Decision 7 (the error model). Depends on Phase 1.*
 
 The thirteen sentinel category vars, the rich `*Error` struct (all fields), and its `Error()`/`Is`/`Unwrap` methods exist, so `errors.Is(err, ErrX)` is the single branching idiom over provider failures. The per-provider classification matrix, the verbatim-`Raw` capture, MCP attribution, and the `*Error`-versus-bare-sentinel distinction are proven later, where the producing code and the other sentinel families exist.
