@@ -47,7 +47,7 @@ This is the heart of the library (the largest root phase). The exported SPI type
 
 **Done when:** R-ZWV0-CY54, R-ZELD-OQNG, R-ZZAT-4HMI, R-00IP-I9D7 (D1); R-C7MI-HRFI, R-C8UE-VJ67 (orchestration ordering/completeness slice), R-CBA7-N2NL, R-CCI4-0UEA, R-CDQ0-EM4Z (D2); R-SX1B-XRK2, R-SZH4-PB1G, R-X1FI-EMCP (D4 boundary/loop); R-7GGH-BPYN (D5 model validity); R-02PH-VYKB, R-03XE-9QB0 (D9); R-VV9Y-GMKH, R-VWHU-UEB6, R-VXPR-861V, R-VYXN-LXSK, R-W05J-ZPJ9, R-W1DG-DH9Y, R-XZNX-IG6O, R-Y4JJ-1J5G (D10) are covered; suite green.
 
-### Phase 6 — Retry and backoff · ⬜ not started
+### Phase 6 — Retry and backoff · ✅ done
 *Realizes design Decision 11 (retry & backoff policy). Depends on Phase 5.*
 
 `RetryPolicy` and `Conversation.Retry` exist, and the orchestrator wraps each `RoundTrip` with the single cross-provider retry policy: full-jitter exponential backoff over the fixed retryable category set, per-round-trip budget, the no-retry-after-first-byte streaming-idempotency rule, server `Retry-After` honored (toggleable), context-aware waits, and an injectable unexported clock for deterministic tests. Verified against fake `Provider` doubles that fail N times then succeed, with the injected clock asserting attempt counts and delays.

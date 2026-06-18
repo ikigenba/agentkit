@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"iter"
 	"sort"
+	"time"
 )
 
 const defaultMaxToolIterations = 1000
@@ -175,12 +176,14 @@ type Conversation struct {
 	Model             string
 	System            string
 	Gen               GenSettings
+	Retry             RetryPolicy
 	Tools             []Tool
 	History           []Message
 	MaxToolIterations int
 
 	streamLive bool
 	totalCost  Cost
+	retryClock retryClock
 }
 
 // Send starts one turn and returns its stream.
@@ -255,29 +258,17 @@ func (c *Conversation) runTurn(ctx context.Context, history *[]Message, tools []
 			return false, err
 		}
 
-		rt := c.Provider.RoundTrip(ctx, &Request{
+		rt, stopped, err := c.roundTripWithRetry(ctx, &Request{
 			Model:    c.Model,
 			System:   c.System,
 			Messages: cloneMessages(*history),
 			Tools:    append([]Tool(nil), tools...),
 			Gen:      c.Gen,
-		})
-		if rt == nil {
-			return false, ErrInvalidConfig
+		}, yield)
+		if stopped {
+			return false, nil
 		}
-
-		for ev := range rt.Events() {
-			switch ev.(type) {
-			case TextDelta, ReasoningDelta:
-			default:
-				return false, ErrInvalidConfig
-			}
-			if !yield(ev) {
-				return false, nil
-			}
-		}
-
-		if err := rt.Err(); err != nil {
+		if err != nil {
 			return false, err
 		}
 		if rt.Finish() == FinishContentFilter {
@@ -318,6 +309,96 @@ func (c *Conversation) runTurn(ctx context.Context, history *[]Message, tools []
 
 		*history = append(*history, Message{Role: RoleUser, Blocks: resultBlocks})
 	}
+}
+
+func (c *Conversation) roundTripWithRetry(ctx context.Context, req *Request, yield func(Event) bool) (*RoundTrip, bool, error) {
+	policy := c.Retry.withDefaults()
+	clock := c.retryClock
+	if clock == nil {
+		clock = realRetryClock{}
+	}
+	start := clock.Now()
+
+	for attempt := 1; ; attempt++ {
+		rt := c.Provider.RoundTrip(ctx, req)
+		if rt == nil {
+			return nil, false, ErrInvalidConfig
+		}
+
+		delivered := false
+		for ev := range rt.Events() {
+			switch ev.(type) {
+			case TextDelta, ReasoningDelta:
+			default:
+				return nil, false, ErrInvalidConfig
+			}
+			if !yield(ev) {
+				return nil, true, nil
+			}
+			delivered = true
+		}
+
+		err := rt.Err()
+		if err == nil {
+			return rt, false, nil
+		}
+		if delivered || !isRetryable(err) || attempt >= policy.MaxAttempts {
+			return nil, false, err
+		}
+
+		delay := retryDelay(policy, clock, start, attempt, err)
+		if delay < 0 {
+			return nil, false, err
+		}
+		if err := clock.Sleep(ctx, delay); err != nil {
+			return nil, false, err
+		}
+	}
+}
+
+func isRetryable(err error) bool {
+	return errors.Is(err, ErrRateLimited) ||
+		errors.Is(err, ErrOverloaded) ||
+		errors.Is(err, ErrServerError) ||
+		errors.Is(err, ErrTimeout) ||
+		errors.Is(err, ErrNetwork)
+}
+
+func retryDelay(policy RetryPolicy, clock retryClock, start time.Time, attempt int, err error) time.Duration {
+	var providerErr *Error
+	if !policy.IgnoreRetryAfter && errors.As(err, &providerErr) && providerErr.RetryAfter > 0 {
+		return boundedRetryDelay(policy, clock, start, providerErr.RetryAfter)
+	}
+	return boundedRetryDelay(policy, clock, start, clock.Jitter(backoffCap(policy, attempt)))
+}
+
+func boundedRetryDelay(policy RetryPolicy, clock retryClock, start time.Time, delay time.Duration) time.Duration {
+	if delay < 0 {
+		delay = 0
+	}
+	if policy.MaxElapsed == 0 {
+		return delay
+	}
+	remaining := policy.MaxElapsed - clock.Now().Sub(start)
+	if remaining < 0 || delay > remaining {
+		return -1
+	}
+	return delay
+}
+
+func backoffCap(policy RetryPolicy, attempt int) time.Duration {
+	delay := policy.BaseDelay
+	for i := 1; i < attempt && delay < policy.MaxDelay; i++ {
+		if delay > policy.MaxDelay/2 {
+			delay = policy.MaxDelay
+			break
+		}
+		delay *= 2
+	}
+	if delay > policy.MaxDelay {
+		return policy.MaxDelay
+	}
+	return delay
 }
 
 func validateAndSortTools(tools []Tool) ([]Tool, error) {
