@@ -145,8 +145,8 @@ type toolCall struct {
 }
 
 type toolFunction struct {
-	Name      string          `json:"name,omitempty"`
-	Arguments json.RawMessage `json:"arguments,omitempty"`
+	Name      string `json:"name,omitempty"`
+	Arguments string `json:"arguments,omitempty"`
 }
 
 type toolDef struct {
@@ -256,7 +256,7 @@ func convertMessage(message agentkit.Message) ([]chatMessage, error) {
 				Type: "function",
 				Function: toolFunction{
 					Name:      b.Name,
-					Arguments: cloneRaw(b.Input),
+					Arguments: toolArgumentsString(b.Input),
 				},
 			})
 		case agentkit.ToolResultBlock:
@@ -280,6 +280,13 @@ func convertMessage(message agentkit.Message) ([]chatMessage, error) {
 		out = append(out, chatMessage{Role: string(message.Role), Content: text.String()})
 	}
 	return out, nil
+}
+
+func toolArgumentsString(raw json.RawMessage) string {
+	if strings.TrimSpace(string(raw)) == "" || !json.Valid(raw) {
+		return "{}"
+	}
+	return string(raw)
 }
 
 func reasoningContent(raw json.RawMessage) (string, bool) {

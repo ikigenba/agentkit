@@ -151,6 +151,71 @@ func TestZaiSendUsesBakedBaseURLAndAssemblesToolTurn(t *testing.T) {
 	}
 }
 
+func TestZaiReplayedToolCallArgumentsAreJSONString(t *testing.T) {
+	var mu sync.Mutex
+	var requests []map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode request: %v", err)
+		}
+
+		mu.Lock()
+		requests = append(requests, body)
+		n := len(requests)
+		mu.Unlock()
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		switch n {
+		case 1:
+			fmt.Fprint(w, zaiToolTurnSSE())
+		case 2:
+			if got, ok := replayedToolArguments(body); !ok || got != `{"city":"Paris"}` {
+				w.WriteHeader(http.StatusBadRequest)
+				fmt.Fprint(w, `{"error":{"code":"1210","message":"Invalid API parameter (type=1210)"}}`)
+				return
+			}
+			fmt.Fprint(w, zaiTextSSE("done", 7, 0, 3))
+		default:
+			t.Errorf("unexpected request count: %d", n)
+		}
+	}))
+	defer server.Close()
+
+	tool := agentkit.RawTool("weather", "get weather", json.RawMessage(`{"type":"object"}`), func(ctx context.Context, input json.RawMessage) (string, error) {
+		return "sunny", nil
+	})
+	c := &agentkit.Conversation{
+		Provider: New("test-key", WithBaseURL(server.URL), WithHTTPClient(server.Client())),
+		Model:    ModelGLM52,
+		Tools:    []agentkit.Tool{tool},
+	}
+
+	// R-ZCMP-ARG8
+	stream := c.Send(context.Background(), "weather?")
+	for range stream.Events() {
+	}
+	if err := stream.Err(); err != nil {
+		if errors.Is(err, agentkit.ErrInvalidRequest) || strings.Contains(err.Error(), "type=1210") {
+			t.Fatalf("replayed tool arguments were rejected by strict endpoint: %v", err)
+		}
+		t.Fatalf("stream error: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(requests) != 2 {
+		t.Fatalf("requests = %d", len(requests))
+	}
+	got, ok := replayedToolArguments(requests[1])
+	if !ok {
+		t.Fatalf("second request did not encode assistant tool_call arguments as a JSON string: %#v", requests[1])
+	}
+	if got != `{"city":"Paris"}` {
+		t.Fatalf("replayed arguments = %q, want %q", got, `{"city":"Paris"}`)
+	}
+}
+
 func TestZaiDropsForeignReasoningFromWireRequest(t *testing.T) {
 	var request map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -359,4 +424,32 @@ func messageContains(messages []any, role, field, value string) bool {
 		}
 	}
 	return false
+}
+
+func replayedToolArguments(request map[string]any) (string, bool) {
+	messages, ok := request["messages"].([]any)
+	if !ok {
+		return "", false
+	}
+	for _, item := range messages {
+		message, ok := item.(map[string]any)
+		if !ok || message["role"] != "assistant" {
+			continue
+		}
+		toolCalls, ok := message["tool_calls"].([]any)
+		if !ok || len(toolCalls) == 0 {
+			continue
+		}
+		call, ok := toolCalls[0].(map[string]any)
+		if !ok {
+			return "", false
+		}
+		function, ok := call["function"].(map[string]any)
+		if !ok {
+			return "", false
+		}
+		arguments, ok := function["arguments"].(string)
+		return arguments, ok
+	}
+	return "", false
 }
