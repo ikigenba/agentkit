@@ -229,6 +229,92 @@ func TestProviderReplaysEmptyReasoningSummaryArrayOnSecondSend(t *testing.T) {
 	}
 }
 
+func TestProviderReplaysFunctionCallArgumentsAsJSONString(t *testing.T) {
+	var mu sync.Mutex
+	var requests []map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode request: %v", err)
+		}
+		mu.Lock()
+		requests = append(requests, body)
+		n := len(requests)
+		mu.Unlock()
+
+		if n == 2 {
+			input, _ := body["input"].([]any)
+			got := inputFunctionCallArguments(input)
+			want := []string{`{"path":"PING"}`, `{"text":"hello"}`}
+			if !reflect.DeepEqual(got, want) {
+				w.WriteHeader(http.StatusBadRequest)
+				fmt.Fprint(w, `{"error":{"message":"Invalid type for 'input[1].arguments': expected a string, but got an object instead","type":"invalid_request_error"}}`)
+				return
+			}
+		}
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		switch n {
+		case 1:
+			fmt.Fprint(w, multiToolTurnSSE())
+		case 2:
+			fmt.Fprint(w, textOnlySSE("done", 8, 0, 2, 0))
+		default:
+			t.Errorf("unexpected request count: %d", n)
+		}
+	}))
+	defer server.Close()
+
+	var calls []string
+	pathTool := agentkit.RawTool("read_path", "read path", json.RawMessage(`{"type":"object"}`), func(ctx context.Context, input json.RawMessage) (string, error) {
+		calls = append(calls, "read_path")
+		if string(input) != `{"path":"PING"}` {
+			t.Fatalf("path tool input = %s", input)
+		}
+		return "pong", nil
+	})
+	echoTool := agentkit.RawTool("echo_text", "echo text", json.RawMessage(`{"type":"object"}`), func(ctx context.Context, input json.RawMessage) (string, error) {
+		calls = append(calls, "echo_text")
+		if string(input) != `{"text":"hello"}` {
+			t.Fatalf("echo tool input = %s", input)
+		}
+		return "hello", nil
+	})
+	c := &agentkit.Conversation{
+		Provider: New("test-key", WithBaseURL(server.URL), WithHTTPClient(server.Client())),
+		Model:    ModelGPT55,
+		Tools:    []agentkit.Tool{pathTool, echoTool},
+	}
+
+	// R-UJNS-PFLL
+	stream := c.Send(context.Background(), "run both")
+	for range stream.Events() {
+	}
+	if err := stream.Err(); err != nil {
+		t.Fatalf("stream error: %v", err)
+	}
+	if !reflect.DeepEqual(calls, []string{"read_path", "echo_text"}) {
+		t.Fatalf("tool calls = %#v", calls)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(requests) != 2 {
+		t.Fatalf("requests = %d", len(requests))
+	}
+	secondInput, _ := requests[1]["input"].([]any)
+	got := inputFunctionCallArguments(secondInput)
+	want := []string{`{"path":"PING"}`, `{"text":"hello"}`}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("function_call arguments = %#v, want %#v", got, want)
+	}
+	if !inputContains(secondInput, "function_call_output", "output", "pong") ||
+		!inputContains(secondInput, "function_call_output", "output", "hello") {
+		t.Fatalf("second request missing tool outputs: %#v", secondInput)
+	}
+}
+
 func TestProviderDropsForeignReasoningFromWireRequest(t *testing.T) {
 	var request map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -422,6 +508,21 @@ func emptySummaryReasoningSSE() string {
 	}, "")
 }
 
+func multiToolTurnSSE() string {
+	return strings.Join([]string{
+		sseData(`{"type":"response.output_item.added","item":{"id":"fc_path","type":"function_call","call_id":"call_path","name":"read_path"}}`),
+		sseData(`{"type":"response.function_call_arguments.delta","item_id":"fc_path","delta":"{\"path\":"}`),
+		sseData(`{"type":"response.function_call_arguments.delta","item_id":"fc_path","delta":"\"PING\"}"}`),
+		sseData(`{"type":"response.output_item.done","item":{"id":"fc_path","type":"function_call","call_id":"call_path","name":"read_path"}}`),
+		sseData(`{"type":"response.output_item.added","item":{"id":"fc_echo","type":"function_call","call_id":"call_echo","name":"echo_text"}}`),
+		sseData(`{"type":"response.function_call_arguments.delta","item_id":"fc_echo","delta":"{\"text\":"}`),
+		sseData(`{"type":"response.function_call_arguments.delta","item_id":"fc_echo","delta":"\"hello\"}"}`),
+		sseData(`{"type":"response.output_item.done","item":{"id":"fc_echo","type":"function_call","call_id":"call_echo","name":"echo_text"}}`),
+		sseData(`{"type":"response.completed","response":{"status":"completed","usage":{"input_tokens":10,"output_tokens":4,"total_tokens":14,"input_tokens_details":{"cached_tokens":0},"output_tokens_details":{"reasoning_tokens":0}}}}`),
+		"data: [DONE]\n\n",
+	}, "")
+}
+
 func textOnlySSE(text string, input, cached, output, reasoning int64) string {
 	total := input + output
 	return strings.Join([]string{
@@ -446,6 +547,22 @@ func inputContains(input []any, typ, field, value string) bool {
 		}
 	}
 	return false
+}
+
+func inputFunctionCallArguments(input []any) []string {
+	var arguments []string
+	for _, item := range input {
+		object, ok := item.(map[string]any)
+		if !ok || object["type"] != "function_call" {
+			continue
+		}
+		arg, ok := object["arguments"].(string)
+		if !ok {
+			return nil
+		}
+		arguments = append(arguments, arg)
+	}
+	return arguments
 }
 
 func inputReasoningSummary(input []any, encrypted string) (any, bool) {

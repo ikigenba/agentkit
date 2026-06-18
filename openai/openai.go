@@ -163,15 +163,15 @@ type reasoningConf struct {
 }
 
 type inputItem struct {
-	Type             string          `json:"type,omitempty"`
-	Role             string          `json:"role,omitempty"`
-	Content          []contentPart   `json:"content,omitempty"`
-	CallID           string          `json:"call_id,omitempty"`
-	Output           string          `json:"output,omitempty"`
-	EncryptedContent string          `json:"encrypted_content,omitempty"`
-	Summary          any             `json:"summary,omitempty"`
-	Name             string          `json:"name,omitempty"`
-	Arguments        json.RawMessage `json:"arguments,omitempty"`
+	Type             string        `json:"type,omitempty"`
+	Role             string        `json:"role,omitempty"`
+	Content          []contentPart `json:"content,omitempty"`
+	CallID           string        `json:"call_id,omitempty"`
+	Output           string        `json:"output,omitempty"`
+	EncryptedContent string        `json:"encrypted_content,omitempty"`
+	Summary          any           `json:"summary,omitempty"`
+	Name             string        `json:"name,omitempty"`
+	Arguments        string        `json:"arguments,omitempty"`
 }
 
 type contentPart struct {
@@ -278,7 +278,7 @@ func messageInputItems(message agentkit.Message) ([]inputItem, error) {
 				Type:      "function_call",
 				CallID:    block.ID,
 				Name:      block.Name,
-				Arguments: cloneRaw(block.Input),
+				Arguments: string(block.Input),
 			})
 		case agentkit.ToolResultBlock:
 			flushText()
