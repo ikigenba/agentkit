@@ -82,7 +82,7 @@ The shared, non-consumer-importable `internal/openaicompat` Chat-Completions ada
 
 **Done when:** (Z.ai slices): R-H4XH-476S, R-BZMN-GDJ0, R-P9HS-ANO2, R-Y810-TECF, R-Y98X-7634, R-YAGT-KXTT, R-YBOP-YPKI, R-YCWM-CHB7, R-VDY4-AP7H, R-V1KQ-IKI6, R-XW08-D4YL, R-055A-NI1P, R-P5U3-5CFZ, R-P71Z-J46O, R-C8UE-VJ67 (Z.ai assembly slice) are covered; suite green.
 
-### Phase 11 — Google adapter and the cross-provider portability matrix · ⬜ not started
+### Phase 11 — Google adapter and the cross-provider portability matrix · ✅ done
 *Realizes design Decision 9, Decision 7, Decision 8, Decision 16, Decision 6, Decision 4, Decision 3, and Decision 13 (the Google slice), plus the cross-provider switch ids of Decision 1, Decision 3, and Decision 5. Depends on Phases 5 through 10 (all other adapters exist).*
 
 The `google` sub-package implements the SPI over the Gemini API on raw `net/http`, owning its own response parse: best-effort JSON Schema → `*genai.Schema` conversion (drops `$ref`/`additionalProperties`/`oneOf` without erroring), the `ReasoningEffort` ordinal mapped to `thinkingLevel`/`thinkingBudget`, `thoughtSignature` into `Opaque` with the positional `BoundToID` binding for parallel tool calls, usage mapping (thoughts → `ReasoningOutput`, cached subtracted from prompt, cache fields 0), error classification with `RetryInfo.retryDelay` → `RetryAfter`, and the registry + pricing (gemini-2.5-flash, tiered gemini-2.5-pro, gemini-3.5-flash, gemini-3.1-flash-lite, tiered gemini-3.1-pro-preview with its preview-caveat doc-comment) with exported constants. With all four adapters now present, this phase also proves the cross-provider portability matrix.
