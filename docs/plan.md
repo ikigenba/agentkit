@@ -89,7 +89,7 @@ The `google` sub-package implements the SPI over the Gemini API on raw `net/http
 
 **Done when:** (Google slices and cross-provider): R-H3PK-QFG3, R-X3VB-65U3, R-BUR1-XAK8, R-BX6U-OU1M, R-BYER-2LSB, R-Y810-TECF, R-Y98X-7634, R-YAGT-KXTT, R-YBOP-YPKI, R-YCWM-CHB7, R-VDY4-AP7H, R-V1KQ-IKI6, R-XW08-D4YL, R-IPGC-I69W, R-055A-NI1P, R-P5U3-5CFZ, R-P71Z-J46O, R-P89V-WVXD (Gemini 2.5 Pro half), R-V2SM-WC8V (gemini tiered slice), R-C8UE-VJ67 (Gemini whole-JSON assembly slice — completing it across all four providers); and the cross-provider ids R-ILSN-CV1T, R-IO8G-4EJ7, R-H65D-HYXH, R-00IP-I9D7 (re-asserted against two real backends) are covered; suite green.
 
-### Phase 12 — Internal MCP Streamable-HTTP client · ⬜ not started
+### Phase 12 — Internal MCP Streamable-HTTP client · ✅ done
 *Realizes design Decision 17 (the MCP client portion), Decision 12 (`internal/mcp`), and Decision 13 (fake MCP server). Depends on Phase 1, Phase 2, and the `internal/sse` helper from Phase 8.*
 
 The non-consumer-importable `internal/mcp` raw-HTTP Streamable-HTTP JSON-RPC client exists, targeting MCP revision `2025-11-25` and implementing exactly the four calls (`initialize`, `notifications/initialized`, `tools/list` paginated to exhaustion, `tools/call`). It reads the JSON-RPC response from whichever of `application/json` or `text/event-stream` arrives (reusing `internal/sse`), echoes any `Mcp-Session-Id` and always sends `MCP-Protocol-Version: <negotiated>`, transparently re-initializes on a `404` for idempotent discovery, and re-establishes (but does not replay) on a `404` mid-`tools/call`. Verified against a fake `httptest` MCP server.
