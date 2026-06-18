@@ -143,8 +143,89 @@ func TestProviderSendBuildsResponsesRequestsAndReplaysReasoning(t *testing.T) {
 	if !inputContains(secondInput, "reasoning", "encrypted_content", "enc-openai-secret") {
 		t.Fatalf("second request did not replay OpenAI encrypted reasoning: %#v", secondInput)
 	}
+	// R-OMKB-AY19
+	if !inputReasoningSummaryText(secondInput, "enc-openai-secret", "checking") {
+		t.Fatalf("second request did not replay OpenAI reasoning summary text: %#v", secondInput)
+	}
 	if !inputContains(secondInput, "function_call_output", "output", "sunny") {
 		t.Fatalf("second request did not include tool output: %#v", secondInput)
+	}
+}
+
+func TestProviderReplaysEmptyReasoningSummaryArrayOnSecondSend(t *testing.T) {
+	var mu sync.Mutex
+	var requests []map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode request: %v", err)
+		}
+		mu.Lock()
+		requests = append(requests, body)
+		n := len(requests)
+		mu.Unlock()
+
+		if n == 2 {
+			input, _ := body["input"].([]any)
+			summary, ok := inputReasoningSummary(input, "enc-empty-summary")
+			if !ok {
+				w.WriteHeader(http.StatusBadRequest)
+				fmt.Fprint(w, `{"error":{"message":"Missing required parameter: 'input[1].summary'","type":"invalid_request_error"}}`)
+				return
+			}
+			parts, ok := summary.([]any)
+			if !ok || len(parts) != 0 {
+				t.Errorf("second request summary = %#v, want empty array", summary)
+			}
+		}
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		switch n {
+		case 1:
+			fmt.Fprint(w, emptySummaryReasoningSSE())
+		case 2:
+			fmt.Fprint(w, textOnlySSE("done", 6, 0, 2, 0))
+		default:
+			t.Errorf("unexpected request count: %d", n)
+		}
+	}))
+	defer server.Close()
+
+	c := &agentkit.Conversation{
+		Provider: New("test-key", WithBaseURL(server.URL), WithHTTPClient(server.Client())),
+		Model:    ModelGPT55,
+		Gen:      agentkit.GenSettings{Reasoning: agentkit.EffortLow},
+	}
+
+	first := c.Send(context.Background(), "think first")
+	for range first.Events() {
+	}
+	if err := first.Err(); err != nil {
+		t.Fatalf("first turn error: %v", err)
+	}
+
+	// R-OMKB-AY19
+	second := c.Send(context.Background(), "continue")
+	for range second.Events() {
+	}
+	if err := second.Err(); err != nil {
+		t.Fatalf("second turn error: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(requests) != 2 {
+		t.Fatalf("requests = %d", len(requests))
+	}
+	secondInput, _ := requests[1]["input"].([]any)
+	summary, ok := inputReasoningSummary(secondInput, "enc-empty-summary")
+	if !ok {
+		t.Fatalf("second request omitted reasoning summary: %#v", secondInput)
+	}
+	parts, ok := summary.([]any)
+	if !ok || len(parts) != 0 {
+		t.Fatalf("second request summary = %#v, want empty array", summary)
 	}
 }
 
@@ -332,6 +413,15 @@ func openAIToolTurnSSE() string {
 	}, "")
 }
 
+func emptySummaryReasoningSSE() string {
+	return strings.Join([]string{
+		sseData(`{"type":"response.output_item.done","item":{"id":"rs_empty","type":"reasoning","encrypted_content":"enc-empty-summary"}}`),
+		sseData(`{"type":"response.output_text.delta","delta":"ready"}`),
+		sseData(`{"type":"response.completed","response":{"status":"completed","usage":{"input_tokens":5,"output_tokens":3,"total_tokens":8,"input_tokens_details":{"cached_tokens":0},"output_tokens_details":{"reasoning_tokens":1}}}}`),
+		"data: [DONE]\n\n",
+	}, "")
+}
+
 func textOnlySSE(text string, input, cached, output, reasoning int64) string {
 	total := input + output
 	return strings.Join([]string{
@@ -356,4 +446,29 @@ func inputContains(input []any, typ, field, value string) bool {
 		}
 	}
 	return false
+}
+
+func inputReasoningSummary(input []any, encrypted string) (any, bool) {
+	for _, item := range input {
+		object, ok := item.(map[string]any)
+		if !ok || object["type"] != "reasoning" || object["encrypted_content"] != encrypted {
+			continue
+		}
+		summary, ok := object["summary"]
+		return summary, ok
+	}
+	return nil, false
+}
+
+func inputReasoningSummaryText(input []any, encrypted, text string) bool {
+	summary, ok := inputReasoningSummary(input, encrypted)
+	if !ok {
+		return false
+	}
+	parts, ok := summary.([]any)
+	if !ok || len(parts) != 1 {
+		return false
+	}
+	part, ok := parts[0].(map[string]any)
+	return ok && part["type"] == "summary_text" && part["text"] == text
 }

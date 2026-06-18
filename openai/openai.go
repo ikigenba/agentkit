@@ -169,7 +169,7 @@ type inputItem struct {
 	CallID           string          `json:"call_id,omitempty"`
 	Output           string          `json:"output,omitempty"`
 	EncryptedContent string          `json:"encrypted_content,omitempty"`
-	Summary          []summaryPart   `json:"summary,omitempty"`
+	Summary          any             `json:"summary,omitempty"`
 	Name             string          `json:"name,omitempty"`
 	Arguments        json.RawMessage `json:"arguments,omitempty"`
 }
@@ -309,7 +309,11 @@ func openAIReasoningItem(block agentkit.ReasoningBlock) (inputItem, bool) {
 	if payload.Type != "reasoning" || payload.EncryptedContent == "" {
 		return inputItem{}, false
 	}
-	item := inputItem{Type: "reasoning", EncryptedContent: payload.EncryptedContent}
+	item := inputItem{
+		Type:             "reasoning",
+		EncryptedContent: payload.EncryptedContent,
+		Summary:          []summaryPart{},
+	}
 	if block.Summary != "" {
 		item.Summary = []summaryPart{{Type: "summary_text", Text: block.Summary}}
 	}
