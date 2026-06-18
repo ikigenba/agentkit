@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"iter"
 	"sort"
 	"time"
@@ -21,6 +22,8 @@ var (
 	ErrToolLoopLimit = errors.New("agentkit: tool-loop iteration limit exceeded")
 	// ErrStreamPending reports a Send while the prior Stream is still live.
 	ErrStreamPending = errors.New("agentkit: prior stream not yet drained")
+	// ErrClosed reports a Send after the conversation lifecycle is closed.
+	ErrClosed = errors.New("agentkit: conversation closed")
 )
 
 // Provider is implemented by provider sub-packages. Consumers obtain a value
@@ -175,6 +178,7 @@ type Conversation struct {
 	Provider          Provider
 	Model             string
 	System            string
+	Log               io.Writer
 	Gen               GenSettings
 	Retry             RetryPolicy
 	Tools             []Tool
@@ -182,6 +186,9 @@ type Conversation struct {
 	MaxToolIterations int
 
 	streamLive bool
+	closed     bool
+	turns      int
+	totalUsage Usage
 	totalCost  Cost
 	retryClock retryClock
 }
@@ -190,6 +197,9 @@ type Conversation struct {
 func (c *Conversation) Send(ctx context.Context, userText string) *Stream {
 	if ctx == nil {
 		ctx = context.Background()
+	}
+	if c != nil && c.closed {
+		return errorStream(ErrClosed)
 	}
 	if c == nil || c.Provider == nil || c.Model == "" {
 		return errorStream(ErrInvalidConfig)
@@ -218,7 +228,19 @@ func (c *Conversation) Send(ctx context.Context, userText string) *Stream {
 
 	s := &Stream{}
 	s.run = func(yield func(Event) bool) (bool, error) {
+		s.log(c, LogRecord{Type: "turn_start", Provider: c.Provider.Name(), Model: c.Model})
 		success, err := c.runTurn(ctx, &history, tools, pricing, s, yield)
+		if success {
+			usage := s.usage
+			cost := s.cost
+			s.log(c, LogRecord{Type: "usage", Usage: &usage, Cost: &cost})
+			s.log(c, LogRecord{Type: "turn_end", Status: "ok"})
+		} else if err != nil {
+			s.logError(c, "error", err)
+			s.log(c, LogRecord{Type: "turn_end", Status: "error"})
+		} else {
+			s.log(c, LogRecord{Type: "turn_end", Status: "abandoned"})
+		}
 		if success {
 			c.History = history
 		}
@@ -226,11 +248,46 @@ func (c *Conversation) Send(ctx context.Context, userText string) *Stream {
 	}
 	s.onDone = func(success bool) {
 		if success {
+			c.turns++
+			c.totalUsage = addUsage(c.totalUsage, s.usage)
 			c.totalCost += s.cost
 		}
 		c.streamLive = false
 	}
 	return s
+}
+
+// Close marks the conversation closed and emits a cumulative summary record.
+func (c *Conversation) Close() error {
+	if c == nil {
+		return ErrInvalidConfig
+	}
+	if c.closed {
+		return nil
+	}
+	c.closed = true
+	if c.Log != nil {
+		usage := c.totalUsage
+		cost := c.totalCost
+		record := LogRecord{
+			Type:  "summary",
+			Time:  c.logNow(),
+			Seq:   0,
+			Usage: &usage,
+			Turns: c.turns,
+			Cost:  &cost,
+		}
+		_ = json.NewEncoder(c.Log).Encode(record)
+	}
+	return nil
+}
+
+// TotalUsage returns the cumulative usage of successfully completed turns.
+func (c *Conversation) TotalUsage() Usage {
+	if c == nil {
+		return Usage{}
+	}
+	return c.totalUsage
 }
 
 // TotalCost returns the cumulative cost of successfully completed turns.
@@ -264,7 +321,7 @@ func (c *Conversation) runTurn(ctx context.Context, history *[]Message, tools []
 			Messages: cloneMessages(*history),
 			Tools:    append([]Tool(nil), tools...),
 			Gen:      c.Gen,
-		}, yield)
+		}, s, yield)
 		if stopped {
 			return false, nil
 		}
@@ -280,7 +337,13 @@ func (c *Conversation) runTurn(ctx context.Context, history *[]Message, tools []
 		s.usage = addUsage(s.usage, rt.Usage())
 		s.warnings = append(s.warnings, rt.Warnings()...)
 		s.cost = pricing.Cost(s.usage)
+		for _, warning := range rt.Warnings() {
+			warning := warning
+			s.log(c, LogRecord{Type: "warning", Warning: &warning})
+		}
 
+		messageForLog := cloneMessage(message)
+		s.log(c, LogRecord{Type: "message", Message: &messageForLog})
 		if !yield(MessageDone{Message: cloneMessage(message)}) {
 			return false, nil
 		}
@@ -296,12 +359,16 @@ func (c *Conversation) runTurn(ctx context.Context, history *[]Message, tools []
 
 		resultBlocks := make([]Block, 0, len(uses))
 		for _, use := range uses {
+			toolUse := ToolUse{ID: use.ID, Name: use.Name, Input: cloneRaw(use.Input)}
+			s.log(c, LogRecord{Type: "tool_use", ToolUse: &toolUse})
 			if !yield(ToolUse{ID: use.ID, Name: use.Name, Input: cloneRaw(use.Input)}) {
 				return false, nil
 			}
 
 			result := runTool(ctx, toolByName[use.Name], use)
 			resultBlocks = append(resultBlocks, result)
+			toolResult := ToolResult{ID: result.ToolUseID, Name: result.Name, Output: result.Content, IsError: result.IsError}
+			s.log(c, LogRecord{Type: "tool_result", Result: &toolResult})
 			if !yield(ToolResult{ID: result.ToolUseID, Name: result.Name, Output: result.Content, IsError: result.IsError}) {
 				return false, nil
 			}
@@ -311,7 +378,7 @@ func (c *Conversation) runTurn(ctx context.Context, history *[]Message, tools []
 	}
 }
 
-func (c *Conversation) roundTripWithRetry(ctx context.Context, req *Request, yield func(Event) bool) (*RoundTrip, bool, error) {
+func (c *Conversation) roundTripWithRetry(ctx context.Context, req *Request, s *Stream, yield func(Event) bool) (*RoundTrip, bool, error) {
 	policy := c.Retry.withDefaults()
 	clock := c.retryClock
 	if clock == nil {
@@ -350,6 +417,7 @@ func (c *Conversation) roundTripWithRetry(ctx context.Context, req *Request, yie
 		if delay < 0 {
 			return nil, false, err
 		}
+		s.logError(c, "retry", err)
 		if err := clock.Sleep(ctx, delay); err != nil {
 			return nil, false, err
 		}

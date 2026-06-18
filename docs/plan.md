@@ -54,7 +54,7 @@ This is the heart of the library (the largest root phase). The exported SPI type
 
 **Done when:** R-P3LQ-QY2X, R-P4TN-4PTM, R-P61J-IHKB, R-Y878-6UDJ, R-P79F-W9B0, and R-P8HC-A11P are covered; suite green.
 
-### Phase 7 — Structured JSONL event log and conversation lifecycle · ⬜ not started
+### Phase 7 — Structured JSONL event log and conversation lifecycle · ✅ done
 *Realizes design Decision 15 (JSONL event log & lifecycle); completes the one-idiom error proof and cumulative cost. Depends on Phase 5 and Phase 6.*
 
 `Conversation.Log io.Writer`, the `LogRecord` schema, `Close()`, `TotalUsage()`, `TotalCost()`, and the `ErrClosed` sentinel exist. A turn writes one JSONL record per protocol event in stream order (`Time` from the injected clock, `Seq` monotonic), writes are best-effort, `Close()` emits exactly one cumulative `summary` (idempotent) and `Send`-after-`Close` returns `ErrClosed`. With every sentinel family now present (provider, orchestration, boundary, and `ErrClosed`), the `*Error`-versus-bare-sentinel distinction is fully provable.

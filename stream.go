@@ -14,6 +14,7 @@ type Stream struct {
 	usage    Usage
 	warnings []Warning
 	cost     Cost
+	logSeq   int
 }
 
 func errorStream(err error) *Stream {
