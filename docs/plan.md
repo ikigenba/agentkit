@@ -68,7 +68,7 @@ The shared internals `internal/httpx` (request execution, header/body helpers, `
 
 **Done when:** (Anthropic slices unless noted): R-H3PK-QFG3, R-01HL-I6TM (dependency isolation), R-BUR1-XAK8, R-BX6U-OU1M, R-BYER-2LSB, R-Y810-TECF, R-Y98X-7634, R-YAGT-KXTT, R-YBOP-YPKI, R-YCWM-CHB7, R-VDY4-AP7H, R-V1KQ-IKI6, R-IN0J-QMSI, R-XW08-D4YL, R-055A-NI1P, R-W2LC-R90N, R-P5U3-5CFZ, R-P71Z-J46O, R-P89V-WVXD (Opus 4.8 half), R-PBXL-275G, R-C8UE-VJ67 (Anthropic fragmented-JSON assembly slice), R-WKTI-LIIE, R-WM1E-ZA93, R-WJLM-7QRP are covered; suite green.
 
-### Phase 9 — OpenAI adapter (Responses API) · ⬜ not started
+### Phase 9 — OpenAI adapter (Responses API) · ✅ done
 *Realizes design Decision 9, Decision 7, Decision 8, Decision 16, Decision 3, Decision 6, and Decision 13 (the OpenAI slice). Depends on Phases 5 through 8 (reuses `internal/sse`, `internal/httpx`, and the harness).*
 
 The `openai` sub-package implements the SPI over the Responses API on raw `net/http`: every request carries `store:false` and `include:["reasoning.encrypted_content"]` (fixed, never a consumer knob), the returned `encrypted_content` populates `ReasoningBlock.Opaque` and replays verbatim, `call_id` is normalized into the neutral ID, SSE parse with central assembly, usage mapping (`InputUncached`=prompt−cached, `Output`=output−reasoning, `ReasoningOutput` populated, native total asserted == bucket sum), error classification, and the registry + pricing (gpt-5.5-pro with `CacheReadInput`==`InputUncached`, tiered gpt-5.5 and gpt-5.4, gpt-5.4-mini, gpt-5.4-nano) with exported constants.
