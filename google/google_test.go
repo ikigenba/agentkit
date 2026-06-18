@@ -218,6 +218,86 @@ func TestGoogleReasoningOffDegradesWithWarningOnPro(t *testing.T) {
 	}
 }
 
+func TestGoogleSignatureOnFunctionCallPartPreservesToolUse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeSSE(t, w, `{"candidates":[{"content":{"role":"model","parts":[{"functionCall":{"name":"lookup","args":{"city":"Austin"}},"thoughtSignature":"sig-on-call"}]},"finishReason":"STOP"}]}`)
+	}))
+	defer server.Close()
+
+	rt := New("key", WithBaseURL(server.URL), WithHTTPClient(server.Client())).RoundTrip(context.Background(), &agentkit.Request{Model: ModelFlash25})
+	for range rt.Events() {
+	}
+	if err := rt.Err(); err != nil {
+		t.Fatalf("RoundTrip error: %v", err)
+	}
+	// R-DNS8-QC6Z
+	if rt.Finish() != agentkit.FinishToolUse {
+		t.Fatalf("Finish() = %v, want FinishToolUse", rt.Finish())
+	}
+
+	var reasoning agentkit.ReasoningBlock
+	var use agentkit.ToolUseBlock
+	for _, block := range rt.Message().Blocks {
+		switch block := block.(type) {
+		case agentkit.ReasoningBlock:
+			reasoning = block
+		case agentkit.ToolUseBlock:
+			use = block
+		}
+	}
+	// R-DNS8-QC6Z
+	if use.ID == "" || use.Name != "lookup" || string(use.Input) != `{"city":"Austin"}` {
+		t.Fatalf("signature-bearing functionCall did not assemble tool use: %#v", rt.Message().Blocks)
+	}
+	// R-DTVQ-N6WG
+	if reasoning.BoundToID != use.ID || decodeThoughtSignature(reasoning.Opaque) != "sig-on-call" {
+		t.Fatalf("signature was not captured and bound to tool use: reasoning=%#v use=%#v", reasoning, use)
+	}
+}
+
+func TestGoogleSignatureOnTextPartPreservesVisibleText(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeSSE(t, w, `{"candidates":[{"content":{"role":"model","parts":[{"text":"visible answer","thoughtSignature":"sig-on-text"}]},"finishReason":"STOP"}]}`)
+	}))
+	defer server.Close()
+
+	rt := New("key", WithBaseURL(server.URL), WithHTTPClient(server.Client())).RoundTrip(context.Background(), &agentkit.Request{Model: ModelFlash25})
+	var events []agentkit.Event
+	for event := range rt.Events() {
+		events = append(events, event)
+	}
+	if err := rt.Err(); err != nil {
+		t.Fatalf("RoundTrip error: %v", err)
+	}
+
+	// R-DRFX-VNF2
+	if len(events) != 1 {
+		t.Fatalf("events = %#v, want one TextDelta", events)
+	}
+	textDelta, ok := events[0].(agentkit.TextDelta)
+	if !ok || textDelta.Text != "visible answer" {
+		t.Fatalf("event = %#v, want visible TextDelta", events[0])
+	}
+
+	var sawText bool
+	for _, block := range rt.Message().Blocks {
+		switch block := block.(type) {
+		case agentkit.TextBlock:
+			if block.Text == "visible answer" {
+				sawText = true
+			}
+		case agentkit.ReasoningBlock:
+			if block.Summary != "" {
+				t.Fatalf("visible text was captured as reasoning summary: %#v", block)
+			}
+		}
+	}
+	// R-DRFX-VNF2
+	if !sawText {
+		t.Fatalf("message did not persist visible text block: %#v", rt.Message().Blocks)
+	}
+}
+
 func TestGoogleErrorClassificationRawAndRetryInfo(t *testing.T) {
 	cases := []struct {
 		name       string

@@ -542,7 +542,15 @@ func parseParts(parts []part) ([]agentkit.Event, []agentkit.Block) {
 	}
 
 	for _, part := range parts {
-		if part.Thought || part.ThoughtSignature != "" {
+		signatureIndex := -1
+		if part.ThoughtSignature != "" {
+			pending = append(pending, agentkit.ReasoningBlock{
+				Opaque: encodeThoughtSignature(part.ThoughtSignature),
+			})
+			signatureIndex = len(pending) - 1
+		}
+
+		if part.Thought {
 			summary := ""
 			if part.Text != nil {
 				summary = *part.Text
@@ -550,11 +558,8 @@ func parseParts(parts []part) ([]agentkit.Event, []agentkit.Block) {
 					events = append(events, agentkit.ReasoningDelta{Text: summary})
 				}
 			}
-			if part.ThoughtSignature != "" {
-				pending = append(pending, agentkit.ReasoningBlock{
-					Opaque:  encodeThoughtSignature(part.ThoughtSignature),
-					Summary: summary,
-				})
+			if signatureIndex >= 0 && summary != "" {
+				pending[signatureIndex].Summary = summary
 			}
 			continue
 		}
