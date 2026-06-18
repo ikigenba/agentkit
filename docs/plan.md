@@ -75,7 +75,7 @@ The `openai` sub-package implements the SPI over the Responses API on raw `net/h
 
 **Done when:** (OpenAI slices): R-H3PK-QFG3, R-XR4M-U1ZT, R-BUR1-XAK8, R-BX6U-OU1M, R-BYER-2LSB, R-Y810-TECF, R-Y98X-7634, R-YAGT-KXTT, R-YBOP-YPKI, R-YCWM-CHB7, R-VDY4-AP7H, R-V1KQ-IKI6, R-XW08-D4YL, R-055A-NI1P, R-P5U3-5CFZ, R-P71Z-J46O, R-C8UE-VJ67 (OpenAI assembly slice), R-V2SM-WC8V (gpt tiered slice) are covered; suite green.
 
-### Phase 10 — Shared OpenAI-compatible internals and the Z.ai adapter · ⬜ not started
+### Phase 10 — Shared OpenAI-compatible internals and the Z.ai adapter · ✅ done
 *Realizes design Decision 5 (Z.ai first-classness), Decision 9, Decision 7, Decision 8, Decision 16, Decision 6, and Decision 13 (the Z.ai slice), and Decision 12 (`internal/openaicompat`). Depends on Phases 5 through 8.*
 
 The shared, non-consumer-importable `internal/openaicompat` Chat-Completions adapter exists (request build, SSE parse, central assembly, usage mapping, pluggable error classifier), and the public `zai` sub-package constructs it with Z.ai's baked-in base URL (`https://api.z.ai/api/paas/v4/`) — the consumer supplies only an API key. `zai` classifies errors by Z.ai's numeric `code`, maps `reasoning_content` into `Opaque` with `ReasoningOutput`=0, degrades a forced `tool_choice` to `auto` with a `Warning`, labels `Error.Provider`="zai", and ships the registry + pricing (glm-5.2/5.1/4.7/4.6) with exported constants. `internal/openaicompat` carries no public surface and no ids of its own.
