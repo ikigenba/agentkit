@@ -103,7 +103,7 @@ The non-consumer-importable `internal/mcp` raw-HTTP Streamable-HTTP JSON-RPC cli
 
 **Done when:** R-6GBE-J3SV, R-6HJA-WVJK, R-6IR7-ANA9, R-6L70-26RN, R-6NMS-TQ91, R-6Q2L-L9QF, R-6SIE-CT7T, R-6W63-I4FW, R-6ZTS-NFNZ, R-6TQA-QKYI, R-6UY7-4CP7, R-6XDZ-VW6L, and R-6YLW-9NXA are covered; suite green.
 
-### Phase 14 — Example REPL · ⬜ not started
+### Phase 14 — Example REPL · ✅ done
 *Realizes design Decision 14 (the example REPL). Depends on Phase 5, Phase 8, and at least one further adapter (Phase 9, 10, or 11).*
 
 A runnable `examples/repl/` program exists as a thin consumer of the public API only: it reads stdin, calls `conv.Send`, prints `TextDelta`s as they stream, registers a `bash` tool via `NewTool`, and supports `/model <provider>:<name>` to swap `conv.Provider`+`conv.Model` mid-session with `History` retained. It uses nothing internal — if it cannot build cleanly against the public surface, the surface is wrong.
