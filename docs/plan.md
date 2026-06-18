@@ -61,7 +61,7 @@ This is the heart of the library (the largest root phase). The exported SPI type
 
 **Done when:** R-PH7W-BVH0, R-PIFS-PN7P, R-PJNP-3EYE, R-PKVL-H6P3, R-PM3H-UYFS, R-PNBE-8Q6H, R-POJA-MHX6, R-PPR7-09NV, R-PVUO-X4DC (TotalCost + summary), R-I5VJ-CTXE, and R-7CYE-KS40 are covered; suite green.
 
-### Phase 8 — Anthropic adapter (plus shared HTTP/SSE internals and the fake-server harness) · ⬜ not started
+### Phase 8 — Anthropic adapter (plus shared HTTP/SSE internals and the fake-server harness) · ✅ done
 *Realizes design Decision 9, Decision 7, Decision 8, Decision 16, Decision 3, Decision 2, and Decision 13 (the Anthropic slice), and Decision 12 (`internal/sse`, `internal/httpx`). Depends on Phases 1 through 7.*
 
 The shared internals `internal/httpx` (request execution, header/body helpers, `*http.Client` injection) and `internal/sse` (SSE framing) exist, and the `anthropic` sub-package implements the `Provider` SPI end-to-end over raw `net/http`: request build with system injection, the frozen stable prefix with a single default 5m `cache_control` breakpoint on the last prefix block, name-sorted tools, SSE parse with central partial-JSON tool assembly, the assembled `Message` (incl. `ReasoningBlock` whose `Opaque` is the Anthropic `signature`), `FinishReason`, usage mapping (derived `Total`, cache-write 5m/1h sub-split, `ReasoningOutput`=0), warnings, error classification (status then type), foreign-reasoning drop, `Name()`="anthropic", and the model registry + pricing table (verbatim from the design's rate table) with exported model constants. This phase also stands up the fake-`httptest`-server harness and golden-SSE replay (`-update`) reused by the later adapters.
