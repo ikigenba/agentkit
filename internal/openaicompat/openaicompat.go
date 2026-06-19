@@ -192,6 +192,7 @@ func (p *Provider) buildRequest(req *agentkit.Request) (chatRequest, []agentkit.
 		if p.cfg.WarnForcedToolChoiceAuto {
 			warnings = append(warnings, agentkit.Warning{
 				Setting: "tool_choice",
+				Code:    agentkit.WarnToolChoiceForced,
 				Detail:  "requested forced tool choice; applied auto because provider supports only auto",
 			})
 		}

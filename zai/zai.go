@@ -59,7 +59,7 @@ func New(apiKey string, opts ...Option) *Provider {
 		BaseURL:                  cfg.baseURL,
 		APIKey:                   apiKey,
 		HTTPClient:               cfg.client,
-		Pricing:                  registry,
+		Pricing:                  pricingRegistry(),
 		Classify:                 classify,
 		WarnForcedToolChoiceAuto: true,
 	})}
@@ -80,19 +80,87 @@ func (p *Provider) RoundTrip(ctx context.Context, req *agentkit.Request) *agentk
 	return p.compat.RoundTrip(ctx, req)
 }
 
-var registry = map[string]agentkit.Pricing{
-	ModelGLM52: {Tiers: []agentkit.RateTier{{
-		MinInputTokens: 0, InputUncached: 1400, CacheReadInput: 260, Output: 4400,
-	}}},
-	ModelGLM51: {Tiers: []agentkit.RateTier{{
-		MinInputTokens: 0, InputUncached: 1400, CacheReadInput: 260, Output: 4400,
-	}}},
-	ModelGLM47: {Tiers: []agentkit.RateTier{{
-		MinInputTokens: 0, InputUncached: 600, CacheReadInput: 110, Output: 2200,
-	}}},
-	ModelGLM46: {Tiers: []agentkit.RateTier{{
-		MinInputTokens: 0, InputUncached: 600, CacheReadInput: 110, Output: 2200,
-	}}},
+// Reasoning exposes Z.ai's static native reasoning vocabulary.
+var Reasoning agentkit.ReasoningInspector = reasoningInspector{}
+
+type modelEntry struct {
+	Pricing   agentkit.Pricing
+	Reasoning agentkit.ReasoningSpec
+}
+
+var registry = map[string]modelEntry{
+	ModelGLM52: {
+		Pricing: agentkit.Pricing{Tiers: []agentkit.RateTier{{
+			MinInputTokens: 0, InputUncached: 1400, CacheReadInput: 260, Output: 4400,
+		}}},
+		Reasoning: agentkit.ReasoningSpec{
+			Term: "effort (+ toggle)", Kind: agentkit.ReasoningEnum,
+			Levels:     []string{"high", "max"},
+			Default:    agentkit.Level("max"),
+			CanDisable: true,
+		},
+	},
+	ModelGLM51: {
+		Pricing: agentkit.Pricing{Tiers: []agentkit.RateTier{{
+			MinInputTokens: 0, InputUncached: 1400, CacheReadInput: 260, Output: 4400,
+		}}},
+		Reasoning: agentkit.ReasoningSpec{
+			Term: "effort (+ toggle)", Kind: agentkit.ReasoningEnum,
+			Levels:     []string{"high", "max"},
+			Default:    agentkit.Level("max"),
+			CanDisable: true,
+		},
+	},
+	ModelGLM47: {
+		Pricing: agentkit.Pricing{Tiers: []agentkit.RateTier{{
+			MinInputTokens: 0, InputUncached: 600, CacheReadInput: 110, Output: 2200,
+		}}},
+		Reasoning: agentkit.ReasoningSpec{
+			Term: "thinking", Kind: agentkit.ReasoningToggle,
+			CanDisable: true,
+		},
+	},
+	ModelGLM46: {
+		Pricing: agentkit.Pricing{Tiers: []agentkit.RateTier{{
+			MinInputTokens: 0, InputUncached: 600, CacheReadInput: 110, Output: 2200,
+		}}},
+		Reasoning: agentkit.ReasoningSpec{
+			Term: "thinking", Kind: agentkit.ReasoningToggle,
+			CanDisable: true,
+		},
+	},
+}
+
+type reasoningInspector struct{}
+
+func (reasoningInspector) ReasoningSpec(model string) (agentkit.ReasoningSpec, bool) {
+	entry, ok := registry[model]
+	if !ok {
+		return agentkit.ReasoningSpec{}, false
+	}
+	return cloneReasoningSpec(entry.Reasoning), true
+}
+
+func (reasoningInspector) SupportedReasoning() map[string]agentkit.ReasoningSpec {
+	out := make(map[string]agentkit.ReasoningSpec, len(registry))
+	for model, entry := range registry {
+		out[model] = cloneReasoningSpec(entry.Reasoning)
+	}
+	return out
+}
+
+func cloneReasoningSpec(spec agentkit.ReasoningSpec) agentkit.ReasoningSpec {
+	spec.Levels = append([]string(nil), spec.Levels...)
+	spec.Sentinels = append([]agentkit.Sentinel(nil), spec.Sentinels...)
+	return spec
+}
+
+func pricingRegistry() map[string]agentkit.Pricing {
+	out := make(map[string]agentkit.Pricing, len(registry))
+	for model, entry := range registry {
+		out[model] = entry.Pricing
+	}
+	return out
 }
 
 func classify(status int, code, message string) error {

@@ -30,16 +30,73 @@ const (
 	defaultMaxOut  = 4096
 )
 
-var registry = map[string]agentkit.Pricing{
-	ModelOpus48: {Tiers: []agentkit.RateTier{{
-		MinInputTokens: 0, InputUncached: 5000, CacheReadInput: 500, CacheWrite5m: 6250, CacheWrite1h: 10000, Output: 25000,
-	}}},
-	ModelSonnet46: {Tiers: []agentkit.RateTier{{
-		MinInputTokens: 0, InputUncached: 3000, CacheReadInput: 300, CacheWrite5m: 3750, CacheWrite1h: 6000, Output: 15000,
-	}}},
-	ModelHaiku45: {Tiers: []agentkit.RateTier{{
-		MinInputTokens: 0, InputUncached: 1000, CacheReadInput: 100, CacheWrite5m: 1250, CacheWrite1h: 2000, Output: 5000,
-	}}},
+// Reasoning exposes Anthropic's static native reasoning vocabulary.
+var Reasoning agentkit.ReasoningInspector = reasoningInspector{}
+
+type modelEntry struct {
+	Pricing   agentkit.Pricing
+	Reasoning agentkit.ReasoningSpec
+}
+
+var registry = map[string]modelEntry{
+	ModelOpus48: {
+		Pricing: agentkit.Pricing{Tiers: []agentkit.RateTier{{
+			MinInputTokens: 0, InputUncached: 5000, CacheReadInput: 500, CacheWrite5m: 6250, CacheWrite1h: 10000, Output: 25000,
+		}}},
+		Reasoning: agentkit.ReasoningSpec{
+			Term: "effort", Kind: agentkit.ReasoningEnum,
+			Levels:     []string{"low", "medium", "high", "xhigh", "max"},
+			Default:    agentkit.Level("high"),
+			CanDisable: true,
+		},
+	},
+	ModelSonnet46: {
+		Pricing: agentkit.Pricing{Tiers: []agentkit.RateTier{{
+			MinInputTokens: 0, InputUncached: 3000, CacheReadInput: 300, CacheWrite5m: 3750, CacheWrite1h: 6000, Output: 15000,
+		}}},
+		Reasoning: agentkit.ReasoningSpec{
+			Term: "effort", Kind: agentkit.ReasoningEnum,
+			Levels:     []string{"low", "medium", "high", "max"},
+			Default:    agentkit.Level("high"),
+			CanDisable: true,
+		},
+	},
+	ModelHaiku45: {
+		Pricing: agentkit.Pricing{Tiers: []agentkit.RateTier{{
+			MinInputTokens: 0, InputUncached: 1000, CacheReadInput: 100, CacheWrite5m: 1250, CacheWrite1h: 2000, Output: 5000,
+		}}},
+		Reasoning: agentkit.ReasoningSpec{
+			Term: "thinking budget", Kind: agentkit.ReasoningRange,
+			Min:        1024,
+			Max:        defaultMaxOut,
+			Default:    agentkit.DisableReasoning(),
+			CanDisable: true,
+		},
+	},
+}
+
+type reasoningInspector struct{}
+
+func (reasoningInspector) ReasoningSpec(model string) (agentkit.ReasoningSpec, bool) {
+	entry, ok := registry[model]
+	if !ok {
+		return agentkit.ReasoningSpec{}, false
+	}
+	return cloneReasoningSpec(entry.Reasoning), true
+}
+
+func (reasoningInspector) SupportedReasoning() map[string]agentkit.ReasoningSpec {
+	out := make(map[string]agentkit.ReasoningSpec, len(registry))
+	for model, entry := range registry {
+		out[model] = cloneReasoningSpec(entry.Reasoning)
+	}
+	return out
+}
+
+func cloneReasoningSpec(spec agentkit.ReasoningSpec) agentkit.ReasoningSpec {
+	spec.Levels = append([]string(nil), spec.Levels...)
+	spec.Sentinels = append([]agentkit.Sentinel(nil), spec.Sentinels...)
+	return spec
 }
 
 // Option customizes an Anthropic provider handle.
@@ -80,8 +137,8 @@ func (p *Provider) Name() string {
 }
 
 func (p *Provider) Pricing(model string) (agentkit.Pricing, bool) {
-	pricing, ok := registry[model]
-	return pricing, ok
+	entry, ok := registry[model]
+	return entry.Pricing, ok
 }
 
 func (p *Provider) RoundTrip(ctx context.Context, req *agentkit.Request) *agentkit.RoundTrip {

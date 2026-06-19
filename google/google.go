@@ -32,26 +32,93 @@ const (
 
 const defaultBaseURL = "https://generativelanguage.googleapis.com"
 
-var modelPricing = map[string]agentkit.Pricing{
-	ModelFlash25: {Tiers: []agentkit.RateTier{{
-		MinInputTokens: 0, InputUncached: 300, CacheReadInput: 30, Output: 2500,
-	}}},
-	ModelPro25: {Tiers: []agentkit.RateTier{{
-		MinInputTokens: 0, InputUncached: 1250, CacheReadInput: 125, Output: 10000,
-	}, {
-		MinInputTokens: 200001, InputUncached: 2500, CacheReadInput: 250, Output: 15000,
-	}}},
-	ModelFlash35: {Tiers: []agentkit.RateTier{{
-		MinInputTokens: 0, InputUncached: 1500, CacheReadInput: 150, Output: 9000,
-	}}},
-	ModelLite31: {Tiers: []agentkit.RateTier{{
-		MinInputTokens: 0, InputUncached: 250, CacheReadInput: 25, Output: 1500,
-	}}},
-	ModelPro31Preview: {Tiers: []agentkit.RateTier{{
-		MinInputTokens: 0, InputUncached: 2000, CacheReadInput: 200, Output: 12000,
-	}, {
-		MinInputTokens: 200001, InputUncached: 4000, CacheReadInput: 400, Output: 18000,
-	}}},
+// Reasoning exposes Gemini's static native reasoning vocabulary.
+var Reasoning agentkit.ReasoningInspector = reasoningInspector{}
+
+type modelEntry struct {
+	Pricing   agentkit.Pricing
+	Reasoning agentkit.ReasoningSpec
+}
+
+var modelRegistry = map[string]modelEntry{
+	ModelFlash25: {
+		Pricing: agentkit.Pricing{Tiers: []agentkit.RateTier{{
+			MinInputTokens: 0, InputUncached: 300, CacheReadInput: 30, Output: 2500,
+		}}},
+		Reasoning: agentkit.ReasoningSpec{
+			Term: "thinking budget", Kind: agentkit.ReasoningRange,
+			Min: 0, Max: 24576,
+			Sentinels:  []agentkit.Sentinel{{Value: 0, Meaning: "off"}, {Value: -1, Meaning: "dynamic"}},
+			Default:    agentkit.Budget(-1),
+			CanDisable: true,
+		},
+	},
+	ModelPro25: {
+		Pricing: agentkit.Pricing{Tiers: []agentkit.RateTier{{
+			MinInputTokens: 0, InputUncached: 1250, CacheReadInput: 125, Output: 10000,
+		}, {
+			MinInputTokens: 200001, InputUncached: 2500, CacheReadInput: 250, Output: 15000,
+		}}},
+		Reasoning: agentkit.ReasoningSpec{
+			Term: "thinking budget", Kind: agentkit.ReasoningRange,
+			Min: 128, Max: 32768,
+			Sentinels: []agentkit.Sentinel{{Value: -1, Meaning: "dynamic"}},
+			Default:   agentkit.Budget(-1),
+		},
+	},
+	ModelFlash35: {
+		Pricing: agentkit.Pricing{Tiers: []agentkit.RateTier{{
+			MinInputTokens: 0, InputUncached: 1500, CacheReadInput: 150, Output: 9000,
+		}}},
+		Reasoning: agentkit.ReasoningSpec{
+			Term: "thinking level", Kind: agentkit.ReasoningEnum,
+			Levels: []string{"minimal", "low", "medium", "high"}, Default: agentkit.Level("medium"),
+		},
+	},
+	ModelLite31: {
+		Pricing: agentkit.Pricing{Tiers: []agentkit.RateTier{{
+			MinInputTokens: 0, InputUncached: 250, CacheReadInput: 25, Output: 1500,
+		}}},
+		Reasoning: agentkit.ReasoningSpec{
+			Term: "thinking level", Kind: agentkit.ReasoningEnum,
+			Levels: []string{"minimal", "low", "medium", "high"}, Default: agentkit.Level("medium"),
+		},
+	},
+	ModelPro31Preview: {
+		Pricing: agentkit.Pricing{Tiers: []agentkit.RateTier{{
+			MinInputTokens: 0, InputUncached: 2000, CacheReadInput: 200, Output: 12000,
+		}, {
+			MinInputTokens: 200001, InputUncached: 4000, CacheReadInput: 400, Output: 18000,
+		}}},
+		Reasoning: agentkit.ReasoningSpec{
+			Term: "thinking level", Kind: agentkit.ReasoningEnum,
+			Levels: []string{"low", "medium", "high"}, Default: agentkit.Level("high"),
+		},
+	},
+}
+
+type reasoningInspector struct{}
+
+func (reasoningInspector) ReasoningSpec(model string) (agentkit.ReasoningSpec, bool) {
+	entry, ok := modelRegistry[model]
+	if !ok {
+		return agentkit.ReasoningSpec{}, false
+	}
+	return cloneReasoningSpec(entry.Reasoning), true
+}
+
+func (reasoningInspector) SupportedReasoning() map[string]agentkit.ReasoningSpec {
+	out := make(map[string]agentkit.ReasoningSpec, len(modelRegistry))
+	for model, entry := range modelRegistry {
+		out[model] = cloneReasoningSpec(entry.Reasoning)
+	}
+	return out
+}
+
+func cloneReasoningSpec(spec agentkit.ReasoningSpec) agentkit.ReasoningSpec {
+	spec.Levels = append([]string(nil), spec.Levels...)
+	spec.Sentinels = append([]agentkit.Sentinel(nil), spec.Sentinels...)
+	return spec
 }
 
 // Option configures a Gemini provider.
@@ -95,8 +162,8 @@ func (p *Provider) Name() string {
 }
 
 func (p *Provider) Pricing(model string) (agentkit.Pricing, bool) {
-	pricing, ok := modelPricing[model]
-	return pricing, ok
+	entry, ok := modelRegistry[model]
+	return entry.Pricing, ok
 }
 
 func (p *Provider) RoundTrip(ctx context.Context, req *agentkit.Request) *agentkit.RoundTrip {

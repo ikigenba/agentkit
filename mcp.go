@@ -191,6 +191,7 @@ func (c *Conversation) mcpSchemaWarnings(tools []Tool) []Warning {
 		}
 		warnings = append(warnings, Warning{
 			Setting: "mcp_schema",
+			Code:    WarnToolSchemaLossy,
 			Detail:  fmt.Sprintf("%s.%s drops unsupported schema keywords for Gemini: %s", mt.server, mt.originalName, strings.Join(keywords, ", ")),
 		})
 	}

@@ -26,5 +26,16 @@ const (
 // Warning records a requested setting a provider could not honor as asked.
 type Warning struct {
 	Setting string
+	Code    WarningCode
 	Detail  string
 }
+
+// WarningCode classifies non-fatal provider-side setting degradation.
+type WarningCode int
+
+const (
+	WarnReasoningUnsupported WarningCode = iota
+	WarnReasoningCannotDisable
+	WarnToolChoiceForced
+	WarnToolSchemaLossy
+)

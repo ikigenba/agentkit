@@ -74,8 +74,8 @@ func (p *Provider) Name() string {
 
 // Pricing returns the model's baked-in pricing, if the model is supported.
 func (p *Provider) Pricing(model string) (agentkit.Pricing, bool) {
-	pricing, ok := registry[model]
-	return pricing, ok
+	entry, ok := registry[model]
+	return entry.Pricing, ok
 }
 
 // RoundTrip performs one OpenAI Responses API model call.
@@ -124,24 +124,94 @@ func (p *Provider) RoundTrip(ctx context.Context, req *agentkit.Request) *agentk
 	return agentkit.NewRoundTrip(eventsSeq(assembled.events), assembled.message, assembled.finish, assembled.usage, assembled.warnings, nil)
 }
 
-var registry = map[string]agentkit.Pricing{
-	ModelGPT55Pro: {Tiers: []agentkit.RateTier{{
-		MinInputTokens: 0, InputUncached: 30000, CacheReadInput: 30000, Output: 180000,
-	}}},
-	ModelGPT55: {Tiers: []agentkit.RateTier{
-		{MinInputTokens: 0, InputUncached: 5000, CacheReadInput: 500, Output: 30000},
-		{MinInputTokens: 272001, InputUncached: 10000, CacheReadInput: 1000, Output: 45000},
-	}},
-	ModelGPT54: {Tiers: []agentkit.RateTier{
-		{MinInputTokens: 0, InputUncached: 2500, CacheReadInput: 250, Output: 15000},
-		{MinInputTokens: 272001, InputUncached: 5000, CacheReadInput: 500, Output: 22500},
-	}},
-	ModelGPT54Mini: {Tiers: []agentkit.RateTier{{
-		MinInputTokens: 0, InputUncached: 750, CacheReadInput: 75, Output: 4500,
-	}}},
-	ModelGPT54Nano: {Tiers: []agentkit.RateTier{{
-		MinInputTokens: 0, InputUncached: 200, CacheReadInput: 20, Output: 1250,
-	}}},
+// Reasoning exposes OpenAI's static native reasoning vocabulary.
+var Reasoning agentkit.ReasoningInspector = reasoningInspector{}
+
+type modelEntry struct {
+	Pricing   agentkit.Pricing
+	Reasoning agentkit.ReasoningSpec
+}
+
+var registry = map[string]modelEntry{
+	ModelGPT55Pro: {
+		Pricing: agentkit.Pricing{Tiers: []agentkit.RateTier{{
+			MinInputTokens: 0, InputUncached: 30000, CacheReadInput: 30000, Output: 180000,
+		}}},
+		Reasoning: agentkit.ReasoningSpec{
+			Term: "effort", Kind: agentkit.ReasoningEnum,
+			Levels: []string{"high", "xhigh"}, Default: agentkit.Level("high"),
+		},
+	},
+	ModelGPT55: {
+		Pricing: agentkit.Pricing{Tiers: []agentkit.RateTier{
+			{MinInputTokens: 0, InputUncached: 5000, CacheReadInput: 500, Output: 30000},
+			{MinInputTokens: 272001, InputUncached: 10000, CacheReadInput: 1000, Output: 45000},
+		}},
+		Reasoning: agentkit.ReasoningSpec{
+			Term: "effort", Kind: agentkit.ReasoningEnum,
+			Levels:     []string{"none", "low", "medium", "high", "xhigh"},
+			Default:    agentkit.Level("medium"),
+			CanDisable: true,
+		},
+	},
+	ModelGPT54: {
+		Pricing: agentkit.Pricing{Tiers: []agentkit.RateTier{
+			{MinInputTokens: 0, InputUncached: 2500, CacheReadInput: 250, Output: 15000},
+			{MinInputTokens: 272001, InputUncached: 5000, CacheReadInput: 500, Output: 22500},
+		}},
+		Reasoning: agentkit.ReasoningSpec{
+			Term: "effort", Kind: agentkit.ReasoningEnum,
+			Levels:     []string{"none", "low", "medium", "high", "xhigh"},
+			Default:    agentkit.Level("none"),
+			CanDisable: true,
+		},
+	},
+	ModelGPT54Mini: {
+		Pricing: agentkit.Pricing{Tiers: []agentkit.RateTier{{
+			MinInputTokens: 0, InputUncached: 750, CacheReadInput: 75, Output: 4500,
+		}}},
+		Reasoning: agentkit.ReasoningSpec{
+			Term: "effort", Kind: agentkit.ReasoningEnum,
+			Levels:     []string{"none", "low", "medium", "high", "xhigh"},
+			Default:    agentkit.Level("none"),
+			CanDisable: true,
+		},
+	},
+	ModelGPT54Nano: {
+		Pricing: agentkit.Pricing{Tiers: []agentkit.RateTier{{
+			MinInputTokens: 0, InputUncached: 200, CacheReadInput: 20, Output: 1250,
+		}}},
+		Reasoning: agentkit.ReasoningSpec{
+			Term: "effort", Kind: agentkit.ReasoningEnum,
+			Levels:     []string{"none", "low", "medium", "high", "xhigh"},
+			Default:    agentkit.Level("none"),
+			CanDisable: true,
+		},
+	},
+}
+
+type reasoningInspector struct{}
+
+func (reasoningInspector) ReasoningSpec(model string) (agentkit.ReasoningSpec, bool) {
+	entry, ok := registry[model]
+	if !ok {
+		return agentkit.ReasoningSpec{}, false
+	}
+	return cloneReasoningSpec(entry.Reasoning), true
+}
+
+func (reasoningInspector) SupportedReasoning() map[string]agentkit.ReasoningSpec {
+	out := make(map[string]agentkit.ReasoningSpec, len(registry))
+	for model, entry := range registry {
+		out[model] = cloneReasoningSpec(entry.Reasoning)
+	}
+	return out
+}
+
+func cloneReasoningSpec(spec agentkit.ReasoningSpec) agentkit.ReasoningSpec {
+	spec.Levels = append([]string(nil), spec.Levels...)
+	spec.Sentinels = append([]agentkit.Sentinel(nil), spec.Sentinels...)
+	return spec
 }
 
 type responsesRequest struct {
