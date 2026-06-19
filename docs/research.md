@@ -2,7 +2,9 @@
 
 **Status: non-contractual.** This document informs the *author* of `docs/design.md`; nothing downstream (the autonomous build) reads it. It records options, prior art, constraints, and recommendations as of **2026-06-17**. Design remains the single authority for *how*; where this doc recommends a mechanism, design may adopt, refine, or reject it. Edit this doc in place as the product evolves — never append a log.
 
-**Model-list re-verification (2026-06-17).** The supported-model set was re-verified against each provider's official live model/pricing/deprecation pages. Net result: the design registry (D16) needed reconciling — see the reconciliation block in §6.5 (now applied). Key facts baked in below: OpenAI dropped `o3`/`o4-mini` (deprecated) and `gpt-5.4-nano` *does* exist; Google's 3.x Pro is **preview-only** (`gemini-3.1-pro-preview` — no GA `gemini-3.1-pro`); Anthropic `claude-fable-5` was **dropped from the curated set** — it is globally disabled since 2026-06-12 (export control) and so cannot be served; and Opus 4.8 reasoning **cannot be disabled**.
+**Model-list re-verification (2026-06-17).** The supported-model set was re-verified against each provider's official live model/pricing/deprecation pages. Net result: the design registry (D16) needed reconciling — see the reconciliation block in §6.5 (now applied). Key facts baked in below: OpenAI dropped `o3`/`o4-mini` (deprecated) and `gpt-5.4-nano` *does* exist; Google's 3.x Pro is **preview-only** (`gemini-3.1-pro-preview` — no GA `gemini-3.1-pro`); Anthropic `claude-fable-5` was **dropped from the curated set** — it is globally disabled since 2026-06-12 (export control) and so cannot be served.
+
+**Reasoning re-architected to native-first (2026-06-18, product change).** The product (both AgentKit's and agentrepl's) now rejects the single universal `ReasoningEffort` enum (`default/off/minimal/low/medium/high/max`) that this doc's earlier §7 mapped lossily per provider. Reasoning is now expressed in **each model's own native term and native values** — the term the provider documents (effort / thinking level / thinking budget) and the values that model actually accepts (its discrete levels, OR a token-budget integer within a valid range) — with **no cross-model vocabulary and no translation**. A value the selected model natively understands is honored exactly; anything it does not (unknown term, invalid/out-of-range value, or a setting carried over after a mid-conversation model switch) → **warning + fall back to that model's default**, never silently misapplied, never breaks the turn. AgentKit exposes a **per-model introspection API** (term + accepted values/range + default) so consumers display and accept exactly what each model supports. §7 has been rewritten accordingly; the cross-turn reasoning-state preservation findings there are unaffected by this change and still stand. ⚠ One factual correction surfaced during re-verification: **Opus 4.8 reasoning *can* be disabled** (it is adaptive-only-when-on, not always-on) — the prior "cannot be disabled" claim now attaches to **Fable 5 / Mythos 5**, not Opus 4.8 (§7.1).
 
 **MCP support added (2026-06-17, product change).** The product now promises **remote MCP (Model Context Protocol) tool servers**: AgentKit acts as an MCP **client** — the consumer attaches one or more remote MCP servers (network transport only; AgentKit spawns **no** subprocesses, so local stdio servers are out of scope), AgentKit connects, discovers each server's tools, and feeds them into the *same* automatic tool loop as custom tools, uniformly across all four providers. Only **tools** are surfaced (MCP resources/prompts deferred); the consumer names each server and that name **prefixes** its tools; credentials are supplied **explicitly**; **no interactive OAuth**. Servers attach/detach **between turns**, mirroring provider/model switching. This adds a new research dimension — see the new **§9** (protocol, transport, integration, auth, failure-mapping) — and new recommendation items in §10.
 
@@ -39,7 +41,7 @@ The recommended canonical model is **Anthropic-shaped**: a conversation is `[]Me
 - **Errors.** `{type:"error", error:{type,message}, request_id}`; `request-id` header on every response. 400 `invalid_request_error`, 401 `authentication_error`, 402 `billing_error`, 403 `permission_error`, 404 `not_found_error`, 413 `request_too_large`, 429 `rate_limit_error`, 500 `api_error`, 504 `timeout_error`, **529 `overloaded_error`**. Retryable: 408/409/429/529 and ≥500.
 - **Retry signals.** `retry-after` (seconds) on 429/529; rich `anthropic-ratelimit-*` headers (reset is RFC 3339).
 - **Usage.** `input_tokens`, `output_tokens`, `cache_creation_input_tokens`, `cache_read_input_tokens`. **Gotcha:** `input_tokens` counts only tokens *after the last cache breakpoint*; total input = `cache_read + cache_creation + input_tokens`.
-- **Models (verified 2026-06-17 vs official models/pricing pages).** Curated set = `claude-opus-4-8` (most capable default, 1M ctx), `claude-sonnet-4-6`, `claude-haiku-4-5` — all three confirmed current and correctly priced (§6.5). Opus 4.8 is the safe default top tier. Snapshot-id nuance: Opus 4.8 / Sonnet 4.6 are genuinely **dateless pinned snapshots**, but **`claude-haiku-4-5` is an alias for the dated canonical `claude-haiku-4-5-20251001`** (both resolve). ⚠ **`claude-fable-5` was DROPPED from the curated set.** It is a valid, priced id but was globally DISABLED for ALL customers on 2026-06-12 under a US export-control directive (Anthropic could not segment foreign-national access in time; the pricing/models docs still call it "GA", so the docs are stale on availability). Because a supported model must be servable, and Fable 5's disablement is a global, indefinite provider state, the design **removes it from the registry** rather than shipping a priced-but-unrunnable id; if Anthropic re-enables it, it can be re-added.
+- **Models (verified 2026-06-17 vs official models/pricing pages).** Curated set = `claude-opus-4-8` (most capable default, 1M ctx), `claude-sonnet-4-6`, `claude-haiku-4-5` — all three confirmed current and correctly priced (§6.5). Opus 4.8 is the safe default top tier. **Reasoning control (per current docs, 2026-06-18 — see §7.1 for the full native spec):** Opus 4.8 and Sonnet 4.6 take a native `output_config.effort` enum plus a `thinking` on/off toggle (adaptive-only when on); **Haiku 4.5 has no `effort` field** — its only reasoning-depth control is `thinking:{type:"enabled",budget_tokens}`. All three *can* be disabled (omit `thinking` / `type:"disabled"`); Opus 4.8 is **not** always-on (that is Fable 5 / Mythos 5). `budget_tokens` is removed on Opus 4.8 (400). Snapshot-id nuance: Opus 4.8 / Sonnet 4.6 are genuinely **dateless pinned snapshots**, but **`claude-haiku-4-5` is an alias for the dated canonical `claude-haiku-4-5-20251001`** (both resolve). ⚠ **`claude-fable-5` was DROPPED from the curated set.** It is a valid, priced id but was globally DISABLED for ALL customers on 2026-06-12 under a US export-control directive (Anthropic could not segment foreign-national access in time; the pricing/models docs still call it "GA", so the docs are stale on availability). Because a supported model must be servable, and Fable 5's disablement is a global, indefinite provider state, the design **removes it from the registry** rather than shipping a priced-but-unrunnable id; if Anthropic re-enables it, it can be re-added.
 - **Official `anthropic-sdk-go`.** GA, idiomatic (`NewStreaming` + `message.Accumulate`), typed `*anthropic.Error` carrying status/request-id/raw body, built-in auto-retry (on by default). A single concrete error type — branch on `StatusCode`.
 
 ### 2.2 Google — Gemini API
@@ -330,20 +332,102 @@ The tables above bake in the **low-tier (common-case)** rates for the tiered mod
 
 ---
 
-## 7. Reasoning models — preserved cross-turn state (the second load-bearing problem)
+## 7. Reasoning models — native-first control + preserved cross-turn state
 
-The v1 targets are all newest-generation reasoning models, and "use the newest reasoning APIs unless a model doesn't support it." This is not a cosmetic feature — it reshapes the message model. **The headline finding: three of four providers REQUIRE the model's prior reasoning output to be echoed back, verbatim, in the next request during a tool-use loop, or the turn errors or silently degrades.** AgentKit's auto-tool-loop is exactly such a loop, so this is mandatory, not optional.
+The v1 targets are all newest-generation reasoning models, and "use the newest reasoning APIs unless a model doesn't support it." Reasoning is not cosmetic — it reshapes the message model in **two** independent ways, each load-bearing:
 
-**Enabling/controlling reasoning** (uniform neutral knob → provider param):
+- **§7.1 — controlling reasoning (the native-first knob).** *Per the 2026-06-18 product change*, reasoning is set in each model's **own native term and values**, with **no cross-model enum and no translation**, plus an **inspectable per-model spec** and a **warn-and-fall-back-to-default** contract for non-native input. (This *replaces* this section's former recommendation to map a single `ReasoningEffort` ordinal enum across providers — see the rejection rationale at the end of §7.1.)
+- **§7.2 — preserving reasoning across tool-loop turns.** **Three of four providers REQUIRE the model's prior reasoning output to be echoed back, verbatim, in the next request during a tool-use loop, or the turn errors or silently degrades.** AgentKit's auto-tool-loop is exactly such a loop, so this is mandatory. This is orthogonal to §7.1 and is **unchanged** by the native-first change.
 
-| Provider | Parameter | Effort/budget | Default | Can disable? |
-|---|---|---|---|---|
-| Anthropic | `thinking:{type}` + `output_config:{effort}` (`low`/`high`/`xhigh`/`max`) | effort enum, **default `high`**; `budget_tokens` **removed** on Opus 4.8 | **always-on (adaptive) on Opus 4.8** | **no** on Opus 4.8; **yes** on Sonnet 4.6 / Haiku 4.5 (extended-thinking toggle) |
-| OpenAI | `reasoning:{effort, summary}` (Responses) | `none…xhigh` | gpt-5.5 `medium`; gpt-5.4 `none` | yes (`none`) |
-| Google | `thinkingConfig:{thinkingBudget\|thinkingLevel, includeThoughts}` | 2.5 budget int; 3.x `thinkingLevel` | dynamic | Flash yes (`0`); **2.5 Pro / 3.x Pro no** |
-| Z.ai | `thinking:{type}` (+ `reasoning_effort` on 5.2) | enabled/disabled; `high`/`max` | **on** | yes (`disabled`) |
+### 7.1 Native-first reasoning control
 
-→ **Map a neutral `ReasoningEffort` enum (`Off/Minimal/Low/Medium/High/Max`) to each provider; enforce per-model validity** (`Off` is invalid on **Opus 4.8**, Gemini 2.5 Pro, and 3.x Pro — all always-on reasoning; verified Opus 4.8 cannot disable). Avoid exposing a raw token budget — only Gemini 2.5 still uses one; translate ordinals to a budget int there.
+**Verified 2026-06-18 against each provider's live docs (one agent per provider).** The native vocabulary genuinely does **not** unify: two providers use a discrete **effort/level enum**, one uses an integer **token budget** on its older family and a discrete **level** enum on its newer one, and the values+defaults differ per model *within* a provider. This heterogeneity is exactly why the universal enum was rejected — there is no honest ordinal ladder spanning a `budget_tokens` integer and a `low/high/xhigh/max` enum, and "nearest" is undefinable across them.
+
+**Per-model native reasoning vocabulary (the data the introspection API must expose):**
+
+| Model | Native term (wire field) | Value kind | Accepted values / range | Default | Disable? |
+|---|---|---|---|---|---|
+| **claude-opus-4-8** | effort (`output_config.effort`) + `thinking` on/off | enum | `low` `medium` `high` `xhigh` `max` | `high` (thinking off until `thinking:{type:"adaptive"}`) | **yes** (omit / `type:"disabled"`) |
+| **claude-sonnet-4-6** | effort (`output_config.effort`) + `thinking` on/off | enum | `low` `medium` `high` `max` (**no `xhigh`**) | `high` (adaptive when on) | **yes** |
+| **claude-haiku-4-5** | thinking budget (`thinking.budget_tokens`) | **int budget** | `1024 … max_tokens−1` (**no `effort` field — 400 if sent**) | thinking **off** | **yes** (`type:"disabled"`/omit) |
+| **gpt-5.5-pro** | effort (`reasoning.effort`) | enum | `high` `xhigh` *(est.)* | `high` *(est.)* | **no** (no `none`; always-on) |
+| **gpt-5.5** | effort (`reasoning.effort`) | enum | `none` `low` `medium` `high` `xhigh` | `medium` | yes (`none`) |
+| **gpt-5.4** | effort (`reasoning.effort`) | enum | `none` `low` `medium` `high` `xhigh` | `none` | yes (`none`) |
+| **gpt-5.4-mini** | effort (`reasoning.effort`) | enum | `none` `low` `medium` `high` `xhigh` | `none` *(est.)* | yes (`none`) |
+| **gpt-5.4-nano** | effort (`reasoning.effort`) | enum | `none` `low` `medium` `high` `xhigh` | `none` *(est.)* | yes (`none`) |
+| **gemini-2.5-flash** | thinking budget (`thinkingConfig.thinkingBudget`) | **int budget** | `0 … 24576`; `0`=off, `-1`=dynamic | `-1` (dynamic) | **yes** (`0`) |
+| **gemini-2.5-pro** | thinking budget (`thinkingConfig.thinkingBudget`) | **int budget** | `128 … 32768`; `-1`=dynamic (**`0` rejected**) | `-1` (dynamic) | **no** (min 128) |
+| **gemini-3.5-flash** | thinking level (`thinkingConfig.thinkingLevel`) | enum | `minimal` `low` `medium` `high` | `medium` | **no** (`minimal` = floor) |
+| **gemini-3.1-flash-lite** | thinking level (`thinkingConfig.thinkingLevel`) | enum | `minimal` `low` `medium` `high` | `medium` *(by tier)* | **no** (`minimal` = floor) |
+| **gemini-3.1-pro-preview** | thinking level (`thinkingConfig.thinkingLevel`) | enum | `low` `medium` `high` (**no `minimal`**) | `high` (dynamic) | **no** (always-on) |
+| **glm-5.2** | `thinking` on/off + `reasoning_effort` | enum + on/off | effort `high` `max`; `thinking.type` `enabled`/`disabled` | enabled, effort `max` | **yes** (`type:"disabled"`) |
+| **glm-5.1** | `thinking` on/off (+ `reasoning_effort` *likely*) | enum + on/off | effort `high` `max` *(under-documented)*; on/off | enabled, effort `max` | **yes** |
+| **glm-4.7** | `thinking` on/off | on/off only | `enabled` / `disabled` (**no effort**) | enabled | **yes** |
+| **glm-4.6** | `thinking` on/off | on/off only | `enabled` / `disabled` (**no effort**) | enabled | **yes** |
+
+Reading the table for design: **the value space is one of three shapes** — a discrete enum of native level strings (most models), an integer token budget within `[min,max]` with sentinel meanings (`0`=off, `-1`=dynamic) (Gemini 2.5 family, Anthropic Haiku), or a bare on/off with no depth control (GLM 4.6/4.7). Gemini 2.5's `0`-disables-on-Flash-but-min-128-on-Pro and Anthropic's two-axis (effort enum *and* a thinking on/off, with Haiku dropping effort entirely) are the awkward edges. **GLM is two-axis** (an on/off toggle *plus*, on 5.x, an effort enum) — model the effort enum as the level set and the toggle as `CanDisable`.
+
+**Recommended introspection API (Go) — covers all three shapes with one discriminated type.** A consumer (agentrepl `--help`, a validator) reads this as data and never embeds provider knowledge:
+
+```go
+type ReasoningKind int
+const (
+    ReasoningEnum  ReasoningKind = iota // discrete native level strings
+    ReasoningRange                      // integer token budget in [Min,Max]
+    ReasoningToggle                     // on/off only, no depth control (GLM 4.6/4.7)
+)
+
+// ReasoningSpec is the inspectable native-vocabulary descriptor for one model.
+type ReasoningSpec struct {
+    Term       string         // native label: "effort" | "thinking level" | "thinking budget"
+    Kind       ReasoningKind
+    Levels     []string       // Kind==Enum: accepted native strings, in the model's own order
+    Min, Max   int            // Kind==Range: inclusive valid budget range
+    Sentinels  []Sentinel     // Kind==Range: magic ints with native meaning (0=off, -1=dynamic)
+    Default    ReasoningValue // the model's default — what the warn-fallback path applies
+    CanDisable bool
+}
+type Sentinel struct{ Value int; Meaning string } // e.g. {0,"off"}, {-1,"dynamic"}
+
+type ReasoningInspector interface {
+    ReasoningSpec(model string) (ReasoningSpec, bool) // false if unknown / no reasoning
+    SupportedReasoning() map[string]ReasoningSpec     // every model's spec, for catalog rendering
+}
+```
+
+**Setting reasoning natively — a tagged `ReasoningValue`** carrying exactly one native form (a level string, an int budget, or explicit-disabled), so the native value flows to the adapter untranslated. The zero value means "unset → use the model default, no warning":
+
+```go
+type ReasoningValue struct { /* tag + level string + budget int, fields unexported */ }
+func Level(s string) ReasoningValue    // native level: Level("high"), Level("xhigh")
+func Budget(n int) ReasoningValue      // native budget: Budget(8000)
+func DisableReasoning() ReasoningValue // explicit off (lowered to each model's native off-form)
+// GenSettings.Reasoning is a ReasoningValue (replacing the removed ReasoningEffort enum).
+```
+
+`DisableReasoning()` is first-class rather than an overloaded `0`/`none`, because whether a magic value means "off" is itself model-specific — the consumer expresses intent and the adapter lowers it to that model's native off-representation (`thinking:{type:"disabled"}`, `reasoning.effort:"none"`, `thinkingBudget:0`), or emits a warning+default if the model **cannot** disable.
+
+**Warn-and-default mechanism.** Borrow the Vercel AI SDK's non-fatal **typed-warning** idiom (a `warnings[]` of structured objects returned with the result, never thrown) — and explicitly **reject** LiteLLM/LangChain/langchaingo/eino's approach, which is the universal-enum-with-lossy-per-provider-mapping AgentKit just removed (they silently drop or error on mismatch and expose no inspectable spec). AgentKit already has a `Warning{Setting, Detail}` type (gen.go); extend it to carry the classification and what was applied, and surface it on the stream alongside the existing `Err()`/`Usage()` accessors:
+
+```go
+type Warning struct {
+    Setting string         // "reasoning"
+    Code    WarningCode    // UnknownTerm | InvalidValue | OutOfRange | CarriedOver | CannotDisable
+    Model   string
+    Given   ReasoningValue // what the consumer asked for
+    Applied ReasoningValue // what was used instead (== spec.Default)
+    Detail  string
+}
+func (s *Stream) Warnings() []Warning // readable once the request is built
+```
+
+A warning is a property of the whole turn (known at request-build time, not mid-stream), so a per-stream accessor — symmetric with `Usage()` — is the right surface, not an `Event` and not an error. A natively-understood value emits **nothing**.
+
+**Validation timing — at request-build time, against the request's selected model (not at set time).** This is forced by mid-conversation model switching: `Level("max")` is valid for Opus but invalid for Sonnet (no `xhigh`… actually `max` *is* valid on Sonnet, but `xhigh` is not), `Budget(8000)` is valid for Gemini-2.5 but meaningless for an enum model, and the **"setting carried over from a previously-selected model"** case is *only* detectable when the new model is active — i.e. at build time. So all five failure modes (unknown term, invalid level, out-of-range budget, cannot-disable, carried-over) reduce to one choke point: `spec := insp.ReasoningSpec(req.Model); if !spec.accepts(req.Reasoning) → apply spec.Default + emit one Warning`. An optional advisory `spec.Validate(v) error` can let an eager consumer (REPL) pre-reject bad input, but it is **not** the enforcement point.
+
+**Why the universal `ReasoningEffort` enum was rejected (rationale, for the design author).** (1) A cross-model "nearest" requires rebuilding the very ordinal ladder being removed, and it is **undefinable** across a discrete enum and a `thinkingBudget` integer without arbitrary bucketing. (2) The per-model value sets genuinely differ even *within* effort-enum providers (`xhigh` exists on Opus but not Sonnet; gpt-5.4 default `none` vs gpt-5.5 default `medium`; GLM uses `high`/`max`, not `low`/`medium`/`high`), so one enum would either over-promise values a model rejects or under-expose values it supports. (3) For a *verification harness* (agentrepl's whole purpose), honoring exactly-the-native-value-or-warning-and-defaulting is the honest, predictable behavior; silent lossy coercion is precisely the bug class the harness exists to expose. The native-first surface + introspection + warn/default is strictly more truthful and not materially more code (the per-provider native mapping already had to exist in each adapter).
+
+### 7.2 Preserved cross-turn reasoning state (unchanged by native-first)
 
 **How reasoning content is delivered** — all as a *distinct* channel, never inline with the answer: Anthropic `thinking` blocks + opaque **`signature`** (raw CoT never returned; summary or omitted); OpenAI `reasoning` Items + **`encrypted_content`** blob (summaries only); Google `thought:true` parts + **`thoughtSignature`** (summaries); Z.ai plain-text **`reasoning_content`** (full text, no signature). **Streaming**: Anthropic `thinking_delta`/`signature_delta`; OpenAI `response.reasoning_summary_text.delta`; Google incremental thought parts; Z.ai `delta.reasoning_content`.
 
@@ -360,11 +444,21 @@ Google's per-part positional binding is the sharpest: the signature rides on a *
 
 **Interface implications — concrete recommendations:**
 1. **Add a first-class `ReasoningBlock` to the canonical message model** (§4.1), carrying: provider-opaque bytes (`signature`/`encrypted_content`/`thoughtSignature`/raw `reasoning_content`), an optional human-readable summary, and **association metadata** (which tool-call it binds to — required for Gemini). Treat the opaque payload as **preserve-and-replay-verbatim** — never synthesize, mutate, or reorder it. The block must survive the auto-loop and be re-emitted on the tool-result turn for the same provider/model. ⚠ **This block is provider-and-model-bound** — its opaque payload cannot cross a mid-conversation provider switch (unlike text/tool blocks). Design choice for the author: drop reasoning blocks on switch (safe — they're only needed by the model that produced them) and document it.
-2. **Uniform `ReasoningEffort` config knob** on the request/state, mapped per §-table above, validated per model.
+2. **Native-first reasoning knob + introspection (§7.1)** on the request/state — a tagged `ReasoningValue` (native level / native budget / disabled / unset), validated against the selected model's `ReasoningSpec` at request-build time, warning + falling back to the model's default on non-native input. *(This replaces the former "uniform `ReasoningEffort` enum" recommendation; §7.1 is the authority.)* The §7.1 reasoning-control knob and this §7.2 `ReasoningBlock` are independent: the knob says *how hard* to think (native, validated, fallible); the block carries the model's *prior* opaque reasoning state forward verbatim. Both round-trip through the auto-loop.
 3. **Surface reasoning summary text** as a distinct streaming event/part (honoring the full-transparency promise), separate from the opaque replay payload. Default providers to emit summaries (Anthropic `display:"summarized"`, OpenAI `summary:"auto"`, Google `includeThoughts:true`). Raw CoT is unavailable on all but Z.ai, so "transparency" = summaries for three of four.
 4. **OpenAI:** default `store:false` + auto-inject `include:["reasoning.encrypted_content"]` so the stateless multi-turn tool loop has its reasoning chain.
 
-⚠ **Uncertainty flags (re-verified 2026-06-17 — most now resolved):** `gpt-5.4-nano` **does exist** (prior "nonexistent" note retracted), as do `gpt-5.4-mini`, `gpt-5.5`, `gpt-5.5-pro`, `gpt-5.4`; `gpt-5.5-mini`/`gpt-5.5-nano` do **not** exist; `o3`/`o4-mini` exist but are **deprecated** (drop). Gemini flash naming is resolved: `gemini-3.5-flash` (stable) ≠ `gemini-3-flash-preview` (preview) — two models; the 3.x **Pro** is preview-only (`gemini-3.1-pro-preview`; no GA `gemini-3.1-pro`). Gemini 3.x uses **`thinking_level`** (`minimal`/`low`/`medium`/`high`; `thinking_budget` deprecated-but-accepted), 2.5 uses `thinkingBudget`. **Anthropic Opus 4.8 reasoning is always-on/adaptive and CANNOT be fully disabled** (effort `low`/`high`/`xhigh`/`max`, default `high`; `budget_tokens` removed) — so `EffortOff` is invalid on Opus 4.8, not only on the always-on Gemini Pro models. Still genuinely open: Z.ai hard-fail-vs-degrade on dropped `reasoning_content` under preserve mode; `gpt-5.5-pro`'s exact effort levels/default and whether it accepts `none` (its model page confirms reasoning support but doesn't enumerate levels); and Z.ai's exact error-envelope shape (the official error-code page 404'd on 2026-06-17 — the Zhipu string-numeric `code` convention is assumed, verify against a live 4xx).
+⚠ **Uncertainty flags (reasoning re-verified per-provider 2026-06-18; model-list flags from 2026-06-17 unchanged):** `gpt-5.4-nano` **does exist**, as do `gpt-5.4-mini`, `gpt-5.5`, `gpt-5.5-pro`, `gpt-5.4`; `gpt-5.5-mini`/`gpt-5.5-nano` do **not** exist; `o3`/`o4-mini` exist but are **deprecated** (drop). Gemini flash naming: `gemini-3.5-flash` (stable) ≠ `gemini-3-flash-preview` (preview); the 3.x **Pro** is preview-only (`gemini-3.1-pro-preview`; no GA `gemini-3.1-pro`). Gemini 3.x uses `thinkingLevel`, 2.5 uses `thinkingBudget` (an int; deprecated-but-accepted on 3.x — never send both, it 400s).
+
+Reasoning-specific open items and **corrections** from the 2026-06-18 native re-verification (see §7.1 table for the verified spec):
+- **CORRECTION — Opus 4.8 *can* be disabled.** Current Anthropic docs (effort + adaptive-thinking pages) show Opus 4.8 thinking is **off unless `thinking:{type:"adaptive"}` is set**, and `{type:"disabled"}` is accepted — so the prior "always-on / cannot disable" claim was **wrong for Opus 4.8** and attaches instead to **Fable 5 / Mythos 5** (not in the curated set). Confirmed unchanged for Opus 4.8: `budget_tokens` removed (400), effort enum (default `high`).
+- **CORRECTION — Haiku 4.5 has no `effort` field.** It is a classic extended-thinking model: `thinking:{type:"enabled",budget_tokens}` only; sending `effort` 400s. Its native reasoning term is a **token budget**, not an effort enum — a genuine native divergence the universal enum would have masked.
+- **Sonnet 4.6 effort set excludes `xhigh`** (`low/medium/high/max`); `xhigh` is Opus-only (and Fable/Mythos 5).
+- **`gpt-5.5-pro` effort levels/default are estimates** (`high`/`xhigh`, default `high`, no `none` → always-on): the model page renders the field but did not surface the exact enumeration; grounded on the consistent Pro lineage (gpt-5-pro = `high`-only; gpt-5.2-pro = `medium/high/xhigh`). Verify against a live 400 before relying on it.
+- **`gpt-5.4-mini`/`-nano` defaults** (`none`) and their acceptance of `xhigh` are estimates (official launch post says `xhigh` was added for both; one secondary source disputes nano) — gate `xhigh` on nano behind a check if strictness matters.
+- **Gemini 2.5 budget ranges** are verified (Flash `0–24576`, Pro `128–32768`); `-1`=dynamic, `0`=off (Flash only; Pro rejects `0`). **`gemini-3.1-flash-lite` default** (`medium`) is assigned by tier analogy — verify via a live `models.get`.
+- **GLM `reasoning_effort` is glm-5.2-confirmed, glm-5.1-likely** (`high`/`max`, default `max`); glm-4.6/4.7 have on/off only. Hosted z.ai uses `thinking:{type:"disabled"}` to disable — **not** the open-weights `enable_thinking` field.
+- Still genuinely open (preservation side, §7.2): Z.ai hard-fail-vs-degrade on dropped `reasoning_content` under preserve mode; Z.ai's exact error-envelope shape (error-code page 404'd 2026-06-17 — Zhipu string-numeric `code` assumed, verify against a live 4xx).
 
 ---
 
@@ -459,7 +553,7 @@ The product now promises **remote MCP tool servers**. AgentKit is the MCP **clie
 8a. **Baked-in cost (§6.5).** Ship a flat per-model rate table (nano-USD/token, populated in §6.5) keyed to the closed model set so every supported model is priced; cost = `Σ bucket × rate` over the disjoint `Usage`. One unresolved design call: the flat table can't represent the context-length tiers on gemini-2.5-pro / gemini-3.1-pro-preview / gpt-5.5 / gpt-5.4 (gpt-5.5-pro is flat) — recommend baking low-tier rates and documenting the >threshold undercount. (D16 already adopted a tiered `Pricing` struct, so this is largely resolved in design — see §6.5 reconciliation for the remaining id/tier corrections.)
 9. **Retry**: honor server delay → else full-jitter backoff; never retry after first stream byte; honor the non-retryable category list.
 10. **OpenAI-family = two adapters.** Responses API (stateless, `store:false`, resend history) for OpenAI proper; a **Chat-Completions adapter with configurable base URL** for OpenAI-compatible providers (**Z.ai/GLM**), reused with three deltas (Zhipu error parsing, `thinking`/`reasoning_content`, `tool_choice=auto`-only). Build the OpenAI-compatible path on a configurable base URL from day one so Z.ai (and any other compatible endpoint) is nearly free.
-11. **Reasoning is first-class (§7).** Add a preserve-and-replay-verbatim `ReasoningBlock` (opaque signature/encrypted/thoughtSignature + optional summary + tool-call association) that round-trips across the auto-loop; a neutral `ReasoningEffort` knob mapped per model; surface reasoning summaries as a distinct stream event; OpenAI default `store:false` + `include:["reasoning.encrypted_content"]`. Reasoning blocks are provider/model-bound — drop them on a mid-conversation provider switch.
+11. **Reasoning is first-class — two independent parts (§7).** (a) **Control (§7.1, native-first):** reasoning is set in each model's own native term/values via a tagged `ReasoningValue` (native level / native budget / `DisableReasoning()` / unset), with a **per-model `ReasoningSpec` introspection API** (term + accepted levels-or-`[Min,Max]`-range + sentinels + default + `CanDisable`) that consumers render and validate against. **No universal enum, no cross-model translation.** Non-native input (unknown term, invalid/out-of-range value, cannot-disable, or a setting carried over after a model switch) is validated **at request-build time against the selected model** and produces a **typed `Warning` + fallback to the model's default** — never silent, never turn-breaking. (b) **Preservation (§7.2):** a preserve-and-replay-verbatim `ReasoningBlock` (opaque signature/encrypted/thoughtSignature + optional summary + tool-call association) that round-trips across the auto-loop; surface reasoning summaries as a distinct stream event; OpenAI default `store:false` + `include:["reasoning.encrypted_content"]`. Reasoning blocks are provider/model-bound — drop them on a mid-conversation provider switch. The native vocabulary genuinely doesn't unify (effort enum vs `thinkingBudget` int vs on/off-only; values differ per model even within a provider), which is exactly why the universal `ReasoningEffort` enum was removed (§7.1 rationale).
 12. **Caching (§8): don't sabotage it, don't build an API for it.** Stable deterministic prefix (frozen system, sorted/deterministic tools, append-only messages), volatile context injected late, cached tokens reported. Set a default Anthropic `cache_control` breakpoint (opt-in provider) so the uniform surface doesn't under-cache. Defer explicit caches/TTL knobs.
 13. **Decided — raw HTTP, no third-party libraries** (§11). The no-library constraint settles it: all four provider adapters and the MCP client are hand-rolled over the standard library; SSE parsing, partial-JSON tool accumulation, retry/backoff, and error/usage extraction are AgentKit's own. The official SDKs, MCP `go-sdk`, `invopop/jsonschema`, and `cenkalti/backoff` are excluded.
 14. **MCP client (§9): remote-only, Streamable HTTP, tools-only, hand-rolled.** Build a minimal raw-HTTP Streamable-HTTP client (4 calls: `initialize` / `initialized` / `tools/list` / `tools/call`) — the one part to get right is the **dual `application/json`-vs-`text/event-stream` response path**, which reuses AgentKit's existing provider SSE code. Wrap each MCP tool as an ordinary `Tool`; **prefix `<serverName>_<tool>` and sanitize to the strict tool-name charset**, routing by a stored `(server, originalName)` map; **hard-error on collision** (no silent shadow). Reuse the §4.3 Gemini schema converter at the Google boundary, but **warn on lossiness** (MCP schemas are third-party). Map `isError:true`→tool-result-to-model vs JSON-RPC/transport-error→uniform error by **`result` vs `error` envelope**; the §6.1 taxonomy absorbs MCP with **no new sentinel** (add an `MCPServer`/source field for attribution). **Static bearer-token auth, no interactive OAuth**; surface OAuth-required `401`s as `ErrAuthentication`. **Do not auto-retry `tools/call`** (non-idempotent); retry only idempotent discovery. Keep tool order deterministic for caching.

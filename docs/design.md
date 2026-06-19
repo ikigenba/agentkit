@@ -31,7 +31,7 @@ type Conversation struct {
     Provider Provider    // swappable between turns; carries its own credentials (Decision 5)
     Model    string      // swappable between turns
     System   string      // system prompt — a field, not a message
-    Gen      GenSettings // temperature, max tokens, reasoning effort, …
+    Gen      GenSettings // temperature, max tokens, native reasoning value, …
     Tools    []Tool      // registered tools
     History  []Message   // accumulates append-only across turns
 }
@@ -307,7 +307,7 @@ Settled choices:
 - R-SX1B-XRK2 — a `RawTool` whose hand-written schema is not parseable/valid JSON Schema surfaces `ErrInvalidConfig` (matchable via `errors.Is`) through the returned `Stream` at the `Send` boundary, with no provider call issued; a valid one passes the gate.
 - R-SZH4-PB1G — a `Send` whose `Tools` contains two tools sharing a `Name()` surfaces `ErrInvalidConfig` (matchable via `errors.Is`) through the returned `Stream`, leaves `History` unchanged, and issues no provider call.
 - R-X3VB-65U3 — the Google adapter converts a tool's JSON Schema to `*genai.Schema`, dropping unsupported constructs (`$ref`/`additionalProperties`/`oneOf`) without erroring.
-- R-6ZTS-NFNZ — an MCP tool whose third-party `inputSchema` contains Gemini-unsupported constructs converts best-effort at the Google boundary and emits a `Warning` (via `Stream.Warnings()`) naming the server+tool and dropped keywords; under Anthropic/OpenAI the same tool registers and runs with no warning.
+- R-6ZTS-NFNZ — an MCP tool whose third-party `inputSchema` contains Gemini-unsupported constructs converts best-effort at the Google boundary and emits a `Warning{Setting:"tool_schema", Code:WarnToolSchemaLossy}` (via `Stream.Warnings()`) whose `Detail` names the server+tool and dropped keywords; under Anthropic/OpenAI the same tool registers and runs with no warning.
 
 ## Decision 5 — Provider packaging, selection, and credential placement
 
@@ -367,59 +367,93 @@ Settled choices:
 - R-H65D-HYXH — assigning a new `Provider` (and `Model`) between turns routes the next `Send` to the new backend with `History` intact.
 - R-7GGH-BPYN — `Send` with a `Model` id the selected provider's registry does not know surfaces `ErrInvalidConfig` (matchable via `errors.Is`) through the returned `Stream` (validity gate, D16) and issues no provider call; every exported model constant passes this gate.
 
-## Decision 6 — Generation settings, the reasoning knob, and degrade-with-warning
+## Decision 6 — Generation settings and the native reasoning value
 
-**Decision.** `Conversation.Gen` holds uniform sampling and reasoning controls. Reasoning is a single neutral ordinal mapped per provider and validated per model; when a provider can't honor a requested setting it degrades and records an explicit `Warning` (never silent), surfaced via a terminal `Stream.Warnings()` accessor.
+**Decision.** `Conversation.Gen` holds uniform sampling controls plus a **native-per-model** reasoning value. Reasoning is expressed in the *selected model's own* native term and values — there is **no** cross-model vocabulary and **no** translation. A value the model natively understands is honored exactly; anything it does not (unknown term, invalid level, out-of-range budget, a disable request a model can't honor, or a value carried over from a previously-selected model) is **warned and falls back to the model's default** — never silent, never turn-breaking. The per-model spec that defines "natively understood," and the introspection that exposes it, live in Decision 16; the warn surface is `Stream.Warnings()` (Decision 2).
+
+The consumer sets reasoning with a tagged `ReasoningValue` carrying exactly one native form, so the value flows to the adapter untranslated:
 
 ```go
 // GenSettings holds uniform generation controls. The zero value is "use each
-// provider's defaults": nil/0 fields are omitted from the request.
+// provider's defaults": nil/0/unset fields are omitted from the request.
 type GenSettings struct {
-    Temperature *float64        // nil → provider default (pointer so 0.0 is distinguishable)
-    TopP        *float64        // nil → provider default
-    MaxTokens   int             // 0 → adapter-supplied default (Anthropic requires a value)
-    Reasoning   ReasoningEffort // zero value EffortDefault
+    Temperature *float64       // nil → provider default (pointer so 0.0 is distinguishable)
+    TopP        *float64       // nil → provider default
+    MaxTokens   int            // 0 → adapter-supplied default (Anthropic requires a value)
+    Reasoning   ReasoningValue // zero value = unset → model default, no warning
 }
 
-// ReasoningEffort is a neutral ordinal mapped to each provider's reasoning
-// control and validated per model. EffortDefault leaves the model default.
-type ReasoningEffort int
-const (
-    EffortDefault ReasoningEffort = iota // provider/model default — send nothing special
-    EffortOff                            // disable reasoning where the model allows it
-    EffortMinimal
-    EffortLow
-    EffortMedium
-    EffortHigh
-    EffortMax
-)
+// ReasoningValue carries exactly one native reasoning form for the selected
+// model, flowing to the adapter untranslated. The four states — unset, a native
+// level string, a native token budget, explicit-disabled — are mutually
+// exclusive by construction (unexported fields; built only via the constructors
+// below). The zero value is "unset": use the model's default, emit no warning.
+type ReasoningValue struct { /* unexported: tag + level string + budget int */ }
 
-// Warning records a requested setting a provider could not honor as asked.
+func Level(s string) ReasoningValue    // a native level string: Level("high"), Level("xhigh"), Level("minimal")
+func Budget(n int) ReasoningValue      // a native token budget: Budget(8000)
+func DisableReasoning() ReasoningValue // explicit off; the adapter lowers it to the model's native off-form
+```
+
+```go
+conv.Gen.Reasoning = agentkit.Level("xhigh")   // valid on opus, warns+defaults on sonnet (no xhigh)
+conv.Gen.Reasoning = agentkit.Budget(8000)     // valid on gemini-2.5/haiku, warns on an enum model
+conv.Gen.Reasoning = agentkit.DisableReasoning() // off where the model allows it; warns on a can't-disable model
+```
+
+**Warn-and-default mechanism.** Validation is a single choke point at **request-build time, in the adapter**, against the request's selected model: `spec := <registry>.ReasoningSpec(req.Model); if !spec.accepts(req.Gen.Reasoning) { apply spec.Default; emit one Warning }`. A natively-understood value (or unset) emits nothing and is sent as-is. All the non-native cases — wrong value kind (a budget on an enum model or a level on a range model), a level string outside `spec.Levels`, a budget outside `[Min,Max]` and not a sentinel, a disable a model can't honor, and a value **carried over from a previously-selected model** — funnel through this one check; the carried-over case is *why* validation must be at build time against `req.Model`, not at set time. The fallback never breaks the turn: the request is still issued, with the model's default reasoning.
+
+The `Warning` is one honest flat struct, shared by every degrade-and-warn case (reasoning, Z.ai `tool_choice`, MCP/Gemini schema lossiness), surfaced via `Stream.Warnings()` (D2):
+
+```go
+// Warning records a requested setting the adapter could not honor as asked and
+// degraded. Every field is meaningful for every warning kind — no kind-specific
+// fields left zero.
 type Warning struct {
-    Setting string // e.g. "reasoning_effort", "tool_choice"
-    Detail  string // what was requested and what was applied instead
+    Setting string      // "reasoning" | "tool_choice" | "tool_schema"
+    Code    WarningCode // classifiable reason
+    Detail  string      // human-readable: what was asked, what was applied instead
 }
+
+type WarningCode int
+const (
+    WarnReasoningUnsupported  WarningCode = iota // value not accepted by the model (wrong kind, bad level, out-of-range budget, or carried over from a prior model)
+    WarnReasoningCannotDisable                   // DisableReasoning() against a model that cannot disable
+    WarnToolChoiceForced                         // forced tool_choice degraded to auto (Z.ai)
+    WarnToolSchemaLossy                          // MCP/tool JSON-Schema keywords dropped at the Gemini boundary (D4)
+)
 ```
 
 Settled choices:
-- **`ReasoningEffort` is one neutral ordinal**, mapped per provider per research §7 (Anthropic `effort`; OpenAI `reasoning.effort`; Gemini `thinkingLevel`/`thinkingBudget`; Z.ai `thinking` + `reasoning_effort`). No raw token budget is exposed — the adapter translates the ordinal to Gemini 2.5's budget int. This is what makes reasoning uniform on the outside.
-- **`EffortDefault` is the zero value** — an untouched `GenSettings` leaves each provider at its default; the consumer opts into a level only when they care.
-- **Degrade-with-warning, never silent, never (usually) fatal.** `EffortOff` on a model that can't disable reasoning (Opus 4.8, Gemini 2.5 Pro, 3.x Pro — all always-on/adaptive) clamps to the nearest supported effort and records a `Warning`; same for Z.ai's `tool_choice=auto`-only constraint. Keeps the uniform surface working while staying explicit.
+- **`ReasoningValue` is a tagged carrier with three constructors** (`Level`/`Budget`/`DisableReasoning`) and an unset zero value — no exported fields, so the four states cannot be combined or half-set. This mirrors the sealed-union idiom already used for `Block` (D3) and `Event` (D2).
+- **`Level` takes a raw native string, not a typed enum.** The accepted set differs per model and there is no honest cross-model enum (the reason the former `ReasoningEffort` ordinal was removed); validity is judged later against the model's spec (D16), not by the type system here.
+- **`DisableReasoning()` is first-class**, not `Level("none")`/`Budget(0)` — *which* value means "off" is model-specific (`thinking:{type:"disabled"}` vs `reasoning.effort:"none"` vs `thinkingBudget:0`); the consumer expresses intent and the adapter lowers it to that model's native off-form (or warns+defaults if the model cannot disable).
+- **Unset (zero value) leaves the model default** — an untouched `GenSettings` sends no reasoning parameter and emits no warning, so a consumer who ignores reasoning is unaffected.
+- **No cross-model translation in the type.** A `ReasoningValue` reaches the provider adapter as the exact native form it was constructed with; the per-adapter lowering to wire fields is Decision 9, the warn-and-default contract is below.
+- **Degrade-with-warning, never silent, never turn-breaking.** A reasoning value the selected model does not natively understand falls back to the model's default and records a `Warning` (surfaced via `Stream.Warnings()`); the turn still succeeds. The same degrade-and-warn rule covers Z.ai's `tool_choice=auto`-only constraint.
+- **Validation is one choke point, in the adapter, at request-build time.** All five non-native cases (wrong kind, bad level, out-of-range budget, can't-disable, carried-over) reduce to `spec.accepts(req.Gen.Reasoning)` against `req.Model`. It lives in the adapter, not the orchestrator: the adapter already produces `Warning`s (`RoundTrip.Warnings()`, D9), reads its own registry directly, and the carried-over case is only detectable once the new model is the selected one — i.e. at build time.
+- **`Warning` is one honest flat struct, not a god-struct and not a union.** `{Setting, Code, Detail}` — every field meaningful for every warning kind. `Code` classifies (so a consumer can tell programmatically that reasoning was not honored); `Detail` is the human string. The five reasoning failure modes collapse to two codes (`WarnReasoningUnsupported`, `WarnReasoningCannotDisable`) because they share one detection point and one remedy; "carried-over" is a *cause* noted in `Detail`, not its own code.
 - **Pointers for `Temperature`/`TopP`** distinguish "unset" (omit) from a deliberate `0.0`. `MaxTokens int` with `0` → adapter-default (supplies Anthropic's required value).
-- **`Warnings()` is a terminal accessor, not an `Event`** — warnings are request-config diagnostics, not model output; the event type switch stays about output, consistent with `Err()`/`Usage()`. (Added to Decision 2's `Stream`.)
+- **Removing `ReasoningEffort` is a breaking change to the reasoning surface**, acceptable under the pre-stable `v0.x` line (product contractual constant: starting `v0.1.0`, `v0` signals a public-but-evolving surface). The `ReasoningEffort` enum and the `EffortDefault…` constants are gone; consumers move to `ReasoningValue` + the `ReasoningInspector` introspection (D16). No compatibility shim is kept (principles: delete over maintain).
 
 **Rejected.**
-- *Exposing a raw reasoning token budget* — leaks a provider detail; ordinal + per-provider translation instead.
-- *A `Warning` event in the stream* — mixes config diagnostics into the output taxonomy; terminal accessor instead.
-- *Hard-erroring on an unsupported reasoning level* — a model that can't disable reasoning shouldn't fail the turn; degrade-and-warn is friendlier.
+- *A single neutral `ReasoningEffort` ordinal mapped per provider* — the removed design; "nearest" is undefinable across a discrete enum and an integer token budget, and per-model value sets differ even within effort-enum providers (research §7.1). Native-first is strictly more truthful for a verification harness.
+- *`Level`/`Budget`/disabled as separate exported fields on `GenSettings`* — lets a consumer set more than one (ambiguous) and leaks the tag; the opaque carrier forbids it.
+- *`Reasoning *ReasoningValue` (pointer for unset)* — the zero value already means unset cleanly; a pointer only adds nil-handling.
+- *Overloading `Level("none")`/`Budget(0)` for disable* — forces the consumer to know each model's native off-token, breaking the thin-consumer promise; `DisableReasoning()` carries the intent.
 - *Plain `float64` temperature with a sentinel* — `0.0` is legal; pointer is unambiguous.
-- *A separate `Reasoning` config object* — over-structured for one enum; it is just another generation control.
+- *An enriched `Warning` with `Model`/`Given`/`Applied ReasoningValue` fields* (research §7.1 sketch) — those fields are meaningless for `tool_choice`/`tool_schema` warnings, so the struct would lie for two of three kinds (exactly D7's rejected god-struct); `Detail` carries "requested X, applied Y" without the lie.
+- *A sealed `Warning` interface with per-kind variants* — the most strongly-typed option and it matches the `Block`/`Event` idiom, but consumers only display warnings, not branch on their payloads; D7 already set the precedent of one honest struct (not a union) for this exact "several failure shapes, one type" situation.
 
 **Verification.**
 - R-P5U3-5CFZ — a `GenSettings` with `Temperature`/`TopP`/`MaxTokens` set reaches each provider's request with those values; leaving them nil/0 omits the parameter so the provider default applies.
-- R-P71Z-J46O — a non-`EffortDefault` `ReasoningEffort` maps to the correct provider-specific reasoning parameter on each of the four providers per the §7 mapping.
-- R-P89V-WVXD — `EffortOff` on a model that cannot disable reasoning (Opus 4.8 — the default top-tier model — and Gemini 2.5 Pro) degrades to the nearest supported effort and records a `Warning` via `Stream.Warnings()`, and the turn still succeeds.
-- R-P9HS-ANO2 — a forced `tool_choice` against the `zai` provider (Z.ai, `auto`-only) degrades to `auto` and records a `Warning` rather than failing.
+- R-B7YX-J342 — a reasoning value the selected model does not natively understand (wrong kind, a level outside `spec.Levels`, or a budget outside `[Min,Max]`) is replaced by `spec.Default` in the built request and records exactly one `Warning{Setting:"reasoning", Code:WarnReasoningUnsupported}`; the request is still issued and the turn succeeds.
+- R-B96T-WUUR — validation runs at request-build against `req.Model`: a `Reasoning` value native to a *previously*-selected model but invalid for the now-selected model warns (`WarnReasoningUnsupported`) and applies the new model's default — proving the carried-over case is caught at the build-time choke point, not at set time.
+- R-T40A-VZQ7 — a `Level`/`Budget`/`DisableReasoning` value reaches the provider adapter as the exact native form it was constructed with, with no cross-model mapping applied between the consumer call and the adapter seam.
+- R-T587-9RGW — an unset (zero-value) `Reasoning` omits all reasoning parameters from the built request and produces no `Warning`.
+- R-T6G3-NJ7L — the four `ReasoningValue` states (unset, level, budget, disabled) are mutually exclusive: a value built by one constructor never presents as another at the adapter seam (e.g. a `Budget` value is not readable as a level).
+- R-P89V-WVXD — a `DisableReasoning()` against a model that cannot disable reasoning (gemini-2.5-pro, gpt-5.5-pro) falls back to the model's default and records a `Warning{Code:WarnReasoningCannotDisable}` via `Stream.Warnings()`, and the turn still succeeds.
+- R-P9HS-ANO2 — a forced `tool_choice` against the `zai` provider (Z.ai, `auto`-only) degrades to `auto` and records a `Warning{Code:WarnToolChoiceForced}` rather than failing.
 - R-PBXL-275G — when every requested setting is honored, `Stream.Warnings()` is empty.
 
 ## Decision 7 — The error model
@@ -603,6 +637,19 @@ Settled choices:
 - **Loop continuation keys off the assembled `Message` containing `ToolUseBlock`s**; `FinishReason` is carried for diagnostics and to map `FinishContentFilter`→`ErrContentFilter`.
 - **`RoundTrip.Events()` yields only `TextDelta`/`ReasoningDelta`**; `ToolUse`/`ToolResult`/`MessageDone` are emitted by the orchestrator — keeping transparency logic in one place.
 - **Reasoning-block drop-on-switch is localized in the adapter**: each adapter emits back only `ReasoningBlock`s whose `Opaque` is its own format and drops foreign ones — a switch sheds prior reasoning with no origin-tag on the block.
+- **Each adapter lowers the native `ReasoningValue` to its own wire fields, keyed on the model's `spec.Kind` (D6/D16) — no shared `applyReasoning`, no cross-model normalization.** The wire shapes do not unify, so the lowering is per-provider, and a value whose kind the model doesn't accept warns+defaults at the build-time choke point (D6). The full table:
+
+  | Provider / family | `Level(s)` → | `Budget(n)` → | `DisableReasoning()` → | unset → |
+  |---|---|---|---|---|
+  | **Anthropic** opus-4-8 / sonnet-4-6 | `output_config.effort=s` **and** enable thinking (`thinking:{type:"adaptive"}`) | wrong kind → warn+default | `thinking:{type:"disabled"}` | omit (default: thinking off) |
+  | **Anthropic** haiku-4-5 | wrong kind → warn+default | `thinking:{type:"enabled",budget_tokens:n}` | `thinking:{type:"disabled"}` | omit (default: off) |
+  | **OpenAI** gpt-5.x | `reasoning.effort=s` | wrong kind → warn+default | `reasoning.effort:"none"` (gpt-5.5-pro can't → warn) | omit |
+  | **Google** 2.5 flash/pro | wrong kind → warn+default | `thinkingConfig.thinkingBudget=n` | `thinkingBudget:0` (pro can't, min 128 → warn) | omit (default: dynamic) |
+  | **Google** 3.x flash / flash-lite / pro-preview | `thinkingConfig.thinkingLevel=s` | wrong kind → warn+default | 3.x can't disable → warn | omit |
+  | **Z.ai/GLM** 5.x | `thinking:{type:"enabled"}` + `reasoning_effort=s` | wrong kind → warn+default | `thinking:{type:"disabled"}` | omit (default: enabled) |
+  | **Z.ai/GLM** 4.6/4.7 (toggle) | no levels → warn+default | wrong kind → warn+default | `thinking:{type:"disabled"}` | omit (default: enabled) |
+
+  Three load-bearing rules: (1) **Anthropic is two-axis — a `Level` also enables thinking** (`type:"adaptive"`); the consumer's single `ReasoningValue` means "think this hard," so an effort level implies thinking-on, and `DisableReasoning()` is the only path to the off axis (this also makes §7.2 thinking-block preservation engage exactly when reasoning is on). (2) **Gemini never sends both `thinkingBudget` and `thinkingLevel`** (400) — `spec.Kind` selects exactly one field per model; the other kind warns. (3) **The off-form is per-model** (`type:"disabled"` / `effort:"none"` / `thinkingBudget:0`), which is why `DisableReasoning()` is a distinct intent and a can't-disable model warns instead.
 - **OpenAI Responses reasoning replay is mandatory, fixed adapter behavior.** The `openai` adapter sets `store:false` and injects `include:["reasoning.encrypted_content"]` on **every** request — never a consumer knob. Without `include`, OpenAI returns no `encrypted_content`, so the stateless multi-turn tool loop (history resent every round-trip) loses its reasoning chain ("reasoning item not found" / silent degradation on the v1 reasoning-model targets). The returned `encrypted_content` is what populates `ReasoningBlock.Opaque` for OpenAI; the resend-history model replays it verbatim. `store:false` is inseparable from `include` here — the ZDR path only returns `encrypted_content` when not server-stored — and it also keeps the adapter stateless/symmetric (no `previous_response_id`, per Decision 5). The other three reasoning providers likewise capture a non-empty `Opaque` from their own echo field (Anthropic `signature`, Gemini `thoughtSignature`, Z.ai `reasoning_content`).
 - **A replayed OpenAI reasoning item must always carry `summary`, even empty.** OpenAI's Responses API requires every `reasoning` **input** item to include a `summary` array — it may be empty (`[]`) but must be **present**. The adapter does not request summaries (it sends only `reasoning.effort`, never `reasoning.summary:"auto"`), so `ReasoningBlock.Summary` is almost always `""`; the serialized reasoning item must therefore still emit `"summary": []` rather than omit the field. Omitting it — the trap being a struct tag's `omitempty`, which drops a nil/empty slice — makes OpenAI reject the request with `400 Missing required parameter: 'input[N].summary'`. The failure surfaces on the **second** turn of any reasoning conversation (the first turn to replay a prior reasoning item, e.g. the replayed item lands at `input[1]`), not the first, so it is invisible to single-turn tests. The serialization is exactly: `[{"type":"summary_text","text":<Summary>}]` when `Summary` is non-empty, `[]` otherwise — and the empty-`[]` case must survive on the wire. This is independent of any future `summary:"auto"` request knob: even with auto-summaries some reasoning items return empty and must still replay `summary:[]`.
 - **A replayed tool call serializes `arguments` as a JSON string, not a nested object (OpenAI Responses).** The Responses `function_call` **input** item's `arguments` field is a **string** carrying the JSON text — exactly the form the model emits on output, where `arguments` accumulates as a string and the adapter's *parse* side already types it `string`. The canonical `ToolUseBlock.Input` is a `json.RawMessage` (a JSON value), so the adapter must emit it as `string(Input)` (`"{\"path\":\"PING\"}"`), never as the raw object (`{"path":"PING"}`). The trap is typing the outbound field `json.RawMessage`, which marshals verbatim as an object; it must be a `string`. Sending the object trips `400 Invalid type for 'input[N].arguments': expected a string, but got an object instead`. Like the `summary` case, this bites only on **replay**: the model's own tool call in the first round-trip succeeds, but the follow-up round-trip of the same turn — which resends the assistant `ToolUseBlock`s as `function_call` items to fetch the final answer — is the first to serialize `arguments` outbound (the replayed call lands at `input[1]`). It was previously masked by the `summary` 400, which failed validation earlier in the same request. **The same object-vs-string defect exists independently in the shared `internal/openaicompat` Chat-Completions path** that backs `zai` (and any future compat provider): there the assistant `tool_calls[].function.arguments` field is likewise typed `json.RawMessage` and set from `ToolUseBlock.Input`, so it serializes as an object while the parse side (`toolFunctionDelta.Arguments`) already types it `string` — the identical outbound/inbound asymmetry. It is masked on Z.ai's default base URL (`api/paas/v4`, which tolerates an object) and only surfaces once `zai.base_url` points at the strict coding endpoint (`api/coding/paas/v4`), which rejects it with `400 Invalid API parameter (type=1210)` on the same replay round-trip. Both adapters need the outbound field retyped `string` and set to `string(Input)`. Anthropic/Gemini take structured tool input directly and are unaffected.
@@ -629,6 +676,7 @@ Settled choices:
 - R-DRFX-VNF2 — the Google adapter, given a visible-text part that also carries a `thoughtSignature`, emits that text as a `TextDelta` and a `TextBlock` in the assembled `Message` (assistant-visible, persisted to `History`), not as a `ReasoningDelta`/reasoning-only part; only a `thought:true` part produces a reasoning summary.
 - R-DTVQ-N6WG — a `thoughtSignature` riding on a `functionCall` (or visible-text) part is still captured into a non-empty `ReasoningBlock.Opaque` bound to the relevant `ToolUseBlock` via `BoundToID`, so the byte-for-byte replay guarantee (R-IN0J-QMSI / R-XW08-D4YL) holds without the signature consuming the part's tool call or text.
 - R-GSIG-PT07 — a request the Google adapter builds for a history whose assistant `ToolUseBlock` carries a bound (Phase-19-captured) `thoughtSignature` serializes that signature as a **part-level** sibling of `functionCall` (`{"functionCall":{"name":…,"args":…,"id":…}, "thoughtSignature":<sig>}`), never nested inside the `functionCall` object, so a follow-up round-trip that replays the prior tool call does not fail with `400 INVALID_ARGUMENT: Unknown name "thoughtSignature" at 'contents[N].parts[0].function_call'`. Covered by a wire/replay test asserting the rebuilt request body places `thoughtSignature` on the part and that `functionCall` carries only `name`/`args`/`id` (the parse-side R-DTVQ-N6WG exercises capture into `Opaque`, not the outbound replay placement).
+- R-ELUQ-VJIQ — each adapter lowers a native `ReasoningValue` to the correct wire field(s) per the lowering table: a `Level` on Anthropic opus/sonnet emits `output_config.effort` **and** enables thinking; a `Budget` on haiku-4-5 / gemini-2.5 emits the token-budget field; a `Level` on gpt-5.x / gemini-3.x / glm-5.x emits the effort/level field; a Gemini request never carries both `thinkingBudget` and `thinkingLevel`; and a value whose kind the model does not accept is replaced by the default and warned (R-B7YX-J342) rather than sent.
 
 ## Decision 10 — The orchestration layer: tool loop, history, transparency, reasoning replay, cache-prefix stability
 
@@ -861,11 +909,50 @@ Settled choices:
 - R-POJA-MHX6 — `TotalUsage()` equals the sum of every turn's `Stream.Usage()` over the conversation.
 - R-PPR7-09NV — `Send` after `Close` returns `ErrClosed` (matchable via `errors.Is`).
 
-## Decision 16 — Baked-in pricing & cost
+## Decision 16 — The model registry: pricing, cost, and reasoning introspection
 
-**Decision.** AgentKit ships per-model pricing in each provider sub-package and computes dollar cost from the disjoint `Usage` buckets (D8). Pricing reaches the orchestrator through the SPI (D9 `Pricing`), so root imports no sub-package. Because the supported-model set is closed and curated (product), **every supported model is priced by construction** — there is no "unpriced" runtime state, so cost is always available.
+**Decision.** AgentKit ships per-model data in each provider sub-package and computes dollar cost from the disjoint `Usage` buckets (D8). Pricing reaches the orchestrator through the SPI (D9 `Pricing`), so root imports no sub-package. Because the supported-model set is closed and curated (product), **every supported model is priced by construction** — there is no "unpriced" runtime state, so cost is always available. The same registry also carries each model's **native reasoning spec** (D6), exposed credential-blind so a consumer can render and accept exactly what each model supports without embedding provider knowledge.
 
-**Single source of truth — the model registry.** Each provider sub-package holds one registry mapping a model id to its `Pricing`, co-located with the exported model constant. D5's "model validity is checked at the Send boundary by the adapter" resolves against *this same registry*: the set of models an adapter will run is, by construction, exactly the set it can price. There is no second table to drift out of sync.
+**Single source of truth — the model registry.** Each provider sub-package holds one registry mapping a model id to its `Pricing` **and** its `ReasoningSpec`, co-located with the exported model constant. D5's "model validity is checked at the Send boundary by the adapter" resolves against *this same registry*: the set of models an adapter will run is, by construction, exactly the set it can price *and* the set whose reasoning vocabulary it can describe and validate. There is no second table to drift out of sync.
+
+**Reasoning introspection (the native-vocabulary descriptor).** The descriptor types and a `ReasoningInspector` interface live in root `agentkit` (one shared shape for root and every sub-package); the per-model data lives in each provider sub-package, exposed as a **credential-blind package-level value** that implements the interface — pure registry reads, no `Provider` handle, no credentials, no network. A consumer (agentrepl) builds a `map[string]ReasoningInspector` keyed by provider name once, then renders `--help` and answers runtime `/get`/`/dump` uniformly with no provider-specific branching — the polymorphism the interface exists to provide.
+
+```go
+// package agentkit — the descriptor types + the introspection interface
+
+type ReasoningKind int
+const (
+    ReasoningEnum   ReasoningKind = iota // discrete native level strings
+    ReasoningRange                       // integer token budget in [Min,Max]
+    ReasoningToggle                      // on/off only, no depth control (e.g. GLM 4.6/4.7)
+)
+
+// ReasoningSpec is the inspectable native-vocabulary descriptor for one model.
+type ReasoningSpec struct {
+    Term       string         // native label: "effort" | "thinking level" | "thinking budget"
+    Kind       ReasoningKind
+    Levels     []string       // Kind==ReasoningEnum: accepted native strings, in the model's own order
+    Min, Max   int            // Kind==ReasoningRange: inclusive valid budget range
+    Sentinels  []Sentinel     // Kind==ReasoningRange: magic ints with native meaning (0=off, -1=dynamic)
+    Default    ReasoningValue // the model's default — what the warn-fallback path (D6) applies
+    CanDisable bool
+}
+type Sentinel struct{ Value int; Meaning string } // e.g. {0,"off"}, {-1,"dynamic"}
+
+// ReasoningInspector reads a provider's native reasoning vocabulary. Implemented
+// by a credential-blind package-level value in each provider sub-package (see
+// below) — NOT by the Provider handle, so introspection needs no credentials.
+type ReasoningInspector interface {
+    ReasoningSpec(model string) (ReasoningSpec, bool) // false if unknown / no reasoning control
+    SupportedReasoning() map[string]ReasoningSpec     // every model's spec, for catalog rendering
+}
+```
+
+```go
+// package anthropic (and identically google, openai, zai): a credential-blind
+// introspector value backed by the package registry — no handle, no network.
+var Reasoning agentkit.ReasoningInspector
+```
 
 ```go
 // Pricing is one model's per-token rates, as one or more context-length tiers.
@@ -915,6 +1002,9 @@ Settled choices:
 - **Tiered pricing via `RateTier`** — a turn is rated wholly at the highest tier whose `MinInputTokens` it meets (matching how providers re-rate the entire request once the prompt crosses the threshold), not a piecewise split.
 - **Reasoning bills at the output rate** (research §6.3) — `ReasoningOutput` priced with `Output`.
 - **Cost surfaced** per-turn (`Stream.Cost()`), cumulative (`Conversation.TotalCost()`), and in the `summary` log record (D15).
+- **Reasoning spec rides the same registry as pricing.** Each registry entry carries both `Pricing` and `ReasoningSpec`, so "supported ⇒ priced" and "supported ⇒ reasoning-describable" are one structural guarantee; the validity gate (D5), the price, and the reasoning vocabulary cannot drift apart.
+- **Introspection types live in root; the implementing value lives per sub-package.** `ReasoningKind`/`ReasoningSpec`/`Sentinel`/`ReasoningInspector` are root types (one shared shape); each sub-package exposes a package-level `Reasoning` value implementing `ReasoningInspector` over its registry. agentrepl holds a `map[string]ReasoningInspector` and renders/validates uniformly — no provider-specific branching, the whole point of the interface.
+- **The introspector is credential-blind — a package-level value, not the `Provider` handle.** It reads only static registry data, so `--help` runs with no keys and constructs no client (agent-repl research §6.88). The `Provider` SPI gains **no** reasoning method: validation+warn live in the adapter (D6/D9), which reads its own registry directly, so root never needs the spec polymorphically (contrast `Pricing(model)`, which root *does* need via the SPI to compute cost).
 
 **Baked-in rate tables** (nano-USD/token; gathered from official provider pricing 2026-06-17 per research §6.5 — re-verify before release). Each row is one `RateTier`; tiered models have two. Anthropic cache-write rates are derived from Anthropic's conventional 0.1×/1.25×/2× multipliers (base input/output published, high confidence); all other providers have no cache-write bucket (0). **gpt-5.5-pro has no cached-input discount**, so its `CacheReadInput` rate equals `InputUncached` (cached reads bill at full input rate).
 
@@ -942,7 +1032,35 @@ Settled choices:
 | glm-4.7 | 0 | 600 | 110 | 0 | 0 | 2200 |
 | glm-4.6 | 0 | 600 | 110 | 0 | 0 | 2200 |
 
-**This table is the contractual source.** The shipped per-provider registries copy these values verbatim, and a golden test holds the code to them — so a transcription slip can't ship a wrong price. **Live-rate re-verification is a release obligation, not a unit test:** these are commercial rates that drift, and two figures are lower-confidence — the gpt-5.5/gpt-5.4 `>272K` threshold and high-tier rates, and Anthropic's multiplier-derived cache-write/read rates (base input/output are published; cache rates use the conventional 0.1×/1.25×/2×). Re-checking them against each provider's live pricing page before a release is owned by the **plan/release process**; when a rate changes, this table is the one place edited and the golden test re-baselined.
+**Baked-in reasoning specs** (the `ReasoningSpec` per model; native vocabulary verified 2026-06-18 per research §7.1 — re-verify before release). `Default` is given as the `ReasoningValue` constructor form. `CanDisable` reflects whether `DisableReasoning()` is honored (else it warns).
+
+| Model | Term | Kind | Levels / Range | Sentinels | Default | CanDisable |
+|---|---|---|---|---|---|---|
+| claude-opus-4-8 | effort | Enum | low, medium, high, xhigh, max | — | `Level("high")` | yes |
+| claude-sonnet-4-6 | effort | Enum | low, medium, high, max | — | `Level("high")` | yes |
+| claude-haiku-4-5 | thinking budget | Range | 1024 … max_tokens−1 ⚠ | — | `DisableReasoning()` (off) | yes |
+| gpt-5.5-pro | effort | Enum | high, xhigh *(est.)* | — | `Level("high")` *(est.)* | no |
+| gpt-5.5 | effort | Enum | none, low, medium, high, xhigh | — | `Level("medium")` | yes |
+| gpt-5.4 | effort | Enum | none, low, medium, high, xhigh | — | `Level("none")` | yes |
+| gpt-5.4-mini | effort | Enum | none, low, medium, high, xhigh | — | `Level("none")` *(est.)* | yes |
+| gpt-5.4-nano | effort | Enum | none, low, medium, high, xhigh | — | `Level("none")` *(est.)* | yes |
+| gemini-2.5-flash | thinking budget | Range | 0 … 24576 | 0=off, −1=dynamic | `Budget(-1)` (dynamic) | yes |
+| gemini-2.5-pro | thinking budget | Range | 128 … 32768 | −1=dynamic (0 rejected) | `Budget(-1)` (dynamic) | no |
+| gemini-3.5-flash | thinking level | Enum | minimal, low, medium, high | — | `Level("medium")` | no |
+| gemini-3.1-flash-lite | thinking level | Enum | minimal, low, medium, high | — | `Level("medium")` *(est.)* | no |
+| gemini-3.1-pro-preview | thinking level | Enum | low, medium, high | — | `Level("high")` | no |
+| glm-5.2 | effort (+ toggle) | Enum | high, max | — | `Level("max")` | yes |
+| glm-5.1 | effort (+ toggle) | Enum | high, max *(under-doc.)* | — | `Level("max")` *(est.)* | yes |
+| glm-4.7 | thinking | Toggle | — (on/off only) | — | unset (enabled) | yes |
+| glm-4.6 | thinking | Toggle | — (on/off only) | — | unset (enabled) | yes |
+
+Caveats the spec data must encode:
+- ⚠ **haiku-4-5's budget upper bound is request-dependent** (`max_tokens−1`). The static spec records `Min=1024` and the model's max-output ceiling as `Max`; the adapter clamps to `min(Max, request.MaxTokens−1)` at build time. Its default reasoning is **off**, so `Default = DisableReasoning()`.
+- **GLM 5.x is two-axis** (an on/off `thinking` toggle *plus* an effort enum): modeled as `Kind=Enum` with `Levels=[high,max]` and `CanDisable=true` (the toggle). GLM 4.6/4.7 have only the toggle: `Kind=Toggle`, no levels, `CanDisable=true`, default enabled (`Default=unset`).
+- **Anthropic effort default is `high`** for display/fallback; the thinking-block axis (off until a level engages `type:"adaptive"`) is handled by the D9 lowering, not the spec value.
+- *(est.)* cells (gpt-5.5-pro levels/default, gpt-5.4-mini/nano defaults, gemini-3.1-flash-lite default) are research estimates — the plan/release process verifies them against a live provider response before release, exactly as for the lower-confidence pricing rows.
+
+**Both tables are the contractual source.** The shipped per-provider registries copy the rate values *and* the reasoning-spec values verbatim, and golden tests hold the code to them — so a transcription slip can't ship a wrong price or a wrong reasoning vocabulary. **Live-rate re-verification is a release obligation, not a unit test:** these are commercial rates that drift, and two figures are lower-confidence — the gpt-5.5/gpt-5.4 `>272K` threshold and high-tier rates, and Anthropic's multiplier-derived cache-write/read rates (base input/output are published; cache rates use the conventional 0.1×/1.25×/2×). Re-checking them against each provider's live pricing page before a release is owned by the **plan/release process**; when a rate changes, this table is the one place edited and the golden test re-baselined.
 
 **Rejected.**
 - *Consumer-supplied rate table* — AgentKit owns the price data; provider rates ship with it.
@@ -950,11 +1068,19 @@ Settled choices:
 - *A flat single-tier `Pricing` struct (bake low-tier rates, document the >threshold undercount)* — simpler, but knowingly under-reports cost on large-context turns; the product makes cost a first-class promise, so `RateTier` pays the small extra surface to stay exact across context bands.
 - *`(Cost, bool)` public return / unpriced `ok=false` path* — models a state the closed curated set makes impossible; a vestigial surface that lies. Removed; the registry guarantees availability.
 - *Two separate tables (model constants + prices) reconciled by a test* — lets the supported set and the priced set drift; the single registry makes "supported ⇒ priced" structural, with the completeness test as belt-and-suspenders.
+- *Introspection as a `Provider`/handle method* — would force `--help` to construct a (fake-keyed) client for static metadata; the credential-blind package-level value avoids it.
+- *Bare package-level functions instead of a `ReasoningInspector` interface* — forces a 4-way `switch provider {…}` in agentrepl for both `--help` and runtime lookups; the interface lets it hold one `map[string]ReasoningInspector` and stay provider-agnostic.
+- *A root-level `agentkit.ReasoningSpecFor(provider, model)`* — root cannot import sub-packages (D9 import-cycle rule), so it cannot host the registry; introspection must originate per sub-package.
 
 **Verification.**
+- R-S6NB-RYUE — each sub-package's `Reasoning` introspector returns specs without constructing a `Provider` handle or issuing any network call (credential-blind: callable with no API key set).
+- R-S7V8-5QL3 — `SupportedReasoning()` returns a `ReasoningSpec` for every exported model constant that has reasoning control, and the returned map is keyed by those exact model ids.
+- R-S934-JIBS — `ReasoningSpec(model)` returns `(spec, true)` for a known reasoning model id and `(_, false)` for an id the provider's registry does not know.
 - R-PTEW-5KVY — for any supported model, `Stream.Cost()` (via `Pricing.Cost`) equals the integer sum of each `Usage` bucket times its rate at the selected tier, with reasoning billed at the output rate.
 - R-V1KQ-IKI6 — every exported model constant in every provider sub-package resolves to a `Pricing` in its registry (supported ⇒ priced; the registry is complete, so no turn can run unpriced).
 - R-VDY4-AP7H — each provider registry's `RateTier` values (per model, per tier) equal the rates published in this decision's table, so the shipped code and the doc cannot silently diverge.
+- R-EN2N-9B9F — each provider registry's `ReasoningSpec` per model (Term, Kind, Levels, Min/Max, Sentinels, Default, CanDisable) equals the reasoning-spec table in this decision, so shipped code and doc cannot diverge on a model's native vocabulary.
+- R-EPIG-0UQT — for every supported model, `spec.Default` is itself accepted by that model's own `spec` (a value in `Levels`, an in-range/sentinel budget, a valid disable, or unset), so the warn-fallback (D6) can never produce a value that would itself warn.
 - R-V2SM-WC8V — a turn whose total input tokens exceed a tiered model's `MinInputTokens` threshold (gemini-2.5-pro, gemini-3.1-pro-preview, gpt-5.5, gpt-5.4) is rated wholly at the high tier; a turn at or below it is rated at the base tier.
 - R-PVUO-X4DC — `TotalCost()` equals the sum of per-turn costs, and the `summary` log record carries it.
 - R-PX2L-AW41 — `Cost.USD()` converts nano-USD to USD correctly.
@@ -1017,4 +1143,4 @@ Settled choices:
 
 ## Status
 
-Fully decided: Decisions 1–17. Consumer surface: D1 (`Conversation` + `Send`), D2 (`Stream` + `Event`), D3 (message & block model), D4 (tools), D5 (provider packaging), D6 (generation settings & reasoning), D7 (error model), D8 (usage), D15 (JSONL event log & lifecycle), D16 (pricing & cost), D17 (MCP servers as a tool source). Internal: D9 (package architecture & adapter SPI), D10 (orchestration layer), D11 (retry & backoff), D12 (raw HTTP), D13 (testing strategy). Example: D14 (REPL). MCP support (D17) reuses the `Tool` abstraction and threads targeted edits through D4 (third-party schema lossiness → warning), D7 (`MCPServer` attribution, no new sentinel), D10 (tool ordering + cache invalidation), D11 (retry discovery, not `tools/call`), D12 (`internal/mcp` client), D13 (fake MCP server). Seams, public interfaces, naming, types, data model, and the testing approach are all decided. The construction order that realizes this design lives in the plan.
+Fully decided: Decisions 1–17. Consumer surface: D1 (`Conversation` + `Send`), D2 (`Stream` + `Event`), D3 (message & block model), D4 (tools), D5 (provider packaging), D6 (generation settings & the native `ReasoningValue` + warn-and-default), D7 (error model), D8 (usage), D15 (JSONL event log & lifecycle), D16 (model registry: pricing, cost & reasoning introspection), D17 (MCP servers as a tool source). Internal: D9 (package architecture, adapter SPI & per-adapter reasoning lowering), D10 (orchestration layer), D11 (retry & backoff), D12 (raw HTTP), D13 (testing strategy). Example: D14 (REPL). Reasoning is native-per-model: a tagged `ReasoningValue` (D6), credential-blind per-model introspection via `ReasoningInspector` (D16), adapter-owned lowering + request-build-time validation that warns and falls back to the model default (D6/D9) — no cross-model enum. MCP support (D17) reuses the `Tool` abstraction and threads targeted edits through D4 (third-party schema lossiness → warning), D7 (`MCPServer` attribution, no new sentinel), D10 (tool ordering + cache invalidation), D11 (retry discovery, not `tools/call`), D12 (`internal/mcp` client), D13 (fake MCP server). Seams, public interfaces, naming, types, data model, and the testing approach are all decided. The construction order that realizes this design lives in the plan.
