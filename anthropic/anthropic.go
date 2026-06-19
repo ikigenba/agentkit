@@ -219,6 +219,7 @@ type wireTool struct {
 type wireBlock struct {
 	Type         string          `json:"type"`
 	Text         string          `json:"text,omitempty"`
+	Thinking     string          `json:"thinking,omitempty"`
 	ID           string          `json:"id,omitempty"`
 	Name         string          `json:"name,omitempty"`
 	Input        json.RawMessage `json:"input,omitempty"`
@@ -284,7 +285,7 @@ func convertMessage(msg agentkit.Message) (wireMessage, error) {
 		case agentkit.ReasoningBlock:
 			signature, ok := anthropicSignature(b.Opaque)
 			if ok {
-				blocks = append(blocks, wireBlock{Type: "thinking", Text: b.Summary, Signature: signature})
+				blocks = append(blocks, wireBlock{Type: "thinking", Thinking: b.Summary, Signature: signature})
 			}
 		default:
 			return wireMessage{}, agentkit.ErrInvalidConfig

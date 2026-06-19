@@ -229,6 +229,69 @@ func TestAnthropicFragmentsToolJSONAndReplaysReasoningOpaque(t *testing.T) {
 	}
 }
 
+func TestAnthropicReplayedThinkingBlockSerializesSummaryInThinkingField(t *testing.T) {
+	// R-TQ77-6QLK
+	var replayedThinking map[string]any
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		body := decodeRequest(t, r)
+		if requests == 1 {
+			writeSSEFile(t, w, "testdata/tool_turn.sse")
+			return
+		}
+		block := findThinkingBlock(body)
+		if block == nil {
+			http.Error(w, `{"error":{"type":"invalid_request_error","message":"thinking block required"}}`, http.StatusBadRequest)
+			return
+		}
+		replayedThinking = block
+		if _, ok := block["text"]; ok {
+			http.Error(w, `{"error":{"type":"invalid_request_error","message":"messages.1.content.0.thinking.text: Extra inputs are not permitted"}}`, http.StatusBadRequest)
+			return
+		}
+		if block["thinking"] != "Plan lookup" || block["signature"] != "sig-anthropic-1" {
+			http.Error(w, `{"error":{"type":"invalid_request_error","message":"messages.1.content.0.thinking.thinking: Field required"}}`, http.StatusBadRequest)
+			return
+		}
+		writeSSEFile(t, w, "testdata/final_turn.sse")
+	}))
+	defer server.Close()
+
+	tool := agentkit.NewTool("weather", "get weather", func(_ context.Context, in struct {
+		City string `json:"city"`
+	}) (string, error) {
+		return "21 C", nil
+	})
+	conv := &agentkit.Conversation{
+		Provider: New("key", WithBaseURL(server.URL), WithHTTPClient(server.Client())),
+		Model:    ModelSonnet46,
+		Tools:    []agentkit.Tool{tool},
+		Gen:      agentkit.GenSettings{Reasoning: agentkit.Level("low")},
+	}
+
+	stream := conv.Send(context.Background(), "weather?")
+	drain(stream)
+	if err := stream.Err(); err != nil {
+		if errors.Is(err, agentkit.ErrInvalidRequest) {
+			t.Fatalf("follow-up replay returned invalid request: %v", err)
+		}
+		t.Fatalf("follow-up replay error = %v, want nil", err)
+	}
+	if requests != 2 {
+		t.Fatalf("requests = %d, want 2", requests)
+	}
+	if replayedThinking == nil {
+		t.Fatalf("second request did not replay a thinking block")
+	}
+	if got := replayedThinking["thinking"]; got != "Plan lookup" {
+		t.Fatalf("thinking = %#v, want Plan lookup; block:\n%s", got, mustJSON(t, replayedThinking))
+	}
+	if _, ok := replayedThinking["text"]; ok {
+		t.Fatalf("thinking block serialized text field:\n%s", mustJSON(t, replayedThinking))
+	}
+}
+
 func TestAnthropicDropsForeignReasoningBlocksFromRequest(t *testing.T) {
 	// R-055A-NI1P
 	var body []byte
@@ -685,4 +748,18 @@ func requestContainsSignature(body map[string]any, signature string) bool {
 		}
 	}
 	return false
+}
+
+func findThinkingBlock(body map[string]any) map[string]any {
+	messages, _ := body["messages"].([]any)
+	for _, msg := range messages {
+		content, _ := msg.(map[string]any)["content"].([]any)
+		for _, item := range content {
+			block, _ := item.(map[string]any)
+			if block["type"] == "thinking" {
+				return block
+			}
+		}
+	}
+	return nil
 }
