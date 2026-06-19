@@ -264,6 +264,8 @@ func TestAnthropicRequestMapsGenerationSettingsAndWarnings(t *testing.T) {
 		// R-P5U3-5CFZ
 		// R-P71Z-J46O
 		// R-PBXL-275G
+		// R-T40A-VZQ7
+		// R-ELUQ-VJIQ
 		temp, topP := 0.2, 0.9
 		var body map[string]any
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -279,7 +281,7 @@ func TestAnthropicRequestMapsGenerationSettingsAndWarnings(t *testing.T) {
 				Temperature: &temp,
 				TopP:        &topP,
 				MaxTokens:   123,
-				Reasoning:   agentkit.EffortMax,
+				Reasoning:   agentkit.Level("max"),
 			},
 		}
 		stream := conv.Send(context.Background(), "hello")
@@ -294,6 +296,10 @@ func TestAnthropicRequestMapsGenerationSettingsAndWarnings(t *testing.T) {
 		if output["effort"] != "max" {
 			t.Fatalf("output_config.effort = %v, want max", output["effort"])
 		}
+		thinking := body["thinking"].(map[string]any)
+		if thinking["type"] != "adaptive" {
+			t.Fatalf("thinking.type = %v, want adaptive", thinking["type"])
+		}
 		if len(stream.Warnings()) != 0 {
 			t.Fatalf("Warnings() = %#v, want empty", stream.Warnings())
 		}
@@ -301,6 +307,7 @@ func TestAnthropicRequestMapsGenerationSettingsAndWarnings(t *testing.T) {
 
 	t.Run("zero sampling settings are omitted", func(t *testing.T) {
 		// R-P5U3-5CFZ
+		// R-T587-9RGW
 		var body map[string]any
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			body = decodeRequest(t, r)
@@ -317,8 +324,71 @@ func TestAnthropicRequestMapsGenerationSettingsAndWarnings(t *testing.T) {
 		}
 	})
 
-	t.Run("opus off degrades with warning", func(t *testing.T) {
-		// R-P89V-WVXD
+	t.Run("budget and disable lower as native forms", func(t *testing.T) {
+		tests := []struct {
+			name      string
+			model     string
+			reasoning agentkit.ReasoningValue
+			assert    func(t *testing.T, body map[string]any)
+		}{
+			{
+				// R-T40A-VZQ7
+				// R-ELUQ-VJIQ
+				name:      "haiku budget",
+				model:     ModelHaiku45,
+				reasoning: agentkit.Budget(2048),
+				assert: func(t *testing.T, body map[string]any) {
+					thinking := body["thinking"].(map[string]any)
+					if thinking["type"] != "enabled" || thinking["budget_tokens"] != float64(2048) {
+						t.Fatalf("thinking = %#v, want budget 2048", thinking)
+					}
+				},
+			},
+			{
+				// R-T40A-VZQ7
+				name:      "disable",
+				model:     ModelSonnet46,
+				reasoning: agentkit.DisableReasoning(),
+				assert: func(t *testing.T, body map[string]any) {
+					thinking := body["thinking"].(map[string]any)
+					if thinking["type"] != "disabled" {
+						t.Fatalf("thinking = %#v, want disabled", thinking)
+					}
+					if _, ok := body["output_config"]; ok {
+						t.Fatalf("disabled reasoning emitted output_config: %#v", body["output_config"])
+					}
+				},
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				var body map[string]any
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					body = decodeRequest(t, r)
+					writeSSEFile(t, w, "testdata/final_turn.sse")
+				}))
+				defer server.Close()
+
+				conv := &agentkit.Conversation{
+					Provider: New("key", WithBaseURL(server.URL), WithHTTPClient(server.Client())),
+					Model:    tt.model,
+					Gen:      agentkit.GenSettings{Reasoning: tt.reasoning},
+				}
+				stream := conv.Send(context.Background(), "hello")
+				drain(stream)
+				if err := stream.Err(); err != nil {
+					t.Fatalf("Err() = %v, want nil", err)
+				}
+				if len(stream.Warnings()) != 0 {
+					t.Fatalf("Warnings() = %#v, want empty", stream.Warnings())
+				}
+				tt.assert(t, body)
+			})
+		}
+	})
+
+	t.Run("unsupported level defaults with warning", func(t *testing.T) {
+		// R-B7YX-J342
 		var body map[string]any
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			body = decodeRequest(t, r)
@@ -328,8 +398,8 @@ func TestAnthropicRequestMapsGenerationSettingsAndWarnings(t *testing.T) {
 
 		conv := &agentkit.Conversation{
 			Provider: New("key", WithBaseURL(server.URL), WithHTTPClient(server.Client())),
-			Model:    ModelOpus48,
-			Gen:      agentkit.GenSettings{Reasoning: agentkit.EffortOff},
+			Model:    ModelSonnet46,
+			Gen:      agentkit.GenSettings{Reasoning: agentkit.Level("xhigh")},
 		}
 		stream := conv.Send(context.Background(), "hello")
 		drain(stream)
@@ -337,12 +407,12 @@ func TestAnthropicRequestMapsGenerationSettingsAndWarnings(t *testing.T) {
 			t.Fatalf("Err() = %v, want nil", err)
 		}
 		warnings := stream.Warnings()
-		if len(warnings) != 1 || warnings[0].Setting != "reasoning_effort" {
-			t.Fatalf("Warnings() = %#v, want reasoning_effort degradation", warnings)
+		if len(warnings) != 1 || warnings[0].Setting != "reasoning" || warnings[0].Code != agentkit.WarnReasoningUnsupported {
+			t.Fatalf("Warnings() = %#v, want reasoning unsupported degradation", warnings)
 		}
 		output := body["output_config"].(map[string]any)
-		if output["effort"] != "low" {
-			t.Fatalf("degraded effort = %v, want low", output["effort"])
+		if output["effort"] != "high" {
+			t.Fatalf("degraded effort = %v, want high", output["effort"])
 		}
 	})
 }

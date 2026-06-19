@@ -48,8 +48,10 @@ func TestGoogleSendBuildsRequestParsesToolTurnAndUsage(t *testing.T) {
 			}
 			thinking := field[map[string]any](t, gen, "thinkingConfig")
 			// R-P71Z-J46O
-			if thinking["thinkingBudget"] != float64(8192) || thinking["includeThoughts"] != true {
-				t.Fatalf("reasoning effort not mapped for Gemini 2.5: %#v", thinking)
+			// R-T40A-VZQ7
+			// R-ELUQ-VJIQ
+			if thinking["thinkingBudget"] != float64(8192) || thinking["thinkingLevel"] != nil || thinking["includeThoughts"] != true {
+				t.Fatalf("native reasoning budget not mapped for Gemini 2.5: %#v", thinking)
 			}
 			sawThinking = true
 
@@ -114,7 +116,7 @@ func TestGoogleSendBuildsRequestParsesToolTurnAndUsage(t *testing.T) {
 			Temperature: &temp,
 			TopP:        &topP,
 			MaxTokens:   256,
-			Reasoning:   agentkit.EffortHigh,
+			Reasoning:   agentkit.Budget(8192),
 		},
 		Tools: []agentkit.Tool{tool},
 	}
@@ -196,8 +198,8 @@ func TestGoogleReasoningOffDegradesWithWarningOnPro(t *testing.T) {
 		decodeRequest(t, r, &body)
 		gen := field[map[string]any](t, body, "generationConfig")
 		thinking := field[map[string]any](t, gen, "thinkingConfig")
-		if thinking["thinkingBudget"] != float64(1024) || thinking["includeThoughts"] != true {
-			t.Fatalf("EffortOff was not clamped to minimal thinking on Gemini Pro: %#v", thinking)
+		if thinking["thinkingBudget"] != float64(-1) || thinking["thinkingLevel"] != nil || thinking["includeThoughts"] != true {
+			t.Fatalf("DisableReasoning was not defaulted to dynamic thinking on Gemini Pro: %#v", thinking)
 		}
 		sawClamped = true
 		writeSSE(t, w, `{"candidates":[{"content":{"role":"model","parts":[{"text":"ok"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":1,"totalTokenCount":2}}`)
@@ -207,14 +209,14 @@ func TestGoogleReasoningOffDegradesWithWarningOnPro(t *testing.T) {
 	conv := &agentkit.Conversation{
 		Provider: New("key", WithBaseURL(server.URL), WithHTTPClient(server.Client())),
 		Model:    ModelPro25,
-		Gen:      agentkit.GenSettings{Reasoning: agentkit.EffortOff},
+		Gen:      agentkit.GenSettings{Reasoning: agentkit.DisableReasoning()},
 	}
 	stream := conv.Send(context.Background(), "hello")
 	drainStream(t, stream)
 	// R-P89V-WVXD
 	warnings := stream.Warnings()
-	if !sawClamped || len(warnings) != 1 || warnings[0].Setting != "reasoning_effort" {
-		t.Fatalf("EffortOff on Gemini Pro did not degrade with warning: %#v", warnings)
+	if !sawClamped || len(warnings) != 1 || warnings[0].Setting != "reasoning" || warnings[0].Code != agentkit.WarnReasoningCannotDisable {
+		t.Fatalf("DisableReasoning on Gemini Pro did not degrade with warning: %#v", warnings)
 	}
 }
 
@@ -461,7 +463,6 @@ func TestGooglePricingRegistryAndTierSelection(t *testing.T) {
 	pro25, _ := provider.Pricing(ModelPro25)
 	low := pro25.Cost(agentkit.Usage{InputUncached: 200000, Output: 1})
 	high := pro25.Cost(agentkit.Usage{InputUncached: 200001, Output: 1})
-	// R-P89V-WVXD also covers the Gemini 2.5 Pro half in the warning test.
 	// R-V2SM-WC8V
 	if low != agentkit.Cost(200000*1250+10000) || high != agentkit.Cost(200001*2500+15000) {
 		t.Fatalf("Gemini tier selection mismatch: low=%d high=%d", low, high)

@@ -72,13 +72,13 @@ func TestZaiSendUsesBakedBaseURLAndAssemblesToolTurn(t *testing.T) {
 			Temperature: &temperature,
 			TopP:        &topP,
 			MaxTokens:   128,
-			Reasoning:   agentkit.EffortMax,
+			Reasoning:   agentkit.Level("max"),
 		},
 		Tools: []agentkit.Tool{tool},
 	}
 
 	// R-H4XH-476S, R-P9HS-ANO2, R-XW08-D4YL, R-C8UE-VJ67,
-	// R-P5U3-5CFZ, R-P71Z-J46O
+	// R-P5U3-5CFZ, R-P71Z-J46O, R-T40A-VZQ7, R-ELUQ-VJIQ
 	stream := c.Send(context.Background(), "weather?")
 	var toolUseIndex, toolResultIndex int = -1, -1
 	var toolUse agentkit.ToolUse
@@ -213,6 +213,72 @@ func TestZaiReplayedToolCallArgumentsAreJSONString(t *testing.T) {
 	}
 	if got != `{"city":"Paris"}` {
 		t.Fatalf("replayed arguments = %q, want %q", got, `{"city":"Paris"}`)
+	}
+}
+
+func TestZaiNativeReasoningToggleLoweringAndDefaultWarning(t *testing.T) {
+	tests := []struct {
+		name        string
+		reasoning   agentkit.ReasoningValue
+		wantDisable bool
+		wantWarning bool
+	}{
+		{
+			// R-T40A-VZQ7
+			// R-ELUQ-VJIQ
+			name:        "disable reaches toggle model",
+			reasoning:   agentkit.DisableReasoning(),
+			wantDisable: true,
+		},
+		{
+			// R-B7YX-J342
+			name:        "unsupported level defaults to unset",
+			reasoning:   agentkit.Level("max"),
+			wantWarning: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var body map[string]any
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Fatalf("decode request: %v", err)
+				}
+				w.Header().Set("Content-Type", "text/event-stream")
+				fmt.Fprint(w, zaiTextSSE("ok", 1, 0, 1))
+			}))
+			defer server.Close()
+
+			conv := &agentkit.Conversation{
+				Provider: New("test-key", WithBaseURL(server.URL), WithHTTPClient(server.Client())),
+				Model:    ModelGLM47,
+				Gen:      agentkit.GenSettings{Reasoning: tt.reasoning},
+			}
+			stream := conv.Send(context.Background(), "hello")
+			for range stream.Events() {
+			}
+			if err := stream.Err(); err != nil {
+				t.Fatalf("stream error: %v", err)
+			}
+
+			thinking, hasThinking := body["thinking"].(map[string]any)
+			if tt.wantDisable {
+				if !hasThinking || thinking["type"] != "disabled" {
+					t.Fatalf("thinking = %#v, want disabled", body["thinking"])
+				}
+			} else if hasThinking || body["reasoning_effort"] != nil {
+				t.Fatalf("unsupported toggle level was not defaulted to unset: %#v", body)
+			}
+			warnings := stream.Warnings()
+			if tt.wantWarning {
+				if len(warnings) != 1 || warnings[0].Setting != "reasoning" || warnings[0].Code != agentkit.WarnReasoningUnsupported {
+					t.Fatalf("warnings = %#v, want reasoning unsupported", warnings)
+				}
+			} else if len(warnings) != 0 {
+				t.Fatalf("warnings = %#v, want none", warnings)
+			}
+		})
 	}
 }
 

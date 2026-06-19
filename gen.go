@@ -6,22 +6,8 @@ type GenSettings struct {
 	Temperature *float64
 	TopP        *float64
 	MaxTokens   int
-	Reasoning   ReasoningEffort
+	Reasoning   ReasoningValue
 }
-
-// ReasoningEffort is a neutral ordinal mapped to each provider's reasoning
-// control and validated per model. EffortDefault leaves the model default.
-type ReasoningEffort int
-
-const (
-	EffortDefault ReasoningEffort = iota
-	EffortOff
-	EffortMinimal
-	EffortLow
-	EffortMedium
-	EffortHigh
-	EffortMax
-)
 
 // Warning records a requested setting a provider could not honor as asked.
 type Warning struct {

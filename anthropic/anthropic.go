@@ -265,7 +265,7 @@ func buildRequest(req *agentkit.Request) (messageRequest, []agentkit.Warning, er
 		out.Messages = append(out.Messages, wire)
 	}
 
-	warnings := applyReasoning(req.Model, req.Gen.Reasoning, &out)
+	warnings := applyReasoning(req.Model, req.Gen.Reasoning, maxTokens, &out)
 	applyCacheControl(req, &out)
 	return out, warnings, nil
 }
@@ -293,37 +293,62 @@ func convertMessage(msg agentkit.Message) (wireMessage, error) {
 	return wireMessage{Role: role, Content: blocks}, nil
 }
 
-func applyReasoning(model string, effort agentkit.ReasoningEffort, out *messageRequest) []agentkit.Warning {
-	if effort == agentkit.EffortDefault {
-		return nil
+func applyReasoning(model string, value agentkit.ReasoningValue, maxTokens int, out *messageRequest) []agentkit.Warning {
+	value, warning := checkedReasoning(model, value)
+	if value.IsUnset() {
+		return warning
 	}
-	if effort == agentkit.EffortOff && model == ModelOpus48 {
-		out.Thinking = map[string]any{"type": "enabled"}
-		out.Output = map[string]any{"effort": "low"}
-		return []agentkit.Warning{{Setting: "reasoning_effort", Detail: "requested off; applied low because claude-opus-4-8 cannot disable reasoning"}}
-	}
-	if effort == agentkit.EffortOff {
+	if value.Disabled() {
 		out.Thinking = map[string]any{"type": "disabled"}
-		return nil
+		return warning
 	}
-	out.Thinking = map[string]any{"type": "enabled"}
-	out.Output = map[string]any{"effort": anthropicEffort(effort)}
-	return nil
+	if level, ok := value.Level(); ok {
+		out.Thinking = map[string]any{"type": "adaptive"}
+		out.Output = map[string]any{"effort": level}
+		return warning
+	}
+	if budget, ok := value.Budget(); ok {
+		if model == ModelHaiku45 && maxTokens > 0 && budget >= maxTokens {
+			budget = maxTokens - 1
+		}
+		out.Thinking = map[string]any{"type": "enabled", "budget_tokens": budget}
+	}
+	return warning
 }
 
-func anthropicEffort(effort agentkit.ReasoningEffort) string {
-	switch effort {
-	case agentkit.EffortMinimal, agentkit.EffortLow:
-		return "low"
-	case agentkit.EffortMedium:
-		return "high"
-	case agentkit.EffortHigh:
-		return "xhigh"
-	case agentkit.EffortMax:
-		return "max"
-	default:
-		return "high"
+func checkedReasoning(model string, value agentkit.ReasoningValue) (agentkit.ReasoningValue, []agentkit.Warning) {
+	if value.IsUnset() {
+		return value, nil
 	}
+	entry, ok := registry[model]
+	if !ok || entry.Reasoning.Accepts(value) {
+		return value, nil
+	}
+	code := agentkit.WarnReasoningUnsupported
+	if value.Disabled() && !entry.Reasoning.CanDisable {
+		code = agentkit.WarnReasoningCannotDisable
+	}
+	return entry.Reasoning.Default, []agentkit.Warning{{
+		Setting: "reasoning",
+		Code:    code,
+		Detail:  "requested " + describeReasoning(value) + "; applied " + describeReasoning(entry.Reasoning.Default),
+	}}
+}
+
+func describeReasoning(value agentkit.ReasoningValue) string {
+	if value.IsUnset() {
+		return "unset"
+	}
+	if value.Disabled() {
+		return "disabled"
+	}
+	if level, ok := value.Level(); ok {
+		return "level " + level
+	}
+	if budget, ok := value.Budget(); ok {
+		return fmt.Sprintf("budget %d", budget)
+	}
+	return "unknown"
 }
 
 func applyCacheControl(req *agentkit.Request, out *messageRequest) {

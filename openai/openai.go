@@ -87,41 +87,42 @@ func (p *Provider) RoundTrip(ctx context.Context, req *agentkit.Request) *agentk
 		return agentkit.NewRoundTrip(nil, agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, nil, agentkit.ErrInvalidConfig)
 	}
 
-	body, err := p.buildRequest(req)
+	body, warnings, err := p.buildRequest(req)
 	if err != nil {
-		return agentkit.NewRoundTrip(nil, agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, nil, err)
+		return agentkit.NewRoundTrip(nil, agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, err)
 	}
 
 	httpReq, err := httpx.JSONRequest(ctx, http.MethodPost, p.baseURL+"/v1/responses", body)
 	if err != nil {
-		return agentkit.NewRoundTrip(nil, agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, nil, providerTransportError(err))
+		return agentkit.NewRoundTrip(nil, agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, providerTransportError(err))
 	}
 	httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
 	httpReq.Header.Set("Accept", "text/event-stream")
 
 	resp, err := httpx.Client(p.client).Do(httpReq)
 	if err != nil {
-		return agentkit.NewRoundTrip(nil, agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, nil, providerTransportError(err))
+		return agentkit.NewRoundTrip(nil, agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, providerTransportError(err))
 	}
 	defer resp.Body.Close()
 
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return agentkit.NewRoundTrip(nil, agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, nil, providerTransportError(err))
+		return agentkit.NewRoundTrip(nil, agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, providerTransportError(err))
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return agentkit.NewRoundTrip(nil, agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, nil, p.providerHTTPError(resp, raw))
+		return agentkit.NewRoundTrip(nil, agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, p.providerHTTPError(resp, raw))
 	}
 
 	frames, err := sse.ReadAll(strings.NewReader(string(raw)))
 	if err != nil {
-		return agentkit.NewRoundTrip(nil, agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, nil, providerTransportError(err))
+		return agentkit.NewRoundTrip(nil, agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, providerTransportError(err))
 	}
 	assembled, err := assemble(frames)
 	if err != nil {
-		return agentkit.NewRoundTrip(nil, assembled.message, assembled.finish, assembled.usage, nil, err)
+		return agentkit.NewRoundTrip(nil, assembled.message, assembled.finish, assembled.usage, warnings, err)
 	}
-	return agentkit.NewRoundTrip(eventsSeq(assembled.events), assembled.message, assembled.finish, assembled.usage, assembled.warnings, nil)
+	warnings = append(warnings, assembled.warnings...)
+	return agentkit.NewRoundTrip(eventsSeq(assembled.events), assembled.message, assembled.finish, assembled.usage, warnings, nil)
 }
 
 // Reasoning exposes OpenAI's static native reasoning vocabulary.
@@ -261,7 +262,7 @@ type toolDef struct {
 	Parameters  json.RawMessage `json:"parameters"`
 }
 
-func (p *Provider) buildRequest(req *agentkit.Request) (responsesRequest, error) {
+func (p *Provider) buildRequest(req *agentkit.Request) (responsesRequest, []agentkit.Warning, error) {
 	out := responsesRequest{
 		Model:   req.Model,
 		Stream:  true,
@@ -281,9 +282,7 @@ func (p *Provider) buildRequest(req *agentkit.Request) (responsesRequest, error)
 	if req.Gen.MaxTokens > 0 {
 		out.MaxOutputTokens = req.Gen.MaxTokens
 	}
-	if req.Gen.Reasoning != agentkit.EffortDefault {
-		out.Reasoning = &reasoningConf{Effort: openAIReasoningEffort(req.Gen.Reasoning)}
-	}
+	warnings := applyReasoning(req.Model, req.Gen.Reasoning, &out)
 	for _, tool := range req.Tools {
 		out.Tools = append(out.Tools, toolDef{
 			Type:        "function",
@@ -295,26 +294,61 @@ func (p *Provider) buildRequest(req *agentkit.Request) (responsesRequest, error)
 	for _, message := range req.Messages {
 		items, err := messageInputItems(message)
 		if err != nil {
-			return responsesRequest{}, err
+			return responsesRequest{}, warnings, err
 		}
 		out.Input = append(out.Input, items...)
 	}
-	return out, nil
+	return out, warnings, nil
 }
 
-func openAIReasoningEffort(effort agentkit.ReasoningEffort) string {
-	switch effort {
-	case agentkit.EffortLow:
-		return "low"
-	case agentkit.EffortMedium:
-		return "medium"
-	case agentkit.EffortHigh, agentkit.EffortMax:
-		return "high"
-	case agentkit.EffortOff, agentkit.EffortMinimal:
-		return "minimal"
-	default:
-		return ""
+func applyReasoning(model string, value agentkit.ReasoningValue, out *responsesRequest) []agentkit.Warning {
+	value, warnings := checkedReasoning(model, value)
+	if value.IsUnset() {
+		return warnings
 	}
+	if value.Disabled() {
+		out.Reasoning = &reasoningConf{Effort: "none"}
+		return warnings
+	}
+	if level, ok := value.Level(); ok {
+		out.Reasoning = &reasoningConf{Effort: level}
+	}
+	return warnings
+}
+
+func checkedReasoning(model string, value agentkit.ReasoningValue) (agentkit.ReasoningValue, []agentkit.Warning) {
+	if value.IsUnset() {
+		return value, nil
+	}
+	entry, ok := registry[model]
+	if !ok || entry.Reasoning.Accepts(value) {
+		return value, nil
+	}
+	code := agentkit.WarnReasoningUnsupported
+	if value.Disabled() && !entry.Reasoning.CanDisable {
+		code = agentkit.WarnReasoningCannotDisable
+	}
+	return entry.Reasoning.Default, []agentkit.Warning{{
+		Setting: "reasoning",
+		Code:    code,
+		Detail:  "requested " + describeReasoning(value) + "; applied " + describeReasoning(entry.Reasoning.Default),
+	}}
+}
+
+func describeReasoning(value agentkit.ReasoningValue) string {
+	if value.IsUnset() {
+		return "unset"
+	}
+	if value.Disabled() {
+		return "disabled"
+	}
+	if level, ok := value.Level(); ok {
+		return "level " + level
+	}
+	if budget, ok := value.Budget(); ok {
+		return fmt.Sprintf("budget %d", budget)
+	}
+	return "unknown"
 }
 
 func messageInputItems(message agentkit.Message) ([]inputItem, error) {

@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"iter"
 	"net/http"
@@ -30,6 +31,7 @@ type Config struct {
 	HTTPClient               *http.Client
 	Now                      func() time.Time
 	Pricing                  map[string]agentkit.Pricing
+	Reasoning                map[string]agentkit.ReasoningSpec
 	Classify                 ErrorClassifier
 	WarnForcedToolChoiceAuto bool
 }
@@ -172,7 +174,8 @@ func (p *Provider) buildRequest(req *agentkit.Request) (chatRequest, []agentkit.
 	if req.Gen.MaxTokens > 0 {
 		out.MaxTokens = req.Gen.MaxTokens
 	}
-	applyReasoning(req.Gen.Reasoning, &out)
+	var warnings []agentkit.Warning
+	warnings = append(warnings, p.applyReasoning(req.Model, req.Gen.Reasoning, &out)...)
 	if req.System != "" {
 		out.Messages = append(out.Messages, chatMessage{Role: "system", Content: req.System})
 	}
@@ -186,7 +189,6 @@ func (p *Provider) buildRequest(req *agentkit.Request) (chatRequest, []agentkit.
 			},
 		})
 	}
-	var warnings []agentkit.Warning
 	if len(out.Tools) > 0 {
 		out.ToolChoice = "auto"
 		if p.cfg.WarnForcedToolChoiceAuto {
@@ -207,19 +209,55 @@ func (p *Provider) buildRequest(req *agentkit.Request) (chatRequest, []agentkit.
 	return out, warnings, nil
 }
 
-func applyReasoning(effort agentkit.ReasoningEffort, out *chatRequest) {
-	switch effort {
-	case agentkit.EffortDefault:
-		return
-	case agentkit.EffortOff:
-		out.Thinking = &thinkingConf{Type: "disabled"}
-	case agentkit.EffortMax:
-		out.Thinking = &thinkingConf{Type: "enabled"}
-		out.Reasoning = "max"
-	default:
-		out.Thinking = &thinkingConf{Type: "enabled"}
-		out.Reasoning = "high"
+func (p *Provider) applyReasoning(model string, value agentkit.ReasoningValue, out *chatRequest) []agentkit.Warning {
+	value, warnings := p.checkedReasoning(model, value)
+	if value.IsUnset() {
+		return warnings
 	}
+	if value.Disabled() {
+		out.Thinking = &thinkingConf{Type: "disabled"}
+		return warnings
+	}
+	if level, ok := value.Level(); ok {
+		out.Thinking = &thinkingConf{Type: "enabled"}
+		out.Reasoning = level
+	}
+	return warnings
+}
+
+func (p *Provider) checkedReasoning(model string, value agentkit.ReasoningValue) (agentkit.ReasoningValue, []agentkit.Warning) {
+	if value.IsUnset() {
+		return value, nil
+	}
+	spec, ok := p.cfg.Reasoning[model]
+	if !ok || spec.Accepts(value) {
+		return value, nil
+	}
+	code := agentkit.WarnReasoningUnsupported
+	if value.Disabled() && !spec.CanDisable {
+		code = agentkit.WarnReasoningCannotDisable
+	}
+	return spec.Default, []agentkit.Warning{{
+		Setting: "reasoning",
+		Code:    code,
+		Detail:  "requested " + describeReasoning(value) + "; applied " + describeReasoning(spec.Default),
+	}}
+}
+
+func describeReasoning(value agentkit.ReasoningValue) string {
+	if value.IsUnset() {
+		return "unset"
+	}
+	if value.Disabled() {
+		return "disabled"
+	}
+	if level, ok := value.Level(); ok {
+		return "level " + level
+	}
+	if budget, ok := value.Budget(); ok {
+		return fmt.Sprintf("budget %d", budget)
+	}
+	return "unknown"
 }
 
 func convertMessage(message agentkit.Message) ([]chatMessage, error) {

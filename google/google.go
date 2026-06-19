@@ -419,81 +419,59 @@ func generationConfig(model string, gen agentkit.GenSettings) (map[string]any, [
 	if gen.MaxTokens > 0 {
 		cfg["maxOutputTokens"] = gen.MaxTokens
 	}
-	if gen.Reasoning != agentkit.EffortDefault {
-		thinking, warning := thinkingConfig(model, gen.Reasoning)
-		cfg["thinkingConfig"] = thinking
-		if warning != nil {
-			return cfg, []agentkit.Warning{*warning}
-		}
+	value, warnings := checkedReasoning(model, gen.Reasoning)
+	if !value.IsUnset() {
+		cfg["thinkingConfig"] = thinkingConfig(value)
 	}
-	return cfg, nil
+	return cfg, warnings
 }
 
-func thinkingConfig(model string, effort agentkit.ReasoningEffort) (map[string]any, *agentkit.Warning) {
-	if isGemini3(model) {
-		if effort == agentkit.EffortOff {
-			if alwaysOnReasoning(model) {
-				return map[string]any{"thinkingLevel": "minimal", "includeThoughts": true}, reasoningWarning("off", "minimal")
-			}
-			return map[string]any{"thinkingBudget": 0, "includeThoughts": false}, nil
-		}
-		return map[string]any{"thinkingLevel": thinkingLevel(effort), "includeThoughts": true}, nil
+func thinkingConfig(value agentkit.ReasoningValue) map[string]any {
+	if value.Disabled() {
+		return map[string]any{"thinkingBudget": 0, "includeThoughts": false}
 	}
-
-	if effort == agentkit.EffortOff {
-		if alwaysOnReasoning(model) {
-			return map[string]any{"thinkingBudget": 1024, "includeThoughts": true}, reasoningWarning("off", "minimal")
-		}
-		return map[string]any{"thinkingBudget": 0, "includeThoughts": false}, nil
+	if level, ok := value.Level(); ok {
+		return map[string]any{"thinkingLevel": level, "includeThoughts": true}
 	}
-	return map[string]any{"thinkingBudget": thinkingBudget(effort), "includeThoughts": true}, nil
+	if budget, ok := value.Budget(); ok {
+		return map[string]any{"thinkingBudget": budget, "includeThoughts": budget != 0}
+	}
+	return nil
 }
 
-func isGemini3(model string) bool {
-	return strings.HasPrefix(model, "gemini-3.")
-}
-
-func alwaysOnReasoning(model string) bool {
-	return model == ModelPro25 || model == ModelPro31Preview
-}
-
-func thinkingLevel(effort agentkit.ReasoningEffort) string {
-	switch effort {
-	case agentkit.EffortMinimal:
-		return "minimal"
-	case agentkit.EffortLow:
-		return "low"
-	case agentkit.EffortMedium:
-		return "medium"
-	case agentkit.EffortHigh, agentkit.EffortMax:
-		return "high"
-	default:
-		return "medium"
+func checkedReasoning(model string, value agentkit.ReasoningValue) (agentkit.ReasoningValue, []agentkit.Warning) {
+	if value.IsUnset() {
+		return value, nil
 	}
+	entry, ok := modelRegistry[model]
+	if !ok || entry.Reasoning.Accepts(value) {
+		return value, nil
+	}
+	code := agentkit.WarnReasoningUnsupported
+	if value.Disabled() && !entry.Reasoning.CanDisable {
+		code = agentkit.WarnReasoningCannotDisable
+	}
+	return entry.Reasoning.Default, []agentkit.Warning{{
+		Setting: "reasoning",
+		Code:    code,
+		Detail:  "requested " + describeReasoning(value) + "; applied " + describeReasoning(entry.Reasoning.Default),
+	}}
 }
 
-func thinkingBudget(effort agentkit.ReasoningEffort) int {
-	switch effort {
-	case agentkit.EffortMinimal:
-		return 1024
-	case agentkit.EffortLow:
-		return 2048
-	case agentkit.EffortMedium:
-		return 4096
-	case agentkit.EffortHigh:
-		return 8192
-	case agentkit.EffortMax:
-		return 24576
-	default:
-		return 4096
+func describeReasoning(value agentkit.ReasoningValue) string {
+	if value.IsUnset() {
+		return "unset"
 	}
-}
-
-func reasoningWarning(requested, applied string) *agentkit.Warning {
-	return &agentkit.Warning{
-		Setting: "reasoning_effort",
-		Detail:  "requested " + requested + ", applied " + applied,
+	if value.Disabled() {
+		return "disabled"
 	}
+	if level, ok := value.Level(); ok {
+		return "level " + level
+	}
+	if budget, ok := value.Budget(); ok {
+		return fmt.Sprintf("budget %d", budget)
+	}
+	return "unknown"
 }
 
 type generateContentResponse struct {

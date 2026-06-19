@@ -68,13 +68,13 @@ func TestProviderSendBuildsResponsesRequestsAndReplaysReasoning(t *testing.T) {
 			Temperature: &temperature,
 			TopP:        &topP,
 			MaxTokens:   128,
-			Reasoning:   agentkit.EffortLow,
+			Reasoning:   agentkit.Level("low"),
 		},
 		Tools: []agentkit.Tool{tool},
 	}
 
 	// R-H3PK-QFG3, R-XR4M-U1ZT, R-XW08-D4YL, R-C8UE-VJ67,
-	// R-P5U3-5CFZ, R-P71Z-J46O
+	// R-P5U3-5CFZ, R-P71Z-J46O, R-T40A-VZQ7, R-ELUQ-VJIQ
 	stream := c.Send(context.Background(), "weather?")
 	var toolUseIndex, toolResultIndex int = -1, -1
 	var toolUse agentkit.ToolUse
@@ -195,7 +195,7 @@ func TestProviderReplaysEmptyReasoningSummaryArrayOnSecondSend(t *testing.T) {
 	c := &agentkit.Conversation{
 		Provider: New("test-key", WithBaseURL(server.URL), WithHTTPClient(server.Client())),
 		Model:    ModelGPT55,
-		Gen:      agentkit.GenSettings{Reasoning: agentkit.EffortLow},
+		Gen:      agentkit.GenSettings{Reasoning: agentkit.Level("low")},
 	}
 
 	first := c.Send(context.Background(), "think first")
@@ -226,6 +226,98 @@ func TestProviderReplaysEmptyReasoningSummaryArrayOnSecondSend(t *testing.T) {
 	parts, ok := summary.([]any)
 	if !ok || len(parts) != 0 {
 		t.Fatalf("second request summary = %#v, want empty array", summary)
+	}
+}
+
+func TestProviderWarnsAndDefaultsNativeReasoningAtBuildTime(t *testing.T) {
+	tests := []struct {
+		name         string
+		model        string
+		reasoning    agentkit.ReasoningValue
+		wantEffort   string
+		wantWarnings []agentkit.WarningCode
+		requirement  string
+	}{
+		{
+			// R-T587-9RGW
+			name:        "unset omits reasoning",
+			model:       ModelGPT55,
+			wantEffort:  "",
+			requirement: "R-T587-9RGW",
+		},
+		{
+			// R-B7YX-J342
+			name:         "wrong kind defaults",
+			model:        ModelGPT55,
+			reasoning:    agentkit.Budget(8000),
+			wantEffort:   "medium",
+			wantWarnings: []agentkit.WarningCode{agentkit.WarnReasoningUnsupported},
+			requirement:  "R-B7YX-J342",
+		},
+		{
+			// R-B96T-WUUR
+			name:         "carried over native value validates against request model",
+			model:        ModelGPT55,
+			reasoning:    agentkit.Level("max"),
+			wantEffort:   "medium",
+			wantWarnings: []agentkit.WarningCode{agentkit.WarnReasoningUnsupported},
+			requirement:  "R-B96T-WUUR",
+		},
+		{
+			// R-P89V-WVXD
+			name:         "cannot disable defaults",
+			model:        ModelGPT55Pro,
+			reasoning:    agentkit.DisableReasoning(),
+			wantEffort:   "high",
+			wantWarnings: []agentkit.WarningCode{agentkit.WarnReasoningCannotDisable},
+			requirement:  "R-P89V-WVXD",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var body map[string]any
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Fatalf("decode request: %v", err)
+				}
+				w.Header().Set("Content-Type", "text/event-stream")
+				fmt.Fprint(w, textOnlySSE("ok", 1, 0, 1, 0))
+			}))
+			defer server.Close()
+
+			conv := &agentkit.Conversation{
+				Provider: New("test-key", WithBaseURL(server.URL), WithHTTPClient(server.Client())),
+				Model:    tt.model,
+				Gen:      agentkit.GenSettings{Reasoning: tt.reasoning},
+			}
+			stream := conv.Send(context.Background(), "hello")
+			for range stream.Events() {
+			}
+			if err := stream.Err(); err != nil {
+				t.Fatalf("stream error: %v", err)
+			}
+
+			reasoning, hasReasoning := body["reasoning"].(map[string]any)
+			if tt.wantEffort == "" {
+				// R-T587-9RGW
+				if hasReasoning {
+					t.Fatalf("%s: request carried reasoning: %#v", tt.requirement, body["reasoning"])
+				}
+			} else if !hasReasoning || reasoning["effort"] != tt.wantEffort {
+				t.Fatalf("%s: reasoning = %#v, want effort %q", tt.requirement, body["reasoning"], tt.wantEffort)
+			}
+
+			warnings := stream.Warnings()
+			if len(warnings) != len(tt.wantWarnings) {
+				t.Fatalf("%s: warnings = %#v", tt.requirement, warnings)
+			}
+			for i, want := range tt.wantWarnings {
+				if warnings[i].Setting != "reasoning" || warnings[i].Code != want {
+					t.Fatalf("%s: warning[%d] = %#v, want reasoning/%v", tt.requirement, i, warnings[i], want)
+				}
+			}
+		})
 	}
 }
 

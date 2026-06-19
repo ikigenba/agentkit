@@ -60,6 +60,7 @@ func New(apiKey string, opts ...Option) *Provider {
 		APIKey:                   apiKey,
 		HTTPClient:               cfg.client,
 		Pricing:                  pricingRegistry(),
+		Reasoning:                reasoningRegistry(),
 		Classify:                 classify,
 		WarnForcedToolChoiceAuto: true,
 	})}
@@ -159,6 +160,14 @@ func pricingRegistry() map[string]agentkit.Pricing {
 	out := make(map[string]agentkit.Pricing, len(registry))
 	for model, entry := range registry {
 		out[model] = entry.Pricing
+	}
+	return out
+}
+
+func reasoningRegistry() map[string]agentkit.ReasoningSpec {
+	out := make(map[string]agentkit.ReasoningSpec, len(registry))
+	for model, entry := range registry {
+		out[model] = cloneReasoningSpec(entry.Reasoning)
 	}
 	return out
 }
