@@ -58,6 +58,7 @@ tests). The REPL is fully gone (this is a library; no CLI/app surface).
 ## Before release
 
 - [ ] **Finding 2 — MEDIUM — Orphan verification id `R-P71Z-J46O`.**
+  *(STAGED 2026-06-20 — Phase 26, not yet built; chose to drop the citation.)*
   Cited in `openai/openai_test.go:77`, `zai/zai_test.go:81`,
   `anthropic/anthropic_test.go:328`, `google/google_test.go:50`, and
   `plan.md:69,76,83,90`, but **undefined in design.md** — a "verification" with
@@ -106,7 +107,12 @@ tests). The REPL is fully gone (this is a library; no CLI/app surface).
   body on early break — re-arming R-CCI4-0UEA), **or** soften product.md:73 /
   design.md:136 to "deltas emitted post-buffer."
 
-- [ ] **Finding 5 — Design-prose contradiction at the pricing tier boundary.**
+- [x] **Finding 5 — Design-prose contradiction at the pricing tier boundary.**
+  *(RESOLVED 2026-06-20 — doc-only; no phase.)* Rewrote the `R-V2SM-WC8V` prose in
+  `docs/design/D16.md` to "reach or exceed → high; **strictly below** → base," with
+  an explicit note that the boundary is inclusive on the high side
+  (`totalInput >= MinInputTokens`), matching `pricing.go`. Impl and tests were
+  already correct; only the contradicted sentence changed.
   design.md:1069 (R-V2SM-WC8V) says "at or below [MinInputTokens] → base tier,"
   but pricing.go:39 uses `>=`, so `total == MinInputTokens` lands in the HIGH
   tier. Tests already pin the impl behavior. **Action:** tighten the prose to
@@ -232,7 +238,8 @@ tests). The REPL is fully gone (this is a library; no CLI/app surface).
     the `Send` doc comment.
 
 - [ ] **Finding 17 — Missing `default` cases in adapter block-type switches
-  (LOW).** Three adapter switches lack a `default`, so a future block type would be
+  (LOW).** *(STAGED 2026-06-20 — Phase 26, not yet built; minted `R-4YSE-6YBS` in
+  D9; fail-loud = panic.)* Three adapter switches lack a `default`, so a future block type would be
   **silently skipped** rather than caught at compile time or runtime. Worth a
   fail-loud `default` per the project's "fail loudly" principle. (Images/audio
   remain a sound, no-action deferral otherwise; embeddings have zero scaffolding —
