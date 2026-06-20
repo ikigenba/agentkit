@@ -28,3 +28,6 @@ Phase 23  ✅  realizes D9                              — Fix: Anthropic repla
 Phase 24  ✅  realizes D2,D9,D10                       — Migrate to message-granular delivery: remove the consumer delta surface
 Phase 25  ✅  realizes D7                               — Cover the Anthropic in-stream SSE `error` event (200-then-`event: error`)
 Phase 26  ✅  realizes D9                               — Fail-loud `default` in adapter block translation; retire the orphan verification id
+Phase 27  ⬜  realizes D18,D19,D20                       — Embeddings root surface: Embedder, Embed, the EmbeddingProvider SPI, and the registry value types
+Phase 28  ⬜  realizes D19,D20,D18                       — OpenAI embeddings adapter (/v1/embeddings), the internal/openaicompat embeddings variant, and the OpenAI embedding registry
+Phase 29  ⬜  realizes D19,D20,D18                       — Google embeddings adapter (:batchEmbedContents) and registry; discharge the cross-provider embeddings ids

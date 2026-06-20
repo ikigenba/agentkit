@@ -34,6 +34,12 @@ One line per Decision, in number order — file, label, and the Verification ids
   - ids: R-S6NB-RYUE, R-S7V8-5QL3, R-S934-JIBS, R-PTEW-5KVY, R-V1KQ-IKI6, R-VDY4-AP7H, R-EN2N-9B9F, R-EPIG-0UQT, R-V2SM-WC8V, R-PVUO-X4DC, R-PX2L-AW41
 - **D17** `docs/design/D17.md` — MCP servers as a tool source
   - ids: R-6GBE-J3SV, R-6HJA-WVJK, R-6IR7-ANA9, R-6L70-26RN, R-6MEW-FYIC, R-6NMS-TQ91, R-6OUP-7HZQ, R-6Q2L-L9QF, R-6RAH-Z1H4, R-6SIE-CT7T
+- **D18** `docs/design/D18.md` — The embeddings consumer surface: the `Embedder` object and the `Embed` verb
+  - ids: R-Y5RV-WB3T, R-Y6ZS-A2UI, R-Y87O-NUL7, R-Y9FL-1MBW, R-YANH-FE2L, R-YBVD-T5TA, R-YD3A-6XJZ, R-YFJ2-YH1D
+- **D19** `docs/design/D19.md` — The `EmbeddingProvider` SPI, package architecture & adapter-owned guarantees
+  - ids: R-YGQZ-C8S2, R-YHYV-Q0IR, R-YJ6S-3S9G, R-YKEO-HK05, R-YLMK-VBQU, R-YMUH-93HJ, R-YO2D-MV88
+- **D20** `docs/design/D20.md` — The embedding registry: usage, pricing/cost, and capability introspection
+  - ids: R-YPAA-0MYX, R-YQI6-EEPM, R-YRQ2-S6GB, R-YSXZ-5Y70, R-YU5V-JPXP, R-YVDR-XHOE, R-YWLO-B9F3
 
 ## Verification ids → Decision
 Every minted id, sorted, mapped to its Decision and file (grep target for id lookup).
@@ -145,12 +151,34 @@ R-XR4M-U1ZT  D9  docs/design/D09.md
 R-XW08-D4YL  D3  docs/design/D03.md
 R-XZNX-IG6O  D10  docs/design/D10.md
 R-Y4JJ-1J5G  D10  docs/design/D10.md
+R-Y5RV-WB3T  D18  docs/design/D18.md
+R-Y6ZS-A2UI  D18  docs/design/D18.md
 R-Y810-TECF  D8  docs/design/D08.md
 R-Y878-6UDJ  D11  docs/design/D11.md
+R-Y87O-NUL7  D18  docs/design/D18.md
 R-Y98X-7634  D8  docs/design/D08.md
+R-Y9FL-1MBW  D18  docs/design/D18.md
 R-YAGT-KXTT  D8  docs/design/D08.md
+R-YANH-FE2L  D18  docs/design/D18.md
 R-YBOP-YPKI  D8  docs/design/D08.md
+R-YBVD-T5TA  D18  docs/design/D18.md
 R-YCWM-CHB7  D8  docs/design/D08.md
+R-YD3A-6XJZ  D18  docs/design/D18.md
+R-YFJ2-YH1D  D18  docs/design/D18.md
+R-YGQZ-C8S2  D19  docs/design/D19.md
+R-YHYV-Q0IR  D19  docs/design/D19.md
+R-YJ6S-3S9G  D19  docs/design/D19.md
+R-YKEO-HK05  D19  docs/design/D19.md
+R-YLMK-VBQU  D19  docs/design/D19.md
+R-YMUH-93HJ  D19  docs/design/D19.md
+R-YO2D-MV88  D19  docs/design/D19.md
+R-YPAA-0MYX  D20  docs/design/D20.md
+R-YQI6-EEPM  D20  docs/design/D20.md
+R-YRQ2-S6GB  D20  docs/design/D20.md
+R-YSXZ-5Y70  D20  docs/design/D20.md
+R-YU5V-JPXP  D20  docs/design/D20.md
+R-YVDR-XHOE  D20  docs/design/D20.md
+R-YWLO-B9F3  D20  docs/design/D20.md
 R-ZCMP-ARG8  D9  docs/design/D09.md
 R-ZELD-OQNG  D1  docs/design/D01.md
 R-ZWV0-CY54  D1  docs/design/D01.md

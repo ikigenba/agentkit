@@ -11,7 +11,7 @@
 The plan is split for addressability so the build loop never loads the whole history to find its next unit of work:
 
 - **`docs/plan/STATUS.md`** — the manifest: one grep-able line per phase, carrying its status marker (`⬜`/`✅`) and the design Decision(s) it realizes. This is the **only** place a phase's status marker lives. The loop finds the next phase by grepping for the first `⬜`.
-- **`docs/plan/phase-NN.md`** — one file per phase (zero-padded, `phase-01.md` … `phase-23.md`). It holds that phase's body — the *Realizes design Decision … Depends on …* line, the objective and observable end state, and the *Done when* `R-XXXX-XXXX` id list. The loop reads exactly one per turn.
+- **`docs/plan/phase-NN.md`** — one file per phase (zero-padded, `phase-01.md` … `phase-29.md`). It holds that phase's body — the *Realizes design Decision … Depends on …* line, the objective and observable end state, and the *Done when* `R-XXXX-XXXX` id list. The loop reads exactly one per turn.
 - **`docs/plan.md`** (this file) — the invariant rules above. Static; it does not grow with the project.
 
 **Append-only, restated for this layout:** never rewrite or delete a `phase-NN.md`; never delete a line in `STATUS.md`. The only mutation during a build is flipping one phase's `⬜ → ✅` in `STATUS.md`. New work = a new `phase-NN.md` plus a new `STATUS.md` line, both appended at the end.

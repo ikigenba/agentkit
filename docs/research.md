@@ -578,3 +578,101 @@ The split that existed: the **per-provider agents** (Anthropic/Google/OpenAI) ea
 **What it gives up:** the SDKs' free streaming accumulation, typed-error-with-raw-body, session/handshake lifecycle (MCP), and built-in retry. The mitigating fact throughout: **every provider adapter is bespoke regardless** (the four wire formats don't unify at the SDK level — OpenAI/Anthropic use `ssestream.Stream[T]`, Google uses `iter.Seq2`, Z.ai has no Go SDK at all), so wrapping would have bought less than it appears, and AgentKit owning the whole wire path keeps errors/retries/usage uniform and dependency-free. **Z.ai was already raw-HTTP-only** (no first-party Go SDK; a single Chat-Completions adapter parameterized by base URL serves it and any other OpenAI-compatible endpoint with small per-provider delta hooks) — so the OpenAI-compatible family needed hand-rolling either way.
 
 **Design consequence:** the adapter layer is uniformly raw HTTP across all four providers + the MCP client; there is no dependency footprint to manage and no SDK retry to disable. Build one shared SSE/JSON-RPC HTTP core and parameterize it per provider.
+
+---
+
+## 12. Embeddings — a generic API across providers (new direction)
+
+The product is adding a **generic embeddings API** that mirrors the chat surface as closely as possible: provider + model + credentials in a consumer-held state object, a closed curated model registry, built-in per-model pricing, explicit credentials, the same error/retry rails. The animating goal: **changing the embedding model is a config-only problem** — ideally only the provider/model name changes. It is understood and accepted that embeddings are **not hot-swappable** — a vector is only comparable to vectors from the *exact same* model, so any switch means re-embedding the corpus. "Config-only" is a statement about *code and configuration*, never about *stored vectors*. (Verified mid-2026 against official provider docs; per-provider doc URLs at §12.9.)
+
+### 12.1 The central finding
+
+The "config-only swap" promise is **mostly honest, but only if AgentKit's adapter layer absorbs four real divergences** (dimensionality bounds, normalization, batch limits, truncation behavior) and exposes **one** unavoidable per-call input (query-vs-document role). Of the four chat providers, **three offer embeddings (OpenAI, Google, Z.ai\*) and Anthropic does not** — confirmed, so excluding Anthropic from the embeddings surface is factually grounded, not an arbitrary cut. (\*Z.ai carries a scope caveat — see §12.2.)
+
+### 12.2 Provider surfaces (verified)
+
+**Anthropic — excluded, grounded.** Anthropic has **no first-party embeddings API or model** and **no embeddings endpoint on api.anthropic.com**. Their docs say verbatim *"Anthropic does not offer its own embedding model"* and direct customers to **Voyage AI** (a MongoDB product since Feb 2025 — *not* owned by Anthropic; the relationship is a recommendation). Anthropic stays a first-class chat provider and is simply absent from the embeddings surface.
+
+**OpenAI — clean, OpenAI-native.**
+- Models: `text-embedding-3-small` (native **1536** dims), `text-embedding-3-large` (native **3072**), legacy `text-embedding-ada-002` (1536, fixed — no shortening).
+- Dimensions **requestable** on the v3 models via `dimensions` (Matryoshka). Returned vectors are **L2-normalized**, including when shortened.
+- Endpoint `POST /v1/embeddings`; `input` accepts **string or array** (batch up to **2048** items); **8192** tokens/input; over-length **errors (400), never silent truncation**. `encoding_format` float|base64.
+- Response `data[]` with `index` (order guaranteed); `usage` = `prompt_tokens`/`total_tokens` only (**no output tokens**).
+- Pricing /1M input tokens: 3-small **$0.02**, 3-large **$0.13**, ada-002 **$0.10** (Batch API ≈ 50% off).
+- Auth: `Authorization: Bearer <key>`. **No task-type / query-vs-document distinction** (symmetric).
+
+**Google (Gemini API) — capable, but the most divergent.**
+- Current model: **`gemini-embedding-001`** (GA, native **3072** dims). A newer multimodal **`gemini-embedding-2`** exists (3072, 8192-token input; GA-vs-preview status ambiguous — flag). **Deprecated/shut down: `text-embedding-004` (Jan 2026), `embedding-001` (Oct 2025)** — do not target. Baseline = `gemini-embedding-001`.
+- Dimensions **requestable** via `outputDimensionality` (range **128–3072**; recommended 768/1536/3072).
+- **`task_type`** (RETRIEVAL_QUERY, RETRIEVAL_DOCUMENT, SEMANTIC_SIMILARITY, CLASSIFICATION, CLUSTERING, …): optional but **changes the produced vector**; query and document sides are **asymmetric**. `gemini-embedding-2` drops `task_type` (instructions go in the prompt) — a per-model capability difference.
+- Endpoint base `…/v1beta/models/<model>:embedContent` (single) and `:batchEmbedContents` (array). **Max input 2048 tokens** for `-001`. Default behavior **silently truncates** oversized input unless `autoTruncate:false`.
+- **Normalization footgun:** full 3072 is normalized, but `gemini-embedding-001` **does not normalize truncated (<3072) outputs — the caller must**. (`gemini-embedding-2` does auto-normalize.)
+- Usage reported (`usageMetadata.promptTokenCount`). Pricing /1M input tokens: `gemini-embedding-001` **$0.15** ($0.075 batch). Free tier exists.
+- Auth: **Gemini API key** via `x-goog-api-key` (simple). *Vertex AI* is a different endpoint requiring **OAuth2 bearer + project/region in URL** — AgentKit should use the **Gemini API key** path to mirror the chat provider, not Vertex.
+
+**Z.ai — supported, with a scope caveat that must be smoke-tested.**
+- OpenAI-compatible: `POST /api/paas/v4/embeddings`, `{model,input,dimensions}` → `{data[],usage}`.
+- Models: **`embedding-3`** (native **2048**, `dimensions` ∈ {256,512,1024,2048}, default 2048), legacy `embedding-2` (fixed 1024).
+- Batch: array input, **max 64 items**, ~3072 tokens/input. Usage block returned (`prompt_tokens`/`total_tokens`). Auth: plain `Authorization: Bearer <key>` (the historical Zhipu JWT-minting quirk does **not** apply to the current v4 / international endpoint).
+- **Scope caveat (important):** embeddings are fully documented and priced only on the **China platform** (`open.bigmodel.cn`, `embedding-3` at **¥0.5 CNY/1M**). On the **international `api.z.ai`** endpoint — the one AgentKit uses — the official SDKs expose `embeddings.create`, **but** the international docs list no embeddings page (API-ref URL 404s) and the international pricing page lists **no embedding model in USD**. So embeddings *probably* route through `api.z.ai`, but it is **not doc-confirmed**. **Action before committing Z.ai embeddings: run a live smoke test** (`POST https://api.z.ai/api/paas/v4/embeddings`, `model:"embedding-3"`, bearer z.ai key). Treat international availability and USD pricing as unconfirmed until then.
+
+### 12.3 Where "config-only swap" holds, needs a caveat, or fails
+
+**TRUE — adapter absorbs it, consumer changes only provider/model name:**
+- Parameter-name and wire differences (`dimensions` vs `outputDimensionality`, base URL, auth header, request/response JSON).
+- A uniform `[]string` **batch** surface — *provided* the adapter **auto-chunks** to each provider's item/token ceiling (OpenAI 2048 / Google batch ~hundreds / **Z.ai 64**) and reassembles in input order. Without chunking, a batch sized for OpenAI breaks on Z.ai.
+- A requested **target dimension** — honored when the chosen model supports it. Note this is **per-model config, not a cross-provider constraint**: vectors are incomparable across models regardless of dimension, so dimension parity buys nothing on the similarity math. The *only* reason a consumer might standardize a dimension across models is a **fixed-dimension downstream store** (e.g. a `pgvector(1024)` column) — a consumer storage-schema convenience AgentKit neither knows nor promises. AgentKit's job is just to honor a requested dimension or **fail loud** if that model can't produce it. (Per-model support, for the consumer who chooses to standardize: 1024 is producible on OpenAI 3-*/Google `gemini-embedding-001`/Z.ai `embedding-3`; 768 on OpenAI/Google but not Z.ai's enumerated set.)
+
+**TRUE ONLY WITH A CAVEAT / requires the library to do work:**
+- **Normalization.** Only config-only if AgentKit **L2-normalizes client-side** (mandatory for truncated `gemini-embedding-001`; undocumented for Z.ai). The honest promise is *"AgentKit returns unit-normalized vectors,"* not *"providers do."* Re-normalizing already-unit vectors is idempotent and cheap.
+- **Dimension request.** Per-model config (not cross-provider — see above). Bounded by native size and per-model support; legacy models (`ada-002`, `embedding-2`) can't downsize. **Fail loud** on an unsupported request rather than silently returning native dims.
+- **Truncation.** Only uniform if AgentKit forces **fail-loud** (`autoTruncate:false` on Google so it errors like OpenAI) and documents per-model token ceilings. Silent truncation is the most dangerous case — it corrupts retrieval quality with no signal.
+
+**FALSE — cannot be pure config:**
+- **Query-vs-document role** must be a **per-call input** (e.g. an `InputType: Query | Document | Unspecified` enum), not config. Google needs it for retrieval quality (asymmetric vectors); OpenAI/Z.ai safely ignore it. Hiding it in config would force a consumer to hold two clients. Expose it from day one so a later swap *to* Google doesn't silently underperform.
+- **The vectors themselves.** Different model ⇒ incomparable vectors ⇒ re-embed the corpus. Permanent and already accepted.
+
+### 12.4 Usage & pricing — the chat types do not fit
+
+Embeddings bill **input tokens only**; there are no output tokens, no reasoning, and (in practice) no cache tiers. The chat `Usage` (`usage.go`: `Output`, `ReasoningOutput`, `CacheWrite5m/1h`, …) and `Pricing.Cost` (`pricing.go`: multiplies `(Output+ReasoningOutput)·tier.Output`, selects context tiers) are structurally wrong here — reusing them carries ~six always-zero fields and an output term that shouldn't exist.
+
+**Recommendation: a separate, smaller pair of types**, e.g. `EmbeddingUsage{InputTokens, Total}` (Total == InputTokens for all three) and a **flat single-rate** `EmbeddingPricing{InputTokens nanoUSD/token}` — no tiers, no output. None of the three tier embeddings by context length, so a flat rate is both sufficient and accurate, and it keeps every supported embedding model priced by construction (mirroring the chat cost-always-available promise). Verified rates to bake: OpenAI 3-small $0.02 / 3-large $0.13 / ada-002 $0.10; Google `gemini-embedding-001` $0.15 (all /1M input tokens); Z.ai `embedding-3` ¥0.5/1M (no confirmed USD — resolve via the smoke test, see §12.2).
+
+### 12.5 Codebase fit — reuse vs. new
+
+The repo has **no embeddings code today**. The embeddings surface plugs into the existing rails with a clear reuse/new split (anchors: `orchestration.go:32` Provider interface, `orchestration.go:159` Conversation, `pricing.go`, `usage.go`, `error.go`, `retry.go`, `internal/httpx`, `internal/openaicompat`).
+
+**Reuse directly:** the `Error` taxonomy + sentinel categories, `RetryPolicy` + `isRetryable` + backoff, `internal/httpx` (`JSONRequest`/`RetryAfter`/`Client`), the per-provider credential injection (`New(apiKey, opts…)` + provider-specific auth header), and the **registry pattern** (`map[string]entry` looked up before each call).
+
+**New, parallel to chat (don't overload chat types):**
+- A separate **`EmbeddingProvider` SPI** — `Embed(ctx, *EmbeddingRequest) *EmbeddingResult` + `Name()` + an embeddings `Pricing(model)` — kept distinct from the chat `Provider` because embeddings have no System/Tools/History/Reasoning. (A provider package can implement both interfaces.)
+- A consumer-held **embeddings state object** (provider, model, target dimension, retry, log) — the embeddings analogue of `Conversation`, minus the conversational machinery. A single call returns vectors + usage; **no streaming/`Stream`, no tool loop.**
+- **Request/result types:** `EmbeddingRequest{Model, Inputs []string, InputType, Dimensions}` and `EmbeddingResult{Vectors [][]float32, Usage EmbeddingUsage, Warnings, Err}`.
+- An **embeddings registry entry** per model carrying `Dimension` (native), supported-dimension set/range, `MaxInputTokens`, and the flat `EmbeddingPricing` — every model priced by construction.
+- An **`internal/openaicompat` embeddings variant** (`/v1/embeddings` shape) shared by OpenAI and Z.ai; Google needs its own `embedContent`/`batchEmbedContents` adapter (different shape, `task_type`, normalization fix-up).
+- **Adapter-owned behaviors** that make the promise honest: client-side L2-normalization (always, or whenever dims are reduced), batch auto-chunking + order-preserving reassembly, and fail-loud over-length handling (`autoTruncate:false` on Google).
+
+### 12.6 Recommendations carried into design (embeddings)
+
+1. **Separate, parallel surface** — an `EmbeddingProvider` SPI and a small embeddings state object; reuse error/retry/httpx/registry rails, but **do not** reuse chat `Usage`/`Pricing` or the `Stream`/tool-loop machinery.
+2. **Providers: OpenAI, Google, Z.ai; Anthropic excluded** (grounded — no first-party embeddings). Use Google's **Gemini API key** path, not Vertex/OAuth. **Smoke-test Z.ai international** before committing it; if `api.z.ai` doesn't serve `embedding-3`, Z.ai drops from the embeddings set.
+3. **Closed curated embedding-model registry**, mirroring chat: baseline `text-embedding-3-small`/`-3-large`, `gemini-embedding-001`, `embedding-3`; each entry carries native dim, supported-dim set/range, max input tokens, and flat input-only pricing.
+4. **Config knobs:** provider, model, optional **target `Dimensions`** — strictly per-model (validated against that model's capability table; **fail loud** when unsupported — never silently return native dims). AgentKit promises no cross-provider dimension parity; matching dims across models is a consumer storage-schema choice, not an AgentKit concern.
+5. **One per-call input:** **`InputType` (Query | Document | Unspecified)** → Google task_type; ignored by OpenAI/Z.ai. Exposed from day one.
+6. **Adapter guarantees that make "config-only" honest:** AgentKit **L2-normalizes** returned vectors (promise the library's normalization, not the provider's); **auto-chunks** batches to per-provider limits and reassembles in order; **fails loud on over-length** input (`autoTruncate:false` on Google) with a uniform error.
+7. **Usage/cost:** flat input-tokens-only `EmbeddingUsage`/`EmbeddingPricing`; cost always available (every model priced by construction).
+8. **Document the two permanent caveats** in the promise: vectors from different models are incomparable (a switch ⇒ re-embed the corpus), and for best retrieval quality inputs should be tagged query vs document (Google uses it; others ignore it).
+
+### 12.7 Unverified / open items (resolve at design or build time)
+
+- **Z.ai international embeddings on `api.z.ai`** — existence + USD pricing **not doc-confirmed**; smoke-test required (the one scope-critical unknown).
+- OpenAI `text-embedding-3-large` price showed a $0.13-vs-$0.065 page discrepancy (likely standard-vs-batch); confirm at build. OpenAI per-request total-token cap (~300k) is community-observed, not official.
+- `gemini-embedding-2` GA-vs-preview status and exact `batchEmbedContents` array max on the Gemini API (vs the documented Vertex 5/250-text limits).
+- ada-002 / embedding-2 are legacy and dimension-fixed — likely **out** of the curated set unless a consumer need surfaces.
+
+### 12.8 Provider doc URLs (embeddings)
+
+- OpenAI: `developers.openai.com/api/docs/guides/embeddings`; model pages `…/models/text-embedding-3-large` / `-3-small`; launch post `openai.com/index/new-embedding-models-and-api-updates/`.
+- Google: `ai.google.dev/gemini-api/docs/embeddings`; `…/models/gemini-embedding-001`; `ai.google.dev/api/embeddings`; pricing `ai.google.dev/gemini-api/docs/pricing`; deprecations `ai.google.dev/gemini-api/docs/deprecations`.
+- Z.ai: China (authoritative) `docs.bigmodel.cn/cn/guide/models/embedding/embedding-3`; international `docs.z.ai` (no embeddings page); SDKs `github.com/zai-org/z-ai-sdk-python` / `…-java`.
+- Anthropic (no first-party embeddings): `platform.claude.com/docs/en/docs/build-with-claude/embeddings` ("Anthropic does not offer its own embedding model").
