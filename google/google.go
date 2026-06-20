@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"net"
 	"net/http"
 	"net/url"
@@ -27,6 +28,8 @@ const (
 	ModelLite31  = "gemini-3.1-flash-lite"
 	// ModelPro31Preview is Google's preview-channel 3.x Pro reasoning model.
 	ModelPro31Preview = "gemini-3.1-pro-preview"
+
+	EmbedModelGemini001 = "gemini-embedding-001"
 )
 
 const defaultBaseURL = "https://generativelanguage.googleapis.com"
@@ -34,9 +37,25 @@ const defaultBaseURL = "https://generativelanguage.googleapis.com"
 // Reasoning exposes Gemini's static native reasoning vocabulary.
 var Reasoning agentkit.ReasoningInspector = reasoningInspector{}
 
+// Embeddings exposes Gemini's static embedding model vocabulary.
+var Embeddings agentkit.EmbeddingInspector = embeddingInspector{}
+
 type modelEntry struct {
 	Pricing   agentkit.Pricing
 	Reasoning agentkit.ReasoningSpec
+}
+
+var googleEmbeddingPricing = map[string]agentkit.EmbeddingPricing{
+	EmbedModelGemini001: {InputToken: 150},
+}
+
+var googleEmbeddingSpecs = map[string]agentkit.EmbeddingSpec{
+	EmbedModelGemini001: {
+		NativeDimension: 3072,
+		MinDimension:    128,
+		MaxDimension:    3072,
+		MaxInputTokens:  2048,
+	},
 }
 
 var modelRegistry = map[string]modelEntry{
@@ -120,6 +139,21 @@ func cloneReasoningSpec(spec agentkit.ReasoningSpec) agentkit.ReasoningSpec {
 	return spec
 }
 
+type embeddingInspector struct{}
+
+func (embeddingInspector) EmbeddingSpec(model string) (agentkit.EmbeddingSpec, bool) {
+	spec, ok := googleEmbeddingSpecs[model]
+	return spec, ok
+}
+
+func (embeddingInspector) SupportedEmbeddings() map[string]agentkit.EmbeddingSpec {
+	out := make(map[string]agentkit.EmbeddingSpec, len(googleEmbeddingSpecs))
+	for model, spec := range googleEmbeddingSpecs {
+		out[model] = spec
+	}
+	return out
+}
+
 // Option configures a Gemini provider.
 type Option func(*Provider)
 
@@ -154,6 +188,17 @@ func New(apiKey string, opts ...Option) *Provider {
 		opt(p)
 	}
 	return p
+}
+
+// NewEmbedder constructs a Google embeddings provider.
+func NewEmbedder(apiKey string, opts ...Option) agentkit.EmbeddingProvider {
+	p := New(apiKey, opts...)
+	return &embeddingProvider{
+		apiKey:  p.apiKey,
+		baseURL: p.baseURL,
+		client:  p.client,
+		clock:   realEmbeddingRetryClock{},
+	}
 }
 
 func (p *Provider) Name() string {
@@ -702,6 +747,291 @@ func sumUsage(usage agentkit.Usage) int64 {
 	return usage.InputUncached + usage.CacheReadInput + usage.CacheWriteInput + usage.Output + usage.ReasoningOutput
 }
 
+const maxGoogleEmbeddingInputsPerRequest = 100
+
+type embeddingProvider struct {
+	apiKey  string
+	baseURL string
+	client  *http.Client
+	clock   embeddingRetryClock
+}
+
+func (p *embeddingProvider) Name() string {
+	return "google"
+}
+
+func (p *embeddingProvider) Pricing(model string) (agentkit.EmbeddingPricing, bool) {
+	if p == nil {
+		return agentkit.EmbeddingPricing{}, false
+	}
+	pricing, ok := googleEmbeddingPricing[model]
+	return pricing, ok
+}
+
+func (p *embeddingProvider) Embed(ctx context.Context, req *agentkit.EmbedRequest) *agentkit.EmbedRoundTrip {
+	if p == nil || p.apiKey == "" || p.baseURL == "" || req == nil {
+		return agentkit.NewEmbedRoundTrip(nil, agentkit.EmbeddingUsage{}, nil, agentkit.ErrInvalidConfig)
+	}
+	spec, ok := googleEmbeddingSpecs[req.Model]
+	if !ok {
+		return agentkit.NewEmbedRoundTrip(nil, agentkit.EmbeddingUsage{}, nil, agentkit.ErrInvalidConfig)
+	}
+	if req.Dimensions != 0 && (req.Dimensions < spec.MinDimension || req.Dimensions > spec.MaxDimension) {
+		return agentkit.NewEmbedRoundTrip(nil, agentkit.EmbeddingUsage{}, nil, agentkit.ErrInvalidConfig)
+	}
+	if len(req.Inputs) == 0 {
+		return agentkit.NewEmbedRoundTrip(nil, agentkit.EmbeddingUsage{}, nil, agentkit.ErrInvalidInput)
+	}
+
+	var all [][]float32
+	var usage agentkit.EmbeddingUsage
+	for start := 0; start < len(req.Inputs); start += maxGoogleEmbeddingInputsPerRequest {
+		end := start + maxGoogleEmbeddingInputsPerRequest
+		if end > len(req.Inputs) {
+			end = len(req.Inputs)
+		}
+		vectors, chunkUsage, err := p.embedChunkWithRetry(ctx, req, req.Inputs[start:end])
+		if err != nil {
+			return agentkit.NewEmbedRoundTrip(nil, agentkit.EmbeddingUsage{}, nil, err)
+		}
+		all = append(all, vectors...)
+		usage = addEmbeddingUsage(usage, chunkUsage)
+	}
+	return agentkit.NewEmbedRoundTrip(all, usage, nil, nil)
+}
+
+func (p *embeddingProvider) embedChunkWithRetry(ctx context.Context, req *agentkit.EmbedRequest, inputs []string) ([][]float32, agentkit.EmbeddingUsage, error) {
+	policy := embeddingRetryDefaults(req.Retry)
+	clock := p.clock
+	if clock == nil {
+		clock = realEmbeddingRetryClock{}
+	}
+	start := clock.Now()
+
+	for attempt := 1; ; attempt++ {
+		vectors, usage, err := p.embedChunk(ctx, req, inputs)
+		if err == nil {
+			return vectors, usage, nil
+		}
+		if !embeddingRetryable(err) || attempt >= policy.MaxAttempts {
+			return nil, agentkit.EmbeddingUsage{}, err
+		}
+		delay := embeddingRetryDelay(policy, clock, start, attempt, err)
+		if delay < 0 {
+			return nil, agentkit.EmbeddingUsage{}, err
+		}
+		if err := clock.Sleep(ctx, delay); err != nil {
+			return nil, agentkit.EmbeddingUsage{}, err
+		}
+	}
+}
+
+func (p *embeddingProvider) embedChunk(ctx context.Context, req *agentkit.EmbedRequest, inputs []string) ([][]float32, agentkit.EmbeddingUsage, error) {
+	body := googleBatchEmbedRequest{
+		Requests: make([]googleEmbedContentRequest, 0, len(inputs)),
+	}
+	for _, input := range inputs {
+		item := googleEmbedContentRequest{
+			Model:        "models/" + req.Model,
+			Content:      googleEmbedContent{Parts: []googleEmbedPart{{Text: input}}},
+			AutoTruncate: false,
+		}
+		if taskType := googleEmbeddingTaskType(req.Role); taskType != "" {
+			item.TaskType = taskType
+		}
+		if req.Dimensions != 0 {
+			item.OutputDimensionality = req.Dimensions
+		}
+		body.Requests = append(body.Requests, item)
+	}
+
+	httpReq, err := httpx.JSONRequest(ctx, http.MethodPost, p.embeddingURL(req.Model), body)
+	if err != nil {
+		return nil, agentkit.EmbeddingUsage{}, transportError(err)
+	}
+	httpReq.Header.Set("X-Goog-Api-Key", p.apiKey)
+
+	resp, err := httpx.Client(p.client).Do(httpReq)
+	if err != nil {
+		return nil, agentkit.EmbeddingUsage{}, transportError(err)
+	}
+	defer resp.Body.Close()
+
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, agentkit.EmbeddingUsage{}, transportError(err)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, agentkit.EmbeddingUsage{}, classifyError(resp.StatusCode, raw, resp.Header)
+	}
+
+	var payload googleBatchEmbedResponse
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return nil, agentkit.EmbeddingUsage{}, transportError(err)
+	}
+	vectors, err := googleEmbeddingVectors(payload.Embeddings, len(inputs))
+	if err != nil {
+		return nil, agentkit.EmbeddingUsage{}, err
+	}
+	usage := agentkit.EmbeddingUsage{
+		InputTokens: payload.UsageMetadata.PromptTokenCount,
+		Total:       payload.UsageMetadata.PromptTokenCount,
+	}
+	return vectors, usage, nil
+}
+
+func (p *embeddingProvider) embeddingURL(model string) string {
+	return p.baseURL + "/v1beta/models/" + url.PathEscape(model) + ":batchEmbedContents"
+}
+
+type googleBatchEmbedRequest struct {
+	Requests []googleEmbedContentRequest `json:"requests"`
+}
+
+type googleEmbedContentRequest struct {
+	Model                string             `json:"model"`
+	Content              googleEmbedContent `json:"content"`
+	TaskType             string             `json:"taskType,omitempty"`
+	OutputDimensionality int                `json:"outputDimensionality,omitempty"`
+	AutoTruncate         bool               `json:"autoTruncate"`
+}
+
+type googleEmbedContent struct {
+	Parts []googleEmbedPart `json:"parts"`
+}
+
+type googleEmbedPart struct {
+	Text string `json:"text"`
+}
+
+type googleBatchEmbedResponse struct {
+	Embeddings    []googleEmbedding `json:"embeddings"`
+	UsageMetadata struct {
+		PromptTokenCount int64 `json:"promptTokenCount"`
+	} `json:"usageMetadata"`
+}
+
+type googleEmbedding struct {
+	Values []float32 `json:"values"`
+}
+
+func googleEmbeddingTaskType(role agentkit.InputType) string {
+	switch role {
+	case agentkit.InputQuery:
+		return "RETRIEVAL_QUERY"
+	case agentkit.InputDocument:
+		return "RETRIEVAL_DOCUMENT"
+	default:
+		return ""
+	}
+}
+
+func googleEmbeddingVectors(embeddings []googleEmbedding, count int) ([][]float32, error) {
+	if len(embeddings) != count {
+		return nil, &agentkit.Error{Category: agentkit.ErrUnknown, Provider: "google", Message: "provider embedding count does not match input count"}
+	}
+	vectors := make([][]float32, count)
+	for i, embedding := range embeddings {
+		vectors[i] = append([]float32(nil), embedding.Values...)
+	}
+	return vectors, nil
+}
+
+func addEmbeddingUsage(a, b agentkit.EmbeddingUsage) agentkit.EmbeddingUsage {
+	return agentkit.EmbeddingUsage{InputTokens: a.InputTokens + b.InputTokens, Total: a.Total + b.Total}
+}
+
+type embeddingRetryClock interface {
+	Now() time.Time
+	Sleep(context.Context, time.Duration) error
+	Jitter(time.Duration) time.Duration
+}
+
+type realEmbeddingRetryClock struct{}
+
+func (realEmbeddingRetryClock) Now() time.Time {
+	return time.Now()
+}
+
+func (realEmbeddingRetryClock) Sleep(ctx context.Context, delay time.Duration) error {
+	if delay <= 0 {
+		return ctx.Err()
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+func (realEmbeddingRetryClock) Jitter(cap time.Duration) time.Duration {
+	if cap <= 1 {
+		return 0
+	}
+	return time.Duration(rand.Int63n(int64(cap)))
+}
+
+func embeddingRetryDefaults(p agentkit.RetryPolicy) agentkit.RetryPolicy {
+	if p.MaxAttempts <= 0 {
+		p.MaxAttempts = 4
+	}
+	if p.BaseDelay <= 0 {
+		p.BaseDelay = 500 * time.Millisecond
+	}
+	if p.MaxDelay <= 0 {
+		p.MaxDelay = 30 * time.Second
+	}
+	return p
+}
+
+func embeddingRetryable(err error) bool {
+	return errors.Is(err, agentkit.ErrRateLimited) ||
+		errors.Is(err, agentkit.ErrOverloaded) ||
+		errors.Is(err, agentkit.ErrServerError) ||
+		errors.Is(err, agentkit.ErrTimeout) ||
+		errors.Is(err, agentkit.ErrNetwork)
+}
+
+func embeddingRetryDelay(policy agentkit.RetryPolicy, clock embeddingRetryClock, start time.Time, attempt int, err error) time.Duration {
+	var providerErr *agentkit.Error
+	if !policy.IgnoreRetryAfter && errors.As(err, &providerErr) && providerErr.RetryAfter > 0 {
+		return boundedEmbeddingRetryDelay(policy, clock, start, providerErr.RetryAfter)
+	}
+	return boundedEmbeddingRetryDelay(policy, clock, start, clock.Jitter(embeddingBackoffCap(policy, attempt)))
+}
+
+func boundedEmbeddingRetryDelay(policy agentkit.RetryPolicy, clock embeddingRetryClock, start time.Time, delay time.Duration) time.Duration {
+	if delay < 0 {
+		delay = 0
+	}
+	if policy.MaxElapsed == 0 {
+		return delay
+	}
+	remaining := policy.MaxElapsed - clock.Now().Sub(start)
+	if remaining < 0 || delay > remaining {
+		return -1
+	}
+	return delay
+}
+
+func embeddingBackoffCap(policy agentkit.RetryPolicy, attempt int) time.Duration {
+	delay := policy.BaseDelay
+	for i := 1; i < attempt && delay < policy.MaxDelay; i++ {
+		if delay > policy.MaxDelay/2 {
+			delay = policy.MaxDelay
+			break
+		}
+		delay *= 2
+	}
+	if delay > policy.MaxDelay {
+		return policy.MaxDelay
+	}
+	return delay
+}
+
 func roundTripError(err error) *agentkit.RoundTrip {
 	return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, nil, err)
 }
@@ -753,7 +1083,11 @@ func categoryFor(status int, typ, message string) error {
 		return agentkit.ErrBilling
 	}
 	if status == http.StatusBadRequest || typ == "INVALID_ARGUMENT" {
-		if strings.Contains(lower, "context") || strings.Contains(lower, "token limit") {
+		if strings.Contains(lower, "context") ||
+			strings.Contains(lower, "token limit") ||
+			strings.Contains(lower, "too many tokens") ||
+			strings.Contains(lower, "too long") ||
+			strings.Contains(lower, "exceed") {
 			return agentkit.ErrContextLength
 		}
 		return agentkit.ErrInvalidRequest

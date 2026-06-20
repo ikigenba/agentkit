@@ -6,9 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"sort"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -420,6 +423,287 @@ func TestGoogleErrorClassificationRawAndRetryInfo(t *testing.T) {
 	}
 }
 
+func TestGoogleEmbedderBatchesUsageOrderAndRequestShape(t *testing.T) {
+	var provider agentkit.EmbeddingProvider
+	var requests []map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1beta/models/gemini-embedding-001:batchEmbedContents" {
+			t.Errorf("path = %s, want :batchEmbedContents endpoint", r.URL.Path)
+		}
+		if got := r.Header.Get("X-Goog-Api-Key"); got != "test-key" {
+			t.Errorf("X-Goog-Api-Key = %q", got)
+		}
+		var body map[string]any
+		decodeRequest(t, r, &body)
+		requests = append(requests, body)
+
+		items := field[[]any](t, body, "requests")
+		embeddings := make([]map[string]any, len(items))
+		for i, raw := range items {
+			item := raw.(map[string]any)
+			if item["model"] != "models/gemini-embedding-001" || item["autoTruncate"] != false {
+				t.Fatalf("request item = %#v, want model and autoTruncate:false", item)
+			}
+			if item["taskType"] != "RETRIEVAL_QUERY" || item["outputDimensionality"] != float64(128) {
+				t.Fatalf("request item task/dimensions = %#v", item)
+			}
+			content := field[map[string]any](t, item, "content")
+			parts := field[[]any](t, content, "parts")
+			input := field[string](t, parts[0].(map[string]any), "text")
+			n := googleEmbeddingInputNumber(input)
+			embeddings[i] = map[string]any{"values": []float32{float32(n + 1), 1}}
+		}
+		writeGoogleEmbeddingResponse(t, w, embeddings, int64(len(items)))
+	}))
+	defer server.Close()
+
+	provider = NewEmbedder("test-key", WithBaseURL(server.URL), WithHTTPClient(server.Client()))
+	inputs := make([]string, 101)
+	for i := range inputs {
+		inputs[i] = fmt.Sprintf("input-%03d", i)
+	}
+	embedder := &agentkit.Embedder{Provider: provider, Model: EmbedModelGemini001, Dimensions: 128}
+
+	result, err := embedder.Embed(context.Background(), inputs, agentkit.InputQuery)
+	// R-YGQZ-C8S2, R-YJ6S-3S9G, R-YPAA-0MYX
+	if err != nil {
+		t.Fatalf("Embed() error = %v, want nil", err)
+	}
+	if len(result.Vectors) != len(inputs) {
+		t.Fatalf("vectors = %d, want %d", len(result.Vectors), len(inputs))
+	}
+	if got, want := result.Usage(), (agentkit.EmbeddingUsage{InputTokens: 101, Total: 101}); got != want {
+		t.Fatalf("usage = %#v, want %#v", got, want)
+	}
+	for _, index := range []int{0, 99, 100} {
+		wantFirst := float64(index+1) / math.Sqrt(float64((index+1)*(index+1)+1))
+		if got := float64(result.Vectors[index][0]); math.Abs(got-wantFirst) > 1e-6 {
+			t.Fatalf("vector[%d][0] = %v, want %v", index, got, wantFirst)
+		}
+	}
+	if len(requests) != 2 {
+		t.Fatalf("requests = %d, want 2", len(requests))
+	}
+	firstItems := field[[]any](t, requests[0], "requests")
+	secondItems := field[[]any](t, requests[1], "requests")
+	if len(firstItems) != 100 || len(secondItems) != 1 {
+		t.Fatalf("chunk sizes = %d/%d, want 100/1", len(firstItems), len(secondItems))
+	}
+}
+
+func TestGoogleEmbeddingInputTypes(t *testing.T) {
+	var taskTypes []any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		decodeRequest(t, r, &body)
+		item := field[[]any](t, body, "requests")[0].(map[string]any)
+		taskTypes = append(taskTypes, item["taskType"])
+		writeGoogleEmbeddingResponse(t, w, []map[string]any{{"values": []float32{3, 4}}}, 1)
+	}))
+	defer server.Close()
+
+	embedder := &agentkit.Embedder{
+		Provider:   NewEmbedder("test-key", WithBaseURL(server.URL), WithHTTPClient(server.Client())),
+		Model:      EmbedModelGemini001,
+		Dimensions: 128,
+	}
+	for _, role := range []agentkit.InputType{agentkit.InputUnspecified, agentkit.InputQuery, agentkit.InputDocument} {
+		if _, err := embedder.Embed(context.Background(), []string{"hello"}, role); err != nil {
+			t.Fatalf("Embed(%v) error = %v", role, err)
+		}
+	}
+
+	// R-YLMK-VBQU
+	if got, want := taskTypes, []any{nil, "RETRIEVAL_QUERY", "RETRIEVAL_DOCUMENT"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("taskTypes = %#v, want %#v", got, want)
+	}
+}
+
+func TestGoogleEmbeddingErrorsAndConfigValidationAvoidHTTP(t *testing.T) {
+	var calls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		var body map[string]any
+		decodeRequest(t, r, &body)
+		item := field[[]any](t, body, "requests")[0].(map[string]any)
+		if item["autoTruncate"] != false {
+			t.Fatalf("autoTruncate = %#v, want false", item["autoTruncate"])
+		}
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprint(w, `{"error":{"code":400,"message":"token limit exceeded","status":"INVALID_ARGUMENT"}}`)
+	}))
+	defer server.Close()
+
+	unknown := &agentkit.Embedder{
+		Provider: NewEmbedder("test-key", WithBaseURL(server.URL), WithHTTPClient(server.Client())),
+		Model:    "unknown-google-embedding",
+	}
+	_, err := unknown.Embed(context.Background(), []string{"hello"}, agentkit.InputQuery)
+	// R-YMUH-93HJ
+	if !errors.Is(err, agentkit.ErrInvalidConfig) {
+		t.Fatalf("unknown model error = %v, want ErrInvalidConfig", err)
+	}
+	if calls != 0 {
+		t.Fatalf("calls after unknown model = %d, want 0", calls)
+	}
+
+	badDimensions := &agentkit.Embedder{
+		Provider:   NewEmbedder("test-key", WithBaseURL(server.URL), WithHTTPClient(server.Client())),
+		Model:      EmbedModelGemini001,
+		Dimensions: 127,
+	}
+	_, err = badDimensions.Embed(context.Background(), []string{"hello"}, agentkit.InputQuery)
+	// R-YD3A-6XJZ
+	if !errors.Is(err, agentkit.ErrInvalidConfig) {
+		t.Fatalf("bad dimensions error = %v, want ErrInvalidConfig", err)
+	}
+	if calls != 0 {
+		t.Fatalf("calls after bad dimensions = %d, want 0", calls)
+	}
+
+	tooLong := &agentkit.Embedder{
+		Provider: NewEmbedder("test-key", WithBaseURL(server.URL), WithHTTPClient(server.Client())),
+		Model:    EmbedModelGemini001,
+	}
+	result, err := tooLong.Embed(context.Background(), []string{"hello"}, agentkit.InputQuery)
+	// R-YKEO-HK05
+	if result != nil {
+		t.Fatalf("result = %#v, want nil", result)
+	}
+	if !errors.Is(err, agentkit.ErrContextLength) {
+		t.Fatalf("context error = %v, want ErrContextLength", err)
+	}
+	if calls != 1 {
+		t.Fatalf("calls after context error = %d, want 1", calls)
+	}
+}
+
+func TestGoogleEmbeddingDimensionsAndRetryPolicy(t *testing.T) {
+	t.Run("dimensions", func(t *testing.T) {
+		var requests []map[string]any
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var body map[string]any
+			decodeRequest(t, r, &body)
+			requests = append(requests, body)
+			item := field[[]any](t, body, "requests")[0].(map[string]any)
+			dimensions := 3072
+			if raw, ok := item["outputDimensionality"].(float64); ok {
+				dimensions = int(raw)
+			}
+			vector := make([]float32, dimensions)
+			vector[0] = 3
+			vector[1] = 4
+			writeGoogleEmbeddingResponse(t, w, []map[string]any{{"values": vector}}, 1)
+		}))
+		defer server.Close()
+
+		embedder := &agentkit.Embedder{
+			Provider: NewEmbedder("test-key", WithBaseURL(server.URL), WithHTTPClient(server.Client())),
+			Model:    EmbedModelGemini001,
+		}
+		native, err := embedder.Embed(context.Background(), []string{"native"}, agentkit.InputUnspecified)
+		if err != nil {
+			t.Fatalf("native Embed() error = %v", err)
+		}
+		if len(native.Vectors[0]) != 3072 {
+			t.Fatalf("native vector dimension = %d, want 3072", len(native.Vectors[0]))
+		}
+
+		embedder.Dimensions = 128
+		produced, err := embedder.Embed(context.Background(), []string{"small"}, agentkit.InputDocument)
+		// R-YBVD-T5TA
+		if err != nil {
+			t.Fatalf("dimensioned Embed() error = %v, want nil", err)
+		}
+		if len(produced.Vectors[0]) != 128 {
+			t.Fatalf("dimensioned vector dimension = %d, want 128", len(produced.Vectors[0]))
+		}
+		first := field[[]any](t, requests[0], "requests")[0].(map[string]any)
+		second := field[[]any](t, requests[1], "requests")[0].(map[string]any)
+		if _, ok := first["outputDimensionality"]; ok {
+			t.Fatalf("native request carried dimensions: %#v", first)
+		}
+		if second["outputDimensionality"] != float64(128) {
+			t.Fatalf("dimensioned request = %#v, want outputDimensionality=128", second)
+		}
+	})
+
+	t.Run("retryable and non-retryable", func(t *testing.T) {
+		var calls int
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			calls++
+			if calls == 1 {
+				w.WriteHeader(http.StatusInternalServerError)
+				fmt.Fprint(w, `{"error":{"code":500,"message":"try again","status":"INTERNAL"}}`)
+				return
+			}
+			if calls == 3 {
+				w.WriteHeader(http.StatusBadRequest)
+				fmt.Fprint(w, `{"error":{"code":400,"message":"bad input","status":"INVALID_ARGUMENT"}}`)
+				return
+			}
+			writeGoogleEmbeddingResponse(t, w, []map[string]any{{"values": []float32{1, 0}}}, 1)
+		}))
+		defer server.Close()
+
+		clock := &fakeGoogleEmbeddingClock{now: time.Date(2026, 6, 20, 1, 0, 0, 0, time.UTC)}
+		provider := NewEmbedder("test-key", WithBaseURL(server.URL), WithHTTPClient(server.Client())).(*embeddingProvider)
+		provider.clock = clock
+		embedder := &agentkit.Embedder{
+			Provider: provider,
+			Model:    EmbedModelGemini001,
+			Retry:    agentkit.RetryPolicy{MaxAttempts: 2, BaseDelay: time.Millisecond, MaxDelay: time.Millisecond},
+		}
+
+		_, err := embedder.Embed(context.Background(), []string{"hello"}, agentkit.InputQuery)
+		// R-YO2D-MV88
+		if err != nil {
+			t.Fatalf("retryable Embed() error = %v, want nil", err)
+		}
+		if calls != 2 || !reflect.DeepEqual(clock.sleeps, []time.Duration{time.Millisecond}) {
+			t.Fatalf("calls/sleeps = %d/%v, want 2/[1ms]", calls, clock.sleeps)
+		}
+
+		_, err = embedder.Embed(context.Background(), []string{"bad"}, agentkit.InputQuery)
+		// R-YO2D-MV88
+		if !errors.Is(err, agentkit.ErrInvalidRequest) {
+			t.Fatalf("non-retryable Embed() error = %v, want ErrInvalidRequest", err)
+		}
+		if calls != 3 || len(clock.sleeps) != 1 {
+			t.Fatalf("calls/sleeps after non-retryable = %d/%v, want 3/[1ms]", calls, clock.sleeps)
+		}
+	})
+}
+
+func TestGoogleEmbeddingRegistryGoldens(t *testing.T) {
+	supported := Embeddings.SupportedEmbeddings()
+	wantKeys := []string{EmbedModelGemini001}
+	gotKeys := make([]string, 0, len(supported))
+	for model := range supported {
+		gotKeys = append(gotKeys, model)
+	}
+	sort.Strings(gotKeys)
+	// R-YRQ2-S6GB, R-YSXZ-5Y70
+	if !reflect.DeepEqual(gotKeys, wantKeys) {
+		t.Fatalf("SupportedEmbeddings keys = %#v, want %#v", gotKeys, wantKeys)
+	}
+	if _, ok := Embeddings.EmbeddingSpec("unknown"); ok {
+		t.Fatal("EmbeddingSpec(unknown) ok = true, want false")
+	}
+
+	provider := NewEmbedder("")
+	spec, ok := Embeddings.EmbeddingSpec(EmbedModelGemini001)
+	// R-YVDR-XHOE
+	if !ok || spec != (agentkit.EmbeddingSpec{NativeDimension: 3072, MinDimension: 128, MaxDimension: 3072, MaxInputTokens: 2048}) {
+		t.Fatalf("EmbeddingSpec(%q) = %#v/%v, want D20 spec", EmbedModelGemini001, spec, ok)
+	}
+	pricing, ok := provider.Pricing(EmbedModelGemini001)
+	// R-YU5V-JPXP, R-YWLO-B9F3
+	if !ok || pricing != (agentkit.EmbeddingPricing{InputToken: 150}) {
+		t.Fatalf("Pricing(%q) = %#v/%v, want InputToken=150", EmbedModelGemini001, pricing, ok)
+	}
+}
+
 func TestGoogleDropsForeignReasoningFromWireRequest(t *testing.T) {
 	var sawRequest bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -627,6 +911,48 @@ func containsKey(v any, key string) bool {
 		}
 	}
 	return false
+}
+
+func googleEmbeddingInputNumber(input string) int {
+	n, err := strconv.Atoi(strings.TrimPrefix(input, "input-"))
+	if err != nil {
+		return 0
+	}
+	return n
+}
+
+func writeGoogleEmbeddingResponse(t *testing.T, w http.ResponseWriter, embeddings []map[string]any, promptTokens int64) {
+	t.Helper()
+	if err := json.NewEncoder(w).Encode(map[string]any{
+		"embeddings": embeddings,
+		"usageMetadata": map[string]int64{
+			"promptTokenCount": promptTokens,
+		},
+	}); err != nil {
+		t.Fatalf("write embedding response: %v", err)
+	}
+}
+
+type fakeGoogleEmbeddingClock struct {
+	now    time.Time
+	sleeps []time.Duration
+}
+
+func (c *fakeGoogleEmbeddingClock) Now() time.Time {
+	return c.now
+}
+
+func (c *fakeGoogleEmbeddingClock) Sleep(ctx context.Context, delay time.Duration) error {
+	c.sleeps = append(c.sleeps, delay)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	c.now = c.now.Add(delay)
+	return nil
+}
+
+func (c *fakeGoogleEmbeddingClock) Jitter(cap time.Duration) time.Duration {
+	return cap
 }
 
 func findFunctionCallPart(t *testing.T, contents []any, name string) map[string]any {
