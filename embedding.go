@@ -36,6 +36,16 @@ type EmbedRoundTrip struct {
 	err      error
 }
 
+// NewEmbedRoundTrip constructs one embedding provider result.
+func NewEmbedRoundTrip(vectors [][]float32, usage EmbeddingUsage, warnings []Warning, err error) *EmbedRoundTrip {
+	return &EmbedRoundTrip{
+		vectors:  cloneFloat32Vectors(vectors),
+		usage:    usage,
+		warnings: append([]Warning(nil), warnings...),
+		err:      err,
+	}
+}
+
 // Vectors returns the embedding vectors produced by the provider.
 func (r *EmbedRoundTrip) Vectors() [][]float32 {
 	if r == nil {

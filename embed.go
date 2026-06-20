@@ -1,6 +1,9 @@
 package agentkit
 
-import "context"
+import (
+	"context"
+	"math"
+)
 
 // Embedder is one embedding workflow backed by an EmbeddingProvider.
 //
@@ -31,6 +34,10 @@ func (e *Embedder) Embed(ctx context.Context, inputs []string, role InputType) (
 			return nil, ErrInvalidInput
 		}
 	}
+	pricing, ok := e.Provider.Pricing(e.Model)
+	if !ok {
+		return nil, ErrInvalidConfig
+	}
 
 	rt := e.Provider.Embed(ctx, &EmbedRequest{
 		Model:      e.Model,
@@ -47,13 +54,10 @@ func (e *Embedder) Embed(ctx context.Context, inputs []string, role InputType) (
 	}
 
 	usage := rt.Usage()
-	cost := Cost(0)
-	if pricing, ok := e.Provider.Pricing(e.Model); ok {
-		cost = pricing.Cost(usage)
-	}
+	cost := pricing.Cost(usage)
 
 	result := &EmbedResult{
-		Vectors:  rt.Vectors(),
+		Vectors:  normalizeFloat32Vectors(rt.Vectors()),
 		Warnings: rt.Warnings(),
 		usage:    usage,
 		cost:     cost,
@@ -102,4 +106,22 @@ func (r *EmbedResult) Cost() Cost {
 		return 0
 	}
 	return r.cost
+}
+
+func normalizeFloat32Vectors(vectors [][]float32) [][]float32 {
+	normalized := cloneFloat32Vectors(vectors)
+	for i, vector := range normalized {
+		var sum float64
+		for _, value := range vector {
+			sum += float64(value) * float64(value)
+		}
+		if sum == 0 {
+			continue
+		}
+		norm := float32(math.Sqrt(sum))
+		for j := range normalized[i] {
+			normalized[i][j] /= norm
+		}
+	}
+	return normalized
 }

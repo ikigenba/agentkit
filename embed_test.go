@@ -79,6 +79,21 @@ func TestEmbedRejectsMissingConfigWithoutProviderCall(t *testing.T) {
 			t.Fatalf("pricing calls = %d, want 0", len(provider.priceCalls))
 		}
 	})
+
+	t.Run("unknown model", func(t *testing.T) {
+		// R-Y87O-NUL7
+		provider := newFakeEmbeddingProvider()
+		_, err := (&Embedder{Provider: provider, Model: "unknown-model"}).Embed(ctx, []string{"hello"}, InputQuery)
+		if !errors.Is(err, ErrInvalidConfig) {
+			t.Fatalf("Embed() error = %v, want ErrInvalidConfig", err)
+		}
+		if len(provider.calls) != 0 {
+			t.Fatalf("provider calls = %d, want 0", len(provider.calls))
+		}
+		if got, want := provider.priceCalls, []string{"unknown-model"}; !reflect.DeepEqual(got, want) {
+			t.Fatalf("pricing calls = %#v, want %#v", got, want)
+		}
+	})
 }
 
 func TestEmbedRejectsEmptyInputsWithoutProviderCall(t *testing.T) {
