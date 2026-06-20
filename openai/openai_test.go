@@ -17,6 +17,10 @@ import (
 	"github.com/ikigenba/agentkit"
 )
 
+type unknownBlock struct {
+	agentkit.TextBlock
+}
+
 func TestProviderSendBuildsResponsesRequestsAndReplaysReasoning(t *testing.T) {
 	var mu sync.Mutex
 	var requests []map[string]any
@@ -74,7 +78,7 @@ func TestProviderSendBuildsResponsesRequestsAndReplaysReasoning(t *testing.T) {
 	}
 
 	// R-H3PK-QFG3, R-XR4M-U1ZT, R-XW08-D4YL, R-C8UE-VJ67,
-	// R-P5U3-5CFZ, R-P71Z-J46O, R-T40A-VZQ7, R-ELUQ-VJIQ
+	// R-P5U3-5CFZ, R-T40A-VZQ7, R-ELUQ-VJIQ
 	stream := c.Send(context.Background(), "weather?")
 	var toolUseIndex, toolResultIndex int = -1, -1
 	var toolUse agentkit.ToolUse
@@ -150,6 +154,40 @@ func TestProviderSendBuildsResponsesRequestsAndReplaysReasoning(t *testing.T) {
 	if !inputContains(secondInput, "function_call_output", "output", "sunny") {
 		t.Fatalf("second request did not include tool output: %#v", secondInput)
 	}
+}
+
+func TestOpenAIBuildRequestPanicsOnUnknownOutboundBlockType(t *testing.T) {
+	// R-4YSE-6YBS
+	provider := New("test-key")
+	req := &agentkit.Request{
+		Model: ModelGPT55,
+		Messages: []agentkit.Message{{
+			Role:   agentkit.RoleUser,
+			Blocks: []agentkit.Block{unknownBlock{}},
+		}},
+	}
+
+	assertUnknownBlockPanic(t, func() {
+		_, _, _ = provider.buildRequest(req)
+	})
+}
+
+func assertUnknownBlockPanic(t *testing.T, fn func()) {
+	t.Helper()
+	defer func() {
+		got := recover()
+		if got == nil {
+			t.Fatal("expected panic for unknown block type")
+		}
+		msg, ok := got.(string)
+		if !ok {
+			t.Fatalf("panic = %T(%v), want string", got, got)
+		}
+		if !strings.Contains(msg, "unknown block type") || !strings.Contains(msg, "unknownBlock") {
+			t.Fatalf("panic = %q, want unknown block type message", msg)
+		}
+	}()
+	fn()
 }
 
 func TestProviderReplaysEmptyReasoningSummaryArrayOnSecondSend(t *testing.T) {

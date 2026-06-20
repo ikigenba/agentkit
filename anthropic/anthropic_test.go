@@ -20,6 +20,10 @@ import (
 
 var updateGolden = flag.Bool("update", false, "update golden files")
 
+type unknownBlock struct {
+	agentkit.TextBlock
+}
+
 func TestNewProviderSendsAuthenticatedRequestToInjectedServer(t *testing.T) {
 	// R-H3PK-QFG3
 	// R-WKTI-LIIE
@@ -325,7 +329,6 @@ func TestAnthropicDropsForeignReasoningBlocksFromRequest(t *testing.T) {
 func TestAnthropicRequestMapsGenerationSettingsAndWarnings(t *testing.T) {
 	t.Run("sampling and honored reasoning settings", func(t *testing.T) {
 		// R-P5U3-5CFZ
-		// R-P71Z-J46O
 		// R-PBXL-275G
 		// R-T40A-VZQ7
 		// R-ELUQ-VJIQ
@@ -478,6 +481,40 @@ func TestAnthropicRequestMapsGenerationSettingsAndWarnings(t *testing.T) {
 			t.Fatalf("degraded effort = %v, want high", output["effort"])
 		}
 	})
+}
+
+func TestAnthropicBuildRequestPanicsOnUnknownOutboundBlockType(t *testing.T) {
+	// R-4YSE-6YBS
+	req := &agentkit.Request{
+		Model: ModelSonnet46,
+		Messages: []agentkit.Message{{
+			Role:   agentkit.RoleUser,
+			Blocks: []agentkit.Block{unknownBlock{}},
+		}},
+	}
+
+	stablePrefixTokens(req)
+	assertUnknownBlockPanic(t, func() {
+		_, _, _ = buildRequest(req)
+	})
+}
+
+func assertUnknownBlockPanic(t *testing.T, fn func()) {
+	t.Helper()
+	defer func() {
+		got := recover()
+		if got == nil {
+			t.Fatal("expected panic for unknown block type")
+		}
+		msg, ok := got.(string)
+		if !ok {
+			t.Fatalf("panic = %T(%v), want string", got, got)
+		}
+		if !strings.Contains(msg, "unknown block type") || !strings.Contains(msg, "unknownBlock") {
+			t.Fatalf("panic = %q, want unknown block type message", msg)
+		}
+	}()
+	fn()
 }
 
 func TestAnthropicDefaultCacheBreakpointOnStablePrefix(t *testing.T) {

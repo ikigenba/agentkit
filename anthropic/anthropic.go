@@ -277,7 +277,7 @@ func convertMessage(msg agentkit.Message) (wireMessage, error) {
 				blocks = append(blocks, wireBlock{Type: "thinking", Thinking: b.Summary, Signature: signature})
 			}
 		default:
-			return wireMessage{}, agentkit.ErrInvalidConfig
+			panic(fmt.Sprintf("unknown block type %T", block))
 		}
 	}
 	return wireMessage{Role: role, Content: blocks}, nil

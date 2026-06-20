@@ -395,6 +395,8 @@ func messageInputItems(message agentkit.Message) ([]inputItem, error) {
 			if item, ok := openAIReasoningItem(block); ok {
 				items = append(items, item)
 			}
+		default:
+			panic(fmt.Sprintf("unknown block type %T", block))
 		}
 	}
 	flushText()

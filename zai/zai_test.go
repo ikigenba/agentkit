@@ -78,7 +78,7 @@ func TestZaiSendUsesBakedBaseURLAndAssemblesToolTurn(t *testing.T) {
 	}
 
 	// R-H4XH-476S, R-P9HS-ANO2, R-XW08-D4YL, R-C8UE-VJ67,
-	// R-P5U3-5CFZ, R-P71Z-J46O, R-T40A-VZQ7, R-ELUQ-VJIQ
+	// R-P5U3-5CFZ, R-T40A-VZQ7, R-ELUQ-VJIQ
 	stream := c.Send(context.Background(), "weather?")
 	var toolUseIndex, toolResultIndex int = -1, -1
 	var toolUse agentkit.ToolUse

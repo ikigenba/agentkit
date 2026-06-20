@@ -3,5 +3,4 @@
 
 The shared, non-consumer-importable `internal/openaicompat` Chat-Completions adapter exists (request build, SSE parse, central assembly, usage mapping, pluggable error classifier), and the public `zai` sub-package constructs it with Z.ai's baked-in base URL (`https://api.z.ai/api/paas/v4/`) — the consumer supplies only an API key. `zai` classifies errors by Z.ai's numeric `code`, maps `reasoning_content` into `Opaque` with `ReasoningOutput`=0, degrades a forced `tool_choice` to `auto` with a `Warning`, labels `Error.Provider`="zai", and ships the registry + pricing (glm-5.2/5.1/4.7/4.6) with exported constants. `internal/openaicompat` carries no public surface and no ids of its own.
 
-**Done when:** (Z.ai slices): R-H4XH-476S, R-BZMN-GDJ0, R-P9HS-ANO2, R-Y810-TECF, R-Y98X-7634, R-YAGT-KXTT, R-YBOP-YPKI, R-YCWM-CHB7, R-VDY4-AP7H, R-V1KQ-IKI6, R-XW08-D4YL, R-055A-NI1P, R-P5U3-5CFZ, R-P71Z-J46O, R-C8UE-VJ67 (Z.ai assembly slice) are covered; suite green.
-
+**Done when:** (Z.ai slices): R-H4XH-476S, R-BZMN-GDJ0, R-P9HS-ANO2, R-Y810-TECF, R-Y98X-7634, R-YAGT-KXTT, R-YBOP-YPKI, R-YCWM-CHB7, R-VDY4-AP7H, R-V1KQ-IKI6, R-XW08-D4YL, R-055A-NI1P, R-P5U3-5CFZ, R-C8UE-VJ67 (Z.ai assembly slice) are covered; suite green.

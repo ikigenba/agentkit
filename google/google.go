@@ -273,6 +273,9 @@ func partsFromMessage(message agentkit.Message) []map[string]any {
 					"is_error": block.IsError,
 				},
 			}})
+		case agentkit.ReasoningBlock:
+		default:
+			panic(fmt.Sprintf("unknown block type %T", block))
 		}
 	}
 	return parts

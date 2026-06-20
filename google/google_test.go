@@ -17,6 +17,10 @@ import (
 	"github.com/ikigenba/agentkit"
 )
 
+type unknownBlock struct {
+	agentkit.TextBlock
+}
+
 func TestGoogleSendBuildsRequestParsesToolTurnAndUsage(t *testing.T) {
 	var calls int32
 	var sawAuth bool
@@ -47,7 +51,6 @@ func TestGoogleSendBuildsRequestParsesToolTurnAndUsage(t *testing.T) {
 				t.Fatalf("generation settings not mapped: %#v", gen)
 			}
 			thinking := field[map[string]any](t, gen, "thinkingConfig")
-			// R-P71Z-J46O
 			// R-T40A-VZQ7
 			// R-ELUQ-VJIQ
 			if thinking["thinkingBudget"] != float64(8192) || thinking["thinkingLevel"] != nil || thinking["includeThoughts"] != true {
@@ -189,6 +192,40 @@ func TestGoogleSendBuildsRequestParsesToolTurnAndUsage(t *testing.T) {
 	if !sawAuth || !sawLossySchema || !sawThinking || !sawReplay || !sawToolResult {
 		t.Fatalf("server assertions did not all run")
 	}
+}
+
+func TestGoogleRequestBodyPanicsOnUnknownOutboundBlockType(t *testing.T) {
+	// R-4YSE-6YBS
+	provider := New("test-key")
+	req := &agentkit.Request{
+		Model: ModelFlash25,
+		Messages: []agentkit.Message{{
+			Role:   agentkit.RoleUser,
+			Blocks: []agentkit.Block{unknownBlock{}},
+		}},
+	}
+
+	assertUnknownBlockPanic(t, func() {
+		_, _ = provider.requestBody(req)
+	})
+}
+
+func assertUnknownBlockPanic(t *testing.T, fn func()) {
+	t.Helper()
+	defer func() {
+		got := recover()
+		if got == nil {
+			t.Fatal("expected panic for unknown block type")
+		}
+		msg, ok := got.(string)
+		if !ok {
+			t.Fatalf("panic = %T(%v), want string", got, got)
+		}
+		if !strings.Contains(msg, "unknown block type") || !strings.Contains(msg, "unknownBlock") {
+			t.Fatalf("panic = %q, want unknown block type message", msg)
+		}
+	}()
+	fn()
 }
 
 func TestGoogleReasoningOffDegradesWithWarningOnPro(t *testing.T) {
