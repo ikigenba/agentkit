@@ -4,8 +4,8 @@ The manifest for the split design. Each Decision lives in its own `docs/design/D
 One line per Decision, in number order — file, label, and the Verification ids it owns.
 - **D1** `docs/design/D01.md` — The consumer surface: the conversation object and the turn verb
   - ids: R-ZWV0-CY54, R-ZELD-OQNG, R-ZZAT-4HMI, R-00IP-I9D7
-- **D2** `docs/design/D02.md` — The streaming consumption surface: `Stream` and the `Event` taxonomy
-  - ids: R-C7MI-HRFI, R-C8UE-VJ67, R-CBA7-N2NL, R-CCI4-0UEA, R-CDQ0-EM4Z
+- **D2** `docs/design/D02.md` — The consumption surface: `Stream` and the message-granular `Event` taxonomy
+  - ids: R-HUZX-7N2W, R-C8UE-VJ67, R-CBA7-N2NL, R-CCI4-0UEA, R-CDQ0-EM4Z
 - **D3** `docs/design/D03.md` — The canonical message & block data model
   - ids: R-IKKQ-Z3B4, R-ILSN-CV1T, R-IN0J-QMSI, R-IO8G-4EJ7, R-IPGC-I69W, R-XW08-D4YL
 - **D4** `docs/design/D04.md` — The tool definition & registration surface
@@ -68,7 +68,6 @@ R-BVYY-B2AX  D7  docs/design/D07.md
 R-BX6U-OU1M  D7  docs/design/D07.md
 R-BYER-2LSB  D7  docs/design/D07.md
 R-BZMN-GDJ0  D7  docs/design/D07.md
-R-C7MI-HRFI  D2  docs/design/D02.md
 R-C8UE-VJ67  D2  docs/design/D02.md
 R-CBA7-N2NL  D2  docs/design/D02.md
 R-CCI4-0UEA  D2  docs/design/D02.md
@@ -83,6 +82,7 @@ R-GSIG-PT07  D9  docs/design/D09.md
 R-H3PK-QFG3  D5  docs/design/D05.md
 R-H4XH-476S  D5  docs/design/D05.md
 R-H65D-HYXH  D5  docs/design/D05.md
+R-HUZX-7N2W  D2  docs/design/D02.md
 R-I5VJ-CTXE  D7  docs/design/D07.md
 R-IKKQ-Z3B4  D3  docs/design/D03.md
 R-ILSN-CV1T  D3  docs/design/D03.md
