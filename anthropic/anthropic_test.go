@@ -582,6 +582,62 @@ func TestAnthropicErrorClassificationAndRawCapture(t *testing.T) {
 	}
 }
 
+func TestAnthropicStreamErrorEventClassifiesFromEnvelopeType(t *testing.T) {
+	tests := []struct {
+		name    string
+		typ     string
+		message string
+		want    error
+	}{
+		{name: "overloaded", typ: "overloaded_error", message: "temporarily overloaded", want: agentkit.ErrOverloaded},
+		{name: "rate limited", typ: "rate_limit_error", message: "too many requests", want: agentkit.ErrRateLimited},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// R-FR35-46U7
+			raw := []byte(`{"type":"error","error":{"type":"` + tt.typ + `","message":"` + tt.message + `"}}`)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "text/event-stream")
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte("event: error\n"))
+				_, _ = w.Write([]byte("data: "))
+				_, _ = w.Write(raw)
+				_, _ = w.Write([]byte("\n\n"))
+			}))
+			defer server.Close()
+
+			conv := &agentkit.Conversation{
+				Provider: New("key", WithBaseURL(server.URL), WithHTTPClient(server.Client())),
+				Model:    ModelSonnet46,
+				Retry:    agentkit.RetryPolicy{MaxAttempts: 1},
+			}
+			stream := conv.Send(context.Background(), "hello")
+			drain(stream)
+
+			err := stream.Err()
+			if !errors.Is(err, tt.want) {
+				t.Fatalf("Err() = %v, want errors.Is(..., %v)", err, tt.want)
+			}
+			var akErr *agentkit.Error
+			if !errors.As(err, &akErr) {
+				t.Fatalf("Err() does not satisfy errors.As(*agentkit.Error): %v", err)
+			}
+			if akErr.Provider != "anthropic" {
+				t.Fatalf("Provider = %q, want anthropic", akErr.Provider)
+			}
+			if akErr.StatusCode != 0 {
+				t.Fatalf("StatusCode = %d, want 0", akErr.StatusCode)
+			}
+			if akErr.Type != tt.typ {
+				t.Fatalf("Type = %q, want %q", akErr.Type, tt.typ)
+			}
+			if !bytes.Equal(akErr.Raw, raw) {
+				t.Fatalf("Raw = %s, want %s", akErr.Raw, raw)
+			}
+		})
+	}
+}
+
 func TestAnthropicRegistryAndPricingTable(t *testing.T) {
 	provider := New("key")
 	models := []string{ModelOpus48, ModelSonnet46, ModelHaiku45}
