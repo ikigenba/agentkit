@@ -15,7 +15,7 @@ Your job each turn: build **exactly one phase**, prove it, mark it done, commit,
 
 ## Project conventions
 
-**Language & layout.** Go 1.26; module `github.com/ikigenba/agentkit`; package `agentkit` at the module **root** (the large root package is split across several phases). Leaf provider sub-packages: `anthropic/`, `openai/`, `zai/`, `google/`. Non-consumer-importable shared internals under `internal/`: `internal/httpx`, `internal/sse`, `internal/openaicompat`, `internal/mcp`. The example lives under `examples/repl/`. Public symbols are named so their purpose is clear with no package-name stutter (`agentkit.Conversation`, not `agentkit.AgentKitState`).
+**Language & layout.** Go 1.26; module `github.com/ikigenba/agentkit`; package `agentkit` at the module **root** (the large root package is split across several phases). Leaf provider sub-packages: `anthropic/`, `openai/`, `zai/`, `google/`. Non-consumer-importable shared internals under `internal/`: `internal/httpx`, `internal/sse`, `internal/openaicompat`, `internal/mcp`. Public symbols are named so their purpose is clear with no package-name stutter (`agentkit.Conversation`, not `agentkit.AgentKitState`).
 
 **Build / typecheck command** (both must pass clean — no errors, no diagnostics):
 

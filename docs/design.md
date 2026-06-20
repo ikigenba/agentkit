@@ -837,23 +837,6 @@ Settled choices:
 - R-WM1E-ZA93 — re-running golden `-update` against unchanged fixtures produces no diff (golden output is deterministic).
 - R-711P-17EO — the `internal/mcp` client, driven against a fake MCP `httptest.Server`, completes the handshake and the four calls offline, exercising both response content-types, an `isError` result, a JSON-RPC `error`, and a `401`+`WWW-Authenticate`.
 
-## Decision 14 — The example REPL
-
-**Decision.** A runnable `examples/repl/` program — a thin consumer of the public API only. It reads stdin, calls `conv.Send`, prints `TextDelta`s as they stream, registers a `bash` tool via `NewTool`, and supports `/model <provider>:<name>` to swap `conv.Provider`+`conv.Model` mid-session with `History` retained.
-
-Settled choices:
-- **Location `examples/repl/`** — a demo, not a shipped binary.
-- **Public API only** — the example uses nothing internal; if it can't be built cleanly, the public surface is wrong (a standing health check).
-- **`/model <provider>:<name>`** parses the `<provider>` token (`anthropic` | `google` | `openai` | `zai`) to the matching provider sub-package constructor, plus the model string.
-
-**Rejected.**
-- *`cmd/repl/`* — implies a shipped binary; this is illustrative.
-- *Reaching into internal packages* — would mask public-surface gaps the example exists to expose.
-
-**Verification.**
-- R-WCNR-SQFT — the example builds against the public API alone, and a `/model <provider>:<name>` command switches `Provider`+`Model` to the named backend with prior `History` retained.
-- R-WDVO-6I6I — the registered `bash` tool is invoked through the normal tool loop when the model requests it, and its output is fed back to continue the turn.
-
 ## Decision 15 — Structured JSONL event log & conversation lifecycle
 
 **Decision.** The consumer supplies an `io.Writer`; AgentKit writes one JSON object per line for each protocol event of a turn — a `codex exec --json`-style message stream. A `Close()` lifecycle method emits a final cumulative `summary` record.
@@ -1145,4 +1128,4 @@ Settled choices:
 
 ## Status
 
-Fully decided: Decisions 1–17. Consumer surface: D1 (`Conversation` + `Send`), D2 (`Stream` + `Event`), D3 (message & block model), D4 (tools), D5 (provider packaging), D6 (generation settings & the native `ReasoningValue` + warn-and-default), D7 (error model), D8 (usage), D15 (JSONL event log & lifecycle), D16 (model registry: pricing, cost & reasoning introspection), D17 (MCP servers as a tool source). Internal: D9 (package architecture, adapter SPI & per-adapter reasoning lowering), D10 (orchestration layer), D11 (retry & backoff), D12 (raw HTTP), D13 (testing strategy). Example: D14 (REPL). Reasoning is native-per-model: a tagged `ReasoningValue` (D6), credential-blind per-model introspection via `ReasoningInspector` (D16), adapter-owned lowering + request-build-time validation that warns and falls back to the model default (D6/D9) — no cross-model enum. MCP support (D17) reuses the `Tool` abstraction and threads targeted edits through D4 (third-party schema lossiness → warning), D7 (`MCPServer` attribution, no new sentinel), D10 (tool ordering + cache invalidation), D11 (retry discovery, not `tools/call`), D12 (`internal/mcp` client), D13 (fake MCP server). Seams, public interfaces, naming, types, data model, and the testing approach are all decided. The construction order that realizes this design lives in the plan.
+Fully decided: Decisions 1–17. Consumer surface: D1 (`Conversation` + `Send`), D2 (`Stream` + `Event`), D3 (message & block model), D4 (tools), D5 (provider packaging), D6 (generation settings & the native `ReasoningValue` + warn-and-default), D7 (error model), D8 (usage), D15 (JSONL event log & lifecycle), D16 (model registry: pricing, cost & reasoning introspection), D17 (MCP servers as a tool source). Internal: D9 (package architecture, adapter SPI & per-adapter reasoning lowering), D10 (orchestration layer), D11 (retry & backoff), D12 (raw HTTP), D13 (testing strategy). Reasoning is native-per-model: a tagged `ReasoningValue` (D6), credential-blind per-model introspection via `ReasoningInspector` (D16), adapter-owned lowering + request-build-time validation that warns and falls back to the model default (D6/D9) — no cross-model enum. MCP support (D17) reuses the `Tool` abstraction and threads targeted edits through D4 (third-party schema lossiness → warning), D7 (`MCPServer` attribution, no new sentinel), D10 (tool ordering + cache invalidation), D11 (retry discovery, not `tools/call`), D12 (`internal/mcp` client), D13 (fake MCP server). Seams, public interfaces, naming, types, data model, and the testing approach are all decided. The construction order that realizes this design lives in the plan.
