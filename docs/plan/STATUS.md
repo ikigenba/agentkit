@@ -25,4 +25,4 @@ Phase 20  ✅  realizes D9                              — Fix: Google adapter 
 Phase 21  ✅  realizes D16,D6                          — Native reasoning introspection surface: descriptor types and per-package specs
 Phase 22  ✅  realizes D6,D9                           — Native reasoning value and warn-and-default lowering: atomic retype across root and all adapters
 Phase 23  ✅  realizes D9                              — Fix: Anthropic replayed thinking block serializes its reasoning text in `text` instead of `thinking`
-Phase 24  ⬜  realizes D2,D9,D10                       — Migrate to message-granular delivery: remove the consumer delta surface
+Phase 24  ✅  realizes D2,D9,D10                       — Migrate to message-granular delivery: remove the consumer delta surface
