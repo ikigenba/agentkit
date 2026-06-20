@@ -88,8 +88,15 @@ tests). The REPL is fully gone (this is a library; no CLI/app surface).
     figure was GPT-4.1-mini confusion); `glm-5.1` $1.40/$0.26/$4.40 is correct vs
     Z.ai-direct (the $0.98 figure was an OpenRouter reseller discount).
 
-- [ ] **Finding 4 — Incremental streaming is not actually delivered
-  (contract-vs-product).** Every adapter `io.ReadAll`s the full response body and
+- [x] **Finding 4 — Incremental streaming is not actually delivered
+  (contract-vs-product).** *(RESOLVED 2026-06-20 — Phase 24.)* Adopted **Option B**
+  (message-granular delivery): dropped the consumer-facing `*Delta` surface so the
+  stream emits only completed `MessageDone`/`ToolUse`/`ToolResult` events, and
+  softened product.md / design.md to match ("messages delivered as completed units,"
+  no token-by-token promise). Backend SSE decoding is retained (D12 unchanged);
+  `R-C7MI-HRFI` deleted, `R-HUZX-7N2W` minted; `R-CCI4-0UEA` still holds by
+  construction (no live consumer streaming was introduced).
+  Every adapter `io.ReadAll`s the full response body and
   then replays a precomputed in-memory slice (anthropic.go:176/181,
   openaicompat.go:94/110, google.go:188/200). This contradicts product.md:73
   ("Replies are delivered incrementally") and design.md:136 ("as the model
@@ -116,7 +123,12 @@ tests). The REPL is fully gone (this is a library; no CLI/app surface).
   sleeping. The `retryClock` interface already abstracts `Now/Sleep/Jitter`.
   (Severity arguably medium — opt-in; the zero-value default path is covered.)
 
-- [ ] **Finding 7 — Anthropic in-stream SSE `error` event never tested.**
+- [x] **Finding 7 — Anthropic in-stream SSE `error` event never tested.**
+  *(RESOLVED 2026-06-20 — Phase 25.)* Added a clearly-named test driving a fake
+  server that returns **200** + `text/event-stream` and emits an `event: error`
+  frame (`overloaded_error` / `rate_limit_error`), asserting the mapped `Category`
+  via `errors.Is`, the populated `Type`, and byte-for-byte `Raw`. Test-only —
+  `classifyStreamError` already implemented the behavior; minted `R-FR35-46U7`.
   `classifyStreamError` (anthropic.go:658), reached only from the
   200-then-`event: error` SSE branch (anthropic.go:487–489), is at 0.0%. The
   existing error-mapping test (anthropic_test.go:541–583) uses `w.WriteHeader`

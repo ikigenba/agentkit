@@ -15,7 +15,7 @@ One line per Decision, in number order — file, label, and the Verification ids
 - **D6** `docs/design/D06.md` — Generation settings and the native reasoning value
   - ids: R-P5U3-5CFZ, R-B7YX-J342, R-B96T-WUUR, R-T40A-VZQ7, R-T587-9RGW, R-T6G3-NJ7L, R-P89V-WVXD, R-P9HS-ANO2, R-PBXL-275G
 - **D7** `docs/design/D07.md` — The error model
-  - ids: R-BUR1-XAK8, R-BVYY-B2AX, R-BX6U-OU1M, R-BYER-2LSB, R-BZMN-GDJ0, R-I5VJ-CTXE, R-7CYE-KS40, R-6TQA-QKYI, R-6UY7-4CP7
+  - ids: R-BUR1-XAK8, R-BVYY-B2AX, R-BX6U-OU1M, R-BYER-2LSB, R-BZMN-GDJ0, R-I5VJ-CTXE, R-7CYE-KS40, R-6TQA-QKYI, R-6UY7-4CP7, R-FR35-46U7
 - **D8** `docs/design/D08.md` — The uniform `Usage` struct (disjoint token buckets)
   - ids: R-Y810-TECF, R-Y98X-7634, R-YAGT-KXTT, R-YBOP-YPKI, R-YCWM-CHB7
 - **D9** `docs/design/D09.md` — Package architecture & the provider adapter seam (SPI)
@@ -78,6 +78,7 @@ R-DTVQ-N6WG  D9  docs/design/D09.md
 R-ELUQ-VJIQ  D9  docs/design/D09.md
 R-EN2N-9B9F  D16  docs/design/D16.md
 R-EPIG-0UQT  D16  docs/design/D16.md
+R-FR35-46U7  D7  docs/design/D07.md
 R-GSIG-PT07  D9  docs/design/D09.md
 R-H3PK-QFG3  D5  docs/design/D05.md
 R-H4XH-476S  D5  docs/design/D05.md
