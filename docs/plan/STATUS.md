@@ -26,3 +26,4 @@ Phase 21  ✅  realizes D16,D6                          — Native reasoning int
 Phase 22  ✅  realizes D6,D9                           — Native reasoning value and warn-and-default lowering: atomic retype across root and all adapters
 Phase 23  ✅  realizes D9                              — Fix: Anthropic replayed thinking block serializes its reasoning text in `text` instead of `thinking`
 Phase 24  ✅  realizes D2,D9,D10                       — Migrate to message-granular delivery: remove the consumer delta surface
+Phase 25  ✅  realizes D7                               — Cover the Anthropic in-stream SSE `error` event (200-then-`event: error`)
