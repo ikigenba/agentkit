@@ -59,7 +59,7 @@ func TestJSONLLogRecordsFollowProtocolEventOrder(t *testing.T) {
 		return "tool ok", nil
 	})
 	provider := &retryProvider{roundTrips: []*RoundTrip{
-		NewRoundTrip(nil, Message{Role: RoleAssistant, Blocks: []Block{ToolUseBlock{ID: "toolu_log", Name: "lookup", Input: json.RawMessage(`{"q":"x"}`)}}}, FinishToolUse, Usage{InputUncached: 1, Total: 1}, nil, nil),
+		NewRoundTrip(Message{Role: RoleAssistant, Blocks: []Block{ToolUseBlock{ID: "toolu_log", Name: "lookup", Input: json.RawMessage(`{"q":"x"}`)}}}, FinishToolUse, Usage{InputUncached: 1, Total: 1}, nil, nil),
 		retryTextRoundTrip("done"),
 	}}
 	var buf bytes.Buffer
@@ -119,7 +119,7 @@ func TestWarningsErrorsAndRetriesAreLogged(t *testing.T) {
 	// R-PJNP-3EYE
 	warningProvider := &retryProvider{roundTrips: []*RoundTrip{
 		retryErrorRoundTrip(&Error{Category: ErrRateLimited, Provider: "log-test", Raw: json.RawMessage(`{"message":"retry"}`)}),
-		NewRoundTrip(nil, Message{Role: RoleAssistant, Blocks: []Block{TextBlock{Text: "ok"}}}, FinishStop, Usage{InputUncached: 1, Output: 1, Total: 2}, []Warning{{Setting: "reasoning", Detail: "degraded"}}, nil),
+		NewRoundTrip(Message{Role: RoleAssistant, Blocks: []Block{TextBlock{Text: "ok"}}}, FinishStop, Usage{InputUncached: 1, Output: 1, Total: 2}, []Warning{{Setting: "reasoning", Detail: "degraded"}}, nil),
 	}}
 	var warningBuf bytes.Buffer
 	conv := &Conversation{
@@ -198,8 +198,8 @@ func TestCloseSummaryAndCumulativeUsageCost(t *testing.T) {
 	// R-PVUO-X4DC
 	pricing := Pricing{Tiers: []RateTier{{MinInputTokens: 0, InputUncached: 10, Output: 20}}}
 	provider := &retryProvider{roundTrips: []*RoundTrip{
-		NewRoundTrip(nil, Message{Role: RoleAssistant, Blocks: []Block{TextBlock{Text: "one"}}}, FinishStop, Usage{InputUncached: 2, Output: 3, Total: 5}, nil, nil),
-		NewRoundTrip(nil, Message{Role: RoleAssistant, Blocks: []Block{TextBlock{Text: "two"}}}, FinishStop, Usage{InputUncached: 4, Output: 5, Total: 9}, nil, nil),
+		NewRoundTrip(Message{Role: RoleAssistant, Blocks: []Block{TextBlock{Text: "one"}}}, FinishStop, Usage{InputUncached: 2, Output: 3, Total: 5}, nil, nil),
+		NewRoundTrip(Message{Role: RoleAssistant, Blocks: []Block{TextBlock{Text: "two"}}}, FinishStop, Usage{InputUncached: 4, Output: 5, Total: 9}, nil, nil),
 	}}
 	var buf bytes.Buffer
 	conv := &Conversation{Provider: providerWithPricing{Provider: provider, pricing: pricing}, Model: "log-model", Log: &buf}

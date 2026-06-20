@@ -1,22 +1,4 @@
 {
-  "events": [
-    {
-      "type": "reasoning_delta",
-      "text": "Plan "
-    },
-    {
-      "type": "reasoning_delta",
-      "text": "lookup"
-    },
-    {
-      "type": "text_delta",
-      "text": "Checking "
-    },
-    {
-      "type": "text_delta",
-      "text": "weather."
-    }
-  ],
   "blocks": [
     {
       "type": "reasoning",

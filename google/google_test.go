@@ -227,8 +227,6 @@ func TestGoogleSignatureOnFunctionCallPartPreservesToolUse(t *testing.T) {
 	defer server.Close()
 
 	rt := New("key", WithBaseURL(server.URL), WithHTTPClient(server.Client())).RoundTrip(context.Background(), &agentkit.Request{Model: ModelFlash25})
-	for range rt.Events() {
-	}
 	if err := rt.Err(); err != nil {
 		t.Fatalf("RoundTrip error: %v", err)
 	}
@@ -264,21 +262,8 @@ func TestGoogleSignatureOnTextPartPreservesVisibleText(t *testing.T) {
 	defer server.Close()
 
 	rt := New("key", WithBaseURL(server.URL), WithHTTPClient(server.Client())).RoundTrip(context.Background(), &agentkit.Request{Model: ModelFlash25})
-	var events []agentkit.Event
-	for event := range rt.Events() {
-		events = append(events, event)
-	}
 	if err := rt.Err(); err != nil {
 		t.Fatalf("RoundTrip error: %v", err)
-	}
-
-	// R-DRFX-VNF2
-	if len(events) != 1 {
-		t.Fatalf("events = %#v, want one TextDelta", events)
-	}
-	textDelta, ok := events[0].(agentkit.TextDelta)
-	if !ok || textDelta.Text != "visible answer" {
-		t.Fatalf("event = %#v, want visible TextDelta", events[0])
 	}
 
 	var sawText bool
@@ -424,8 +409,6 @@ func TestGoogleDropsForeignReasoningFromWireRequest(t *testing.T) {
 			},
 		}},
 	})
-	for range rt.Events() {
-	}
 	if err := rt.Err(); err != nil {
 		t.Fatalf("RoundTrip error: %v", err)
 	}
@@ -538,10 +521,10 @@ func (p *scriptedProvider) RoundTrip(ctx context.Context, req *agentkit.Request)
 			agentkit.ReasoningBlock{Opaque: json.RawMessage(`{"encrypted_content":"foreign"}`), Summary: "foreign", BoundToID: "abc_123"},
 			agentkit.ToolUseBlock{ID: "abc_123", Name: "lookup", Input: json.RawMessage(`{"q":"x"}`)},
 		}}
-		return agentkit.NewRoundTrip(nil, msg, agentkit.FinishToolUse, agentkit.Usage{}, nil, nil)
+		return agentkit.NewRoundTrip(msg, agentkit.FinishToolUse, agentkit.Usage{}, nil, nil)
 	default:
 		msg := agentkit.Message{Role: agentkit.RoleAssistant, Blocks: []agentkit.Block{agentkit.TextBlock{Text: "first done"}}}
-		return agentkit.NewRoundTrip(nil, msg, agentkit.FinishStop, agentkit.Usage{}, nil, nil)
+		return agentkit.NewRoundTrip(msg, agentkit.FinishStop, agentkit.Usage{}, nil, nil)
 	}
 }
 

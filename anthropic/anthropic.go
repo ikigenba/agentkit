@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"iter"
 	"net/http"
 	"net/url"
 	"strings"
@@ -143,20 +142,20 @@ func (p *Provider) Pricing(model string) (agentkit.Pricing, bool) {
 
 func (p *Provider) RoundTrip(ctx context.Context, req *agentkit.Request) *agentkit.RoundTrip {
 	if _, ok := registry[req.Model]; !ok {
-		return agentkit.NewRoundTrip(nil, agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, nil, agentkit.ErrInvalidConfig)
+		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, nil, agentkit.ErrInvalidConfig)
 	}
 	body, warnings, err := buildRequest(req)
 	if err != nil {
-		return agentkit.NewRoundTrip(nil, agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, err)
+		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, err)
 	}
 
 	endpoint, err := url.JoinPath(p.baseURL, "/v1/messages")
 	if err != nil {
-		return agentkit.NewRoundTrip(nil, agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, err)
+		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, err)
 	}
 	httpReq, err := httpx.JSONRequest(ctx, http.MethodPost, endpoint, body)
 	if err != nil {
-		return agentkit.NewRoundTrip(nil, agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, err)
+		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, err)
 	}
 	httpReq.Header.Set("Accept", "text/event-stream")
 	httpReq.Header.Set("Anthropic-Version", apiVersion)
@@ -164,31 +163,21 @@ func (p *Provider) RoundTrip(ctx context.Context, req *agentkit.Request) *agentk
 
 	resp, err := httpx.Client(p.client).Do(httpReq)
 	if err != nil {
-		return agentkit.NewRoundTrip(nil, agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, classifyTransport(err))
+		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, classifyTransport(err))
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		raw, _ := io.ReadAll(resp.Body)
-		return agentkit.NewRoundTrip(nil, agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, classifyHTTP(resp, raw))
+		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, classifyHTTP(resp, raw))
 	}
 
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return agentkit.NewRoundTrip(nil, agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, classifyTransport(err))
+		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, classifyTransport(err))
 	}
-	events, message, finish, usage, parseErr := parseStream(raw)
-	return agentkit.NewRoundTrip(sequence(events), message, finish, usage, warnings, parseErr)
-}
-
-func sequence(events []agentkit.Event) iter.Seq[agentkit.Event] {
-	return func(yield func(agentkit.Event) bool) {
-		for _, ev := range events {
-			if !yield(ev) {
-				return
-			}
-		}
-	}
+	message, finish, usage, parseErr := parseStream(raw)
+	return agentkit.NewRoundTrip(message, finish, usage, warnings, parseErr)
 }
 
 type messageRequest struct {
@@ -465,13 +454,12 @@ type partialBlock struct {
 	signature strings.Builder
 }
 
-func parseStream(raw []byte) ([]agentkit.Event, agentkit.Message, agentkit.FinishReason, agentkit.Usage, error) {
+func parseStream(raw []byte) (agentkit.Message, agentkit.FinishReason, agentkit.Usage, error) {
 	frames, err := sse.ReadAll(strings.NewReader(string(raw)))
 	if err != nil {
-		return nil, agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, classifyTransport(err)
+		return agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, classifyTransport(err)
 	}
 	var (
-		events []agentkit.Event
 		blocks []agentkit.Block
 		open   = map[int]*partialBlock{}
 		usage  agentkit.Usage
@@ -480,13 +468,13 @@ func parseStream(raw []byte) ([]agentkit.Event, agentkit.Message, agentkit.Finis
 	for _, frame := range frames {
 		var ev streamEvent
 		if err := json.Unmarshal(frame.Data, &ev); err != nil {
-			return events, agentkit.Message{Role: agentkit.RoleAssistant, Blocks: blocks}, finish, usage, classifyTransport(err)
+			return agentkit.Message{Role: agentkit.RoleAssistant, Blocks: blocks}, finish, usage, classifyTransport(err)
 		}
 		ev.RawType = frame.Type
 		ev.RawEnvelope = cloneRaw(frame.Data)
 		if frame.Type == "error" || ev.Type == "error" {
 			rawErr := frame.Data
-			return events, agentkit.Message{Role: agentkit.RoleAssistant, Blocks: blocks}, finish, usage, classifyStreamError(rawErr, ev.Error)
+			return agentkit.Message{Role: agentkit.RoleAssistant, Blocks: blocks}, finish, usage, classifyStreamError(rawErr, ev.Error)
 		}
 		switch ev.Type {
 		case "message_start":
@@ -508,12 +496,10 @@ func parseStream(raw []byte) ([]agentkit.Event, agentkit.Message, agentkit.Finis
 			switch ev.Delta.Type {
 			case "text_delta":
 				block.text.WriteString(ev.Delta.Text)
-				events = append(events, agentkit.TextDelta{Text: ev.Delta.Text})
 			case "input_json_delta":
 				block.input.WriteString(ev.Delta.PartialJSON)
 			case "thinking_delta":
 				block.thinking.WriteString(ev.Delta.Thinking)
-				events = append(events, agentkit.ReasoningDelta{Text: ev.Delta.Thinking})
 			case "signature_delta":
 				block.signature.WriteString(ev.Delta.Signature)
 			}
@@ -525,7 +511,7 @@ func parseStream(raw []byte) ([]agentkit.Event, agentkit.Message, agentkit.Finis
 			}
 			assembled, err := block.assemble()
 			if err != nil {
-				return events, agentkit.Message{Role: agentkit.RoleAssistant, Blocks: blocks}, finish, usage, err
+				return agentkit.Message{Role: agentkit.RoleAssistant, Blocks: blocks}, finish, usage, err
 			}
 			if assembled != nil {
 				blocks = append(blocks, assembled)
@@ -545,7 +531,7 @@ func parseStream(raw []byte) ([]agentkit.Event, agentkit.Message, agentkit.Finis
 		}
 	}
 	finalizeUsage(&usage)
-	return events, agentkit.Message{Role: agentkit.RoleAssistant, Blocks: blocks}, finish, usage, nil
+	return agentkit.Message{Role: agentkit.RoleAssistant, Blocks: blocks}, finish, usage, nil
 }
 
 func (b *partialBlock) assemble() (agentkit.Block, error) {

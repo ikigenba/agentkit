@@ -48,7 +48,7 @@ func TestErrorCategorySentinelsMatchWithErrorsIs(t *testing.T) {
 func TestProviderErrorsRemainDistinctFromOrchestrationSentinels(t *testing.T) {
 	// R-I5VJ-CTXE
 	providerErr := &agentkit.Error{Category: agentkit.ErrBilling, Provider: "fake"}
-	provider := newFakeProvider(newRoundTrip(nil, agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, providerErr))
+	provider := newFakeProvider(newRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, providerErr))
 	stream := (&agentkit.Conversation{Provider: provider, Model: testModel}).Send(context.Background(), "hello")
 	drain(stream)
 	var asProvider *agentkit.Error
@@ -107,7 +107,7 @@ func orchestrationSentinelErr(t *testing.T, sentinel error) error {
 	case agentkit.ErrToolLoopLimit:
 		provider := newFakeProvider()
 		provider.roundTripFn = func(context.Context, *agentkit.Request) *agentkit.RoundTrip {
-			return newRoundTrip(nil, assistant(agentkit.ToolUseBlock{ID: testToolUseID, Name: "missing", Input: []byte(`{}`)}), agentkit.FinishToolUse, agentkit.Usage{}, nil)
+			return newRoundTrip(assistant(agentkit.ToolUseBlock{ID: testToolUseID, Name: "missing", Input: []byte(`{}`)}), agentkit.FinishToolUse, agentkit.Usage{}, nil)
 		}
 		stream := (&agentkit.Conversation{Provider: provider, Model: testModel, MaxToolIterations: 1}).Send(context.Background(), "hello")
 		drain(stream)

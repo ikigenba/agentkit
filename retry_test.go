@@ -141,10 +141,10 @@ func TestNonRetryableFailuresAreNeverRetried(t *testing.T) {
 	}
 }
 
-func TestFailureAfterFirstEventIsNotRetried(t *testing.T) {
+func TestRetryableFailureWithPartialMessageRetries(t *testing.T) {
 	// R-P61J-IHKB
 	provider := &retryProvider{roundTrips: []*RoundTrip{
-		retryRoundTrip([]Event{TextDelta{Text: "partial"}}, retryAssistant(TextBlock{Text: "partial"}), FinishOther, retryErr(ErrNetwork)),
+		retryRoundTrip(retryAssistant(TextBlock{Text: "partial"}), FinishOther, retryErr(ErrNetwork)),
 		retryTextRoundTrip("retried"),
 	}}
 	clock := &fakeRetryClock{}
@@ -158,17 +158,17 @@ func TestFailureAfterFirstEventIsNotRetried(t *testing.T) {
 	stream := conv.Send(context.Background(), "hello")
 	events := drainRetry(stream)
 
-	if got := retryText(events); got != "partial" {
-		t.Fatalf("text events = %q, want partial", got)
+	if got := retryText(events); got != "retried" {
+		t.Fatalf("text events = %q, want retried message", got)
 	}
-	if !errors.Is(stream.Err(), ErrNetwork) {
-		t.Fatalf("Err() = %v, want ErrNetwork", stream.Err())
+	if err := stream.Err(); err != nil {
+		t.Fatalf("Err() = %v, want nil", err)
 	}
-	if provider.calls != 1 {
-		t.Fatalf("provider calls = %d, want 1", provider.calls)
+	if provider.calls != 2 {
+		t.Fatalf("provider calls = %d, want retry after terminal error", provider.calls)
 	}
-	if len(clock.sleeps) != 0 {
-		t.Fatalf("sleeps = %v, want none", clock.sleeps)
+	if !reflect.DeepEqual(clock.sleeps, []time.Duration{time.Millisecond}) {
+		t.Fatalf("sleeps = %v, want one backoff", clock.sleeps)
 	}
 }
 
@@ -180,8 +180,7 @@ func TestRetryBudgetIsPerRoundTripInToolLoop(t *testing.T) {
 	provider := &retryProvider{roundTrips: []*RoundTrip{
 		retryErrorRoundTrip(ErrServerError),
 		retryRoundTrip(
-			[]Event{TextDelta{Text: "calling"}},
-			retryAssistant(ToolUseBlock{ID: "toolu_retry", Name: "lookup", Input: json.RawMessage(`{}`)}),
+			retryAssistant(TextBlock{Text: "calling"}, ToolUseBlock{ID: "toolu_retry", Name: "lookup", Input: json.RawMessage(`{}`)}),
 			FinishToolUse,
 			nil,
 		),
@@ -303,22 +302,16 @@ func TestContextCancellationDuringBackoffStopsRetrying(t *testing.T) {
 	}
 }
 
-func retryRoundTrip(events []Event, message Message, finish FinishReason, err error) *RoundTrip {
-	return NewRoundTrip(func(yield func(Event) bool) {
-		for _, ev := range events {
-			if !yield(ev) {
-				return
-			}
-		}
-	}, message, finish, Usage{InputUncached: 1, Output: 1, Total: 2}, nil, err)
+func retryRoundTrip(message Message, finish FinishReason, err error) *RoundTrip {
+	return NewRoundTrip(message, finish, Usage{InputUncached: 1, Output: 1, Total: 2}, nil, err)
 }
 
 func retryErrorRoundTrip(err error) *RoundTrip {
-	return retryRoundTrip(nil, Message{}, FinishOther, err)
+	return retryRoundTrip(Message{}, FinishOther, err)
 }
 
 func retryTextRoundTrip(text string) *RoundTrip {
-	return retryRoundTrip([]Event{TextDelta{Text: text}}, retryAssistant(TextBlock{Text: text}), FinishStop, nil)
+	return retryRoundTrip(retryAssistant(TextBlock{Text: text}), FinishStop, nil)
 }
 
 func retryAssistant(blocks ...Block) Message {
@@ -340,8 +333,12 @@ func drainRetry(stream *Stream) []Event {
 func retryText(events []Event) string {
 	var text string
 	for _, ev := range events {
-		if delta, ok := ev.(TextDelta); ok {
-			text += delta.Text
+		if done, ok := ev.(MessageDone); ok {
+			for _, block := range done.Message.Blocks {
+				if block, ok := block.(TextBlock); ok {
+					text += block.Text
+				}
+			}
 		}
 	}
 	return text

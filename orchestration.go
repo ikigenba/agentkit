@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"iter"
 	"sort"
 	"time"
 
@@ -67,7 +66,6 @@ const (
 
 // RoundTrip is one low-level provider call result.
 type RoundTrip struct {
-	events   iter.Seq[Event]
 	message  Message
 	finish   FinishReason
 	usage    Usage
@@ -76,9 +74,8 @@ type RoundTrip struct {
 }
 
 // NewRoundTrip builds a provider SPI result.
-func NewRoundTrip(events iter.Seq[Event], message Message, finish FinishReason, usage Usage, warnings []Warning, err error) *RoundTrip {
+func NewRoundTrip(message Message, finish FinishReason, usage Usage, warnings []Warning, err error) *RoundTrip {
 	return &RoundTrip{
-		events:   events,
 		message:  cloneMessage(message),
 		finish:   finish,
 		usage:    usage,
@@ -87,21 +84,7 @@ func NewRoundTrip(events iter.Seq[Event], message Message, finish FinishReason, 
 	}
 }
 
-// Events yields TextDelta and ReasoningDelta events from this provider call.
-func (r *RoundTrip) Events() iter.Seq[Event] {
-	return func(yield func(Event) bool) {
-		if r == nil || r.events == nil {
-			return
-		}
-		for ev := range r.events {
-			if !yield(ev) {
-				return
-			}
-		}
-	}
-}
-
-// Message returns the assembled assistant message after Events is drained.
+// Message returns the assembled assistant message.
 func (r *RoundTrip) Message() Message {
 	if r == nil {
 		return Message{}
@@ -146,16 +129,6 @@ type Event interface {
 	isEvent()
 }
 
-// TextDelta is a visible answer fragment.
-type TextDelta struct {
-	Text string
-}
-
-// ReasoningDelta is a human-readable reasoning-summary fragment.
-type ReasoningDelta struct {
-	Text string
-}
-
 // ToolUse reports a complete tool call requested by the model.
 type ToolUse struct {
 	ID    string
@@ -176,11 +149,9 @@ type MessageDone struct {
 	Message Message
 }
 
-func (TextDelta) isEvent()      {}
-func (ReasoningDelta) isEvent() {}
-func (ToolUse) isEvent()        {}
-func (ToolResult) isEvent()     {}
-func (MessageDone) isEvent()    {}
+func (ToolUse) isEvent()     {}
+func (ToolResult) isEvent()  {}
+func (MessageDone) isEvent() {}
 
 // Conversation is one multi-turn, tool-using text conversation with an LLM.
 //
@@ -411,24 +382,11 @@ func (c *Conversation) roundTripWithRetry(ctx context.Context, req *Request, s *
 			return nil, false, ErrInvalidConfig
 		}
 
-		delivered := false
-		for ev := range rt.Events() {
-			switch ev.(type) {
-			case TextDelta, ReasoningDelta:
-			default:
-				return nil, false, ErrInvalidConfig
-			}
-			if !yield(ev) {
-				return nil, true, nil
-			}
-			delivered = true
-		}
-
 		err := rt.Err()
 		if err == nil {
 			return rt, false, nil
 		}
-		if delivered || !isRetryable(err) || attempt >= policy.MaxAttempts {
+		if !isRetryable(err) || attempt >= policy.MaxAttempts {
 			return nil, false, err
 		}
 

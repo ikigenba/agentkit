@@ -88,7 +88,7 @@ func TestMCPDiscoveryMergesToolsAndRoutesCalls(t *testing.T) {
 
 	exposed := "srv_1_weather_get_current"
 	provider := &mcpTestProvider{rounds: []*RoundTrip{
-		mcpRoundTrip(nil, Message{Role: RoleAssistant, Blocks: []Block{ToolUseBlock{ID: "toolu_mcp", Name: exposed, Input: json.RawMessage(`{"city":"Tokyo"}`)}}}, FinishToolUse, nil),
+		mcpRoundTrip(Message{Role: RoleAssistant, Blocks: []Block{ToolUseBlock{ID: "toolu_mcp", Name: exposed, Input: json.RawMessage(`{"city":"Tokyo"}`)}}}, FinishToolUse, nil),
 		mcpTextRoundTrip("done"),
 	}}
 	conv := &Conversation{
@@ -197,7 +197,7 @@ func TestMCPToolResultErrorVsTerminalFailure(t *testing.T) {
 		})
 		defer server.Close()
 		provider := &mcpTestProvider{rounds: []*RoundTrip{
-			mcpRoundTrip(nil, Message{Role: RoleAssistant, Blocks: []Block{ToolUseBlock{ID: "toolu_mcp", Name: "srv_fail", Input: json.RawMessage(`{}`)}}}, FinishToolUse, nil),
+			mcpRoundTrip(Message{Role: RoleAssistant, Blocks: []Block{ToolUseBlock{ID: "toolu_mcp", Name: "srv_fail", Input: json.RawMessage(`{}`)}}}, FinishToolUse, nil),
 			mcpTextRoundTrip("recovered"),
 		}}
 		conv := &Conversation{Provider: provider, Model: "mcp-model", MCPServers: []MCPServer{{Name: "srv", URL: server.URL}}}
@@ -220,7 +220,7 @@ func TestMCPToolResultErrorVsTerminalFailure(t *testing.T) {
 		})
 		defer server.Close()
 		provider := &mcpTestProvider{rounds: []*RoundTrip{
-			mcpRoundTrip(nil, Message{Role: RoleAssistant, Blocks: []Block{ToolUseBlock{ID: "toolu_mcp", Name: "srv_fail", Input: json.RawMessage(`{}`)}}}, FinishToolUse, nil),
+			mcpRoundTrip(Message{Role: RoleAssistant, Blocks: []Block{ToolUseBlock{ID: "toolu_mcp", Name: "srv_fail", Input: json.RawMessage(`{}`)}}}, FinishToolUse, nil),
 			mcpTextRoundTrip("unreached"),
 		}}
 		conv := &Conversation{Provider: provider, Model: "mcp-model", MCPServers: []MCPServer{{Name: "srv", URL: server.URL}}}
@@ -323,7 +323,7 @@ func TestMCPDiscoveryRetriesButToolCallDoesNot(t *testing.T) {
 	})
 	defer callServer.Close()
 	provider = &mcpTestProvider{rounds: []*RoundTrip{
-		mcpRoundTrip(nil, Message{Role: RoleAssistant, Blocks: []Block{ToolUseBlock{ID: "toolu_mcp", Name: "srv_fail", Input: json.RawMessage(`{}`)}}}, FinishToolUse, nil),
+		mcpRoundTrip(Message{Role: RoleAssistant, Blocks: []Block{ToolUseBlock{ID: "toolu_mcp", Name: "srv_fail", Input: json.RawMessage(`{}`)}}}, FinishToolUse, nil),
 		mcpTextRoundTrip("unreached"),
 	}}
 	clock = &fakeMCPClock{}
@@ -536,18 +536,12 @@ func (c *fakeMCPClock) Jitter(cap time.Duration) time.Duration {
 	return cap
 }
 
-func mcpRoundTrip(events []Event, message Message, finish FinishReason, err error) *RoundTrip {
-	return NewRoundTrip(func(yield func(Event) bool) {
-		for _, ev := range events {
-			if !yield(ev) {
-				return
-			}
-		}
-	}, message, finish, Usage{InputUncached: 1, Output: 1, Total: 2}, nil, err)
+func mcpRoundTrip(message Message, finish FinishReason, err error) *RoundTrip {
+	return NewRoundTrip(message, finish, Usage{InputUncached: 1, Output: 1, Total: 2}, nil, err)
 }
 
 func mcpTextRoundTrip(text string) *RoundTrip {
-	return mcpRoundTrip([]Event{TextDelta{Text: text}}, Message{Role: RoleAssistant, Blocks: []Block{TextBlock{Text: text}}}, FinishStop, nil)
+	return mcpRoundTrip(Message{Role: RoleAssistant, Blocks: []Block{TextBlock{Text: text}}}, FinishStop, nil)
 }
 
 func drainMCP(stream *Stream) []Event {

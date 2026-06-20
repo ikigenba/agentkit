@@ -429,8 +429,6 @@ func TestProviderDropsForeignReasoningFromWireRequest(t *testing.T) {
 			},
 		}},
 	})
-	for range rt.Events() {
-	}
 
 	// R-055A-NI1P
 	if err := rt.Err(); err != nil {
@@ -454,8 +452,6 @@ func TestUsageMappingDisjointBucketsAndNativeTotal(t *testing.T) {
 		Model:    ModelGPT54,
 		Messages: []agentkit.Message{{Role: agentkit.RoleUser, Blocks: []agentkit.Block{agentkit.TextBlock{Text: "hi"}}}},
 	})
-	for range rt.Events() {
-	}
 
 	// R-Y810-TECF, R-Y98X-7634, R-YAGT-KXTT, R-YBOP-YPKI, R-YCWM-CHB7
 	if err := rt.Err(); err != nil {
@@ -516,8 +512,6 @@ func TestOpenAIErrorMappingPreservesRawAndRetryAfter(t *testing.T) {
 
 			p := New("test-key", WithBaseURL(server.URL), WithHTTPClient(server.Client()))
 			rt := p.RoundTrip(context.Background(), &agentkit.Request{Model: ModelGPT54Nano})
-			for range rt.Events() {
-			}
 			err := rt.Err()
 			// R-BUR1-XAK8, R-BX6U-OU1M, R-BYER-2LSB
 			if !errors.Is(err, tt.category) {

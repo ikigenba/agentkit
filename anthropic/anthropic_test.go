@@ -103,7 +103,7 @@ func TestAnthropicToolUseInputIgnoresStartPlaceholderFragmentsOnly(t *testing.T)
 		t.Fatalf("fixture does not exercise content_block_start input placeholder")
 	}
 
-	_, message, _, _, err := parseStream(raw)
+	message, _, _, err := parseStream(raw)
 	if errors.Is(err, agentkit.ErrInvalidRequest) {
 		t.Fatalf("parseStream() returned placeholder-concatenation invalid request error: %v", err)
 	}
@@ -609,18 +609,9 @@ func TestAnthropicRegistryAndPricingTable(t *testing.T) {
 }
 
 type goldenSnapshot struct {
-	Events []goldenEvent  `json:"events"`
 	Blocks []goldenBlock  `json:"blocks"`
 	Finish string         `json:"finish"`
 	Usage  agentkit.Usage `json:"usage"`
-}
-
-type goldenEvent struct {
-	Type string          `json:"type"`
-	Text string          `json:"text,omitempty"`
-	ID   string          `json:"id,omitempty"`
-	Name string          `json:"name,omitempty"`
-	JSON json.RawMessage `json:"json,omitempty"`
 }
 
 type goldenBlock struct {
@@ -639,26 +630,11 @@ func goldenSnapshotForFixture(t *testing.T, path string) goldenSnapshot {
 	if err != nil {
 		t.Fatalf("read fixture: %v", err)
 	}
-	events, message, finish, usage, err := parseStream(raw)
+	message, finish, usage, err := parseStream(raw)
 	if err != nil {
 		t.Fatalf("parseStream() err = %v", err)
 	}
-	return goldenSnapshot{Events: goldenEvents(events), Blocks: goldenBlocks(message.Blocks), Finish: finishString(finish), Usage: usage}
-}
-
-func goldenEvents(events []agentkit.Event) []goldenEvent {
-	out := make([]goldenEvent, 0, len(events))
-	for _, ev := range events {
-		switch ev := ev.(type) {
-		case agentkit.TextDelta:
-			out = append(out, goldenEvent{Type: "text_delta", Text: ev.Text})
-		case agentkit.ReasoningDelta:
-			out = append(out, goldenEvent{Type: "reasoning_delta", Text: ev.Text})
-		case agentkit.ToolUse:
-			out = append(out, goldenEvent{Type: "tool_use", ID: ev.ID, Name: ev.Name, JSON: ev.Input})
-		}
-	}
-	return out
+	return goldenSnapshot{Blocks: goldenBlocks(message.Blocks), Finish: finishString(finish), Usage: usage}
 }
 
 func goldenBlocks(blocks []agentkit.Block) []goldenBlock {

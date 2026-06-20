@@ -181,7 +181,6 @@ func TestSendRejectsInvalidModelAndToolSetup(t *testing.T) {
 func TestTextOnlyTurnStreamsAndCommitsHistory(t *testing.T) {
 	usage := agentkit.Usage{InputUncached: 3, Output: 2, Total: 5}
 	provider := newFakeProvider(newRoundTrip(
-		[]agentkit.Event{agentkit.TextDelta{Text: "hel"}, agentkit.TextDelta{Text: "lo"}},
 		assistant(agentkit.TextBlock{Text: "hello"}),
 		agentkit.FinishStop,
 		usage,
@@ -195,9 +194,13 @@ func TestTextOnlyTurnStreamsAndCommitsHistory(t *testing.T) {
 		t.Fatalf("Err() = %v, want nil", err)
 	}
 
-	// R-C7MI-HRFI
-	if got := textDeltas(events); got != "hello" {
-		t.Fatalf("text deltas = %q, want assembled final text", got)
+	// R-HUZX-7N2W, R-C7MI-HRFI
+	if len(events) != 1 {
+		t.Fatalf("events = %#v, want exactly one MessageDone", events)
+	}
+	done := onlyMessageDone(t, events)
+	if got := messageText(done.Message); got != "hello" {
+		t.Fatalf("MessageDone text = %q, want assembled final text", got)
 	}
 	if stream.Usage() != usage {
 		t.Fatalf("Usage() = %#v, want %#v", stream.Usage(), usage)
@@ -212,7 +215,6 @@ func TestTextOnlyTurnStreamsAndCommitsHistory(t *testing.T) {
 	}
 
 	// R-CBA7-N2NL
-	done := onlyMessageDone(t, events)
 	if !reflect.DeepEqual(done.Message, conv.History[1]) {
 		t.Fatalf("MessageDone message = %#v, want History assistant %#v", done.Message, conv.History[1])
 	}
@@ -263,7 +265,7 @@ func TestToolLoopRunsToolsAndContinuesToFinalMessage(t *testing.T) {
 		return "sunny", nil
 	})
 	provider := newFakeProvider(
-		newRoundTrip(nil, assistant(agentkit.ToolUseBlock{ID: testToolUseID, Name: "lookup", Input: json.RawMessage(`{"city":"Tokyo"}`)}), agentkit.FinishToolUse, agentkit.Usage{InputUncached: 1, Total: 1}, nil),
+		newRoundTrip(assistant(agentkit.ToolUseBlock{ID: testToolUseID, Name: "lookup", Input: json.RawMessage(`{"city":"Tokyo"}`)}), agentkit.FinishToolUse, agentkit.Usage{InputUncached: 1, Total: 1}, nil),
 		textRoundTrip("done"),
 	)
 	conv := &agentkit.Conversation{Provider: provider, Model: testModel, Tools: []agentkit.Tool{tool}}
@@ -301,7 +303,7 @@ func TestToolLoopRunsToolsAndContinuesToFinalMessage(t *testing.T) {
 func TestUnknownToolAndToolErrorAreFedBackInBand(t *testing.T) {
 	t.Run("unknown tool", func(t *testing.T) {
 		provider := newFakeProvider(
-			newRoundTrip(nil, assistant(agentkit.ToolUseBlock{ID: testToolUseID, Name: "missing", Input: json.RawMessage(`{}`)}), agentkit.FinishToolUse, agentkit.Usage{}, nil),
+			newRoundTrip(assistant(agentkit.ToolUseBlock{ID: testToolUseID, Name: "missing", Input: json.RawMessage(`{}`)}), agentkit.FinishToolUse, agentkit.Usage{}, nil),
 			textRoundTrip("recovered"),
 		)
 		events := drain((&agentkit.Conversation{Provider: provider, Model: testModel}).Send(context.Background(), "call it"))
@@ -321,7 +323,7 @@ func TestUnknownToolAndToolErrorAreFedBackInBand(t *testing.T) {
 			return "", errors.New("tool failed")
 		})
 		provider := newFakeProvider(
-			newRoundTrip(nil, assistant(agentkit.ToolUseBlock{ID: secondToolUseID, Name: "fail", Input: json.RawMessage(`{}`)}), agentkit.FinishToolUse, agentkit.Usage{}, nil),
+			newRoundTrip(assistant(agentkit.ToolUseBlock{ID: secondToolUseID, Name: "fail", Input: json.RawMessage(`{}`)}), agentkit.FinishToolUse, agentkit.Usage{}, nil),
 			textRoundTrip("recovered"),
 		)
 		events := drain((&agentkit.Conversation{Provider: provider, Model: testModel, Tools: []agentkit.Tool{tool}}).Send(context.Background(), "call it"))
@@ -367,7 +369,7 @@ func TestReasoningBlockIsReplayedOnToolLoopRequest(t *testing.T) {
 	})
 	reasoning := agentkit.ReasoningBlock{Opaque: json.RawMessage(`{"signature":"opaque"}`), Summary: "summary"}
 	provider := newFakeProvider(
-		newRoundTrip(nil, assistant(reasoning, agentkit.ToolUseBlock{ID: testToolUseID, Name: "ok", Input: json.RawMessage(`{}`)}), agentkit.FinishToolUse, agentkit.Usage{}, nil),
+		newRoundTrip(assistant(reasoning, agentkit.ToolUseBlock{ID: testToolUseID, Name: "ok", Input: json.RawMessage(`{}`)}), agentkit.FinishToolUse, agentkit.Usage{}, nil),
 		textRoundTrip("done"),
 	)
 	drain((&agentkit.Conversation{Provider: provider, Model: testModel, Tools: []agentkit.Tool{tool}}).Send(context.Background(), "loop"))
@@ -382,7 +384,7 @@ func TestReasoningBlockIsReplayedOnToolLoopRequest(t *testing.T) {
 }
 
 func TestContentFilterFinishIsMappedToSentinel(t *testing.T) {
-	provider := newFakeProvider(newRoundTrip(nil, assistant(), agentkit.FinishContentFilter, agentkit.Usage{}, nil))
+	provider := newFakeProvider(newRoundTrip(assistant(), agentkit.FinishContentFilter, agentkit.Usage{}, nil))
 	conv := &agentkit.Conversation{Provider: provider, Model: testModel}
 	stream := conv.Send(context.Background(), "blocked")
 	drain(stream)
@@ -395,14 +397,14 @@ func TestContentFilterFinishIsMappedToSentinel(t *testing.T) {
 
 func TestFailedTurnsSurfaceErrAndRollback(t *testing.T) {
 	boom := errors.New("boom")
-	provider := newFakeProvider(newRoundTrip([]agentkit.Event{agentkit.TextDelta{Text: "partial"}}, assistant(agentkit.TextBlock{Text: "partial"}), agentkit.FinishOther, agentkit.Usage{}, boom))
+	provider := newFakeProvider(newRoundTrip(assistant(agentkit.TextBlock{Text: "partial"}), agentkit.FinishOther, agentkit.Usage{}, boom))
 	conv := &agentkit.Conversation{Provider: provider, Model: testModel}
 	stream := conv.Send(context.Background(), "fail")
 	events := drain(stream)
 
 	// R-CDQ0-EM4Z
-	if textDeltas(events) != "partial" {
-		t.Fatalf("events before failure = %q, want partial delta", textDeltas(events))
+	if len(events) != 0 {
+		t.Fatalf("events before failed Err() = %#v, want none", events)
 	}
 	if !errors.Is(stream.Err(), boom) {
 		t.Fatalf("Err() = %v, want provider error", stream.Err())
@@ -417,7 +419,7 @@ func TestFailedTurnsSurfaceErrAndRollback(t *testing.T) {
 func TestMaxToolIterationsStopsRunawayLoopAndRollsBack(t *testing.T) {
 	provider := newFakeProvider()
 	provider.roundTripFn = func(context.Context, *agentkit.Request) *agentkit.RoundTrip {
-		return newRoundTrip(nil, assistant(agentkit.ToolUseBlock{ID: testToolUseID, Name: "missing", Input: json.RawMessage(`{}`)}), agentkit.FinishToolUse, agentkit.Usage{}, nil)
+		return newRoundTrip(assistant(agentkit.ToolUseBlock{ID: testToolUseID, Name: "missing", Input: json.RawMessage(`{}`)}), agentkit.FinishToolUse, agentkit.Usage{}, nil)
 	}
 	conv := &agentkit.Conversation{Provider: provider, Model: testModel, MaxToolIterations: 1}
 	stream := conv.Send(context.Background(), "loop")
@@ -458,11 +460,7 @@ func TestStreamPendingAndEarlyBreakCleanup(t *testing.T) {
 	})
 
 	t.Run("early break releases resources and rolls back", func(t *testing.T) {
-		var closed bool
-		rt := newRoundTripWithClose([]agentkit.Event{
-			agentkit.TextDelta{Text: "first"},
-			agentkit.TextDelta{Text: "second"},
-		}, assistant(agentkit.TextBlock{Text: "firstsecond"}), &closed)
+		rt := newRoundTrip(assistant(agentkit.TextBlock{Text: "firstsecond"}), agentkit.FinishToolUse, agentkit.Usage{}, nil)
 		provider := newFakeProvider(rt, textRoundTrip("next"))
 		conv := &agentkit.Conversation{Provider: provider, Model: testModel}
 		stream := conv.Send(context.Background(), "first")
@@ -471,9 +469,6 @@ func TestStreamPendingAndEarlyBreakCleanup(t *testing.T) {
 		}
 
 		// R-CCI4-0UEA
-		if !closed {
-			t.Fatalf("round-trip resources were not released after early break")
-		}
 		next := conv.Send(context.Background(), "next")
 		drain(next)
 		if err := next.Err(); err != nil {
@@ -495,32 +490,12 @@ func drain(stream *agentkit.Stream) []agentkit.Event {
 	return events
 }
 
-func newRoundTrip(events []agentkit.Event, message agentkit.Message, finish agentkit.FinishReason, usage agentkit.Usage, err error) *agentkit.RoundTrip {
-	return agentkit.NewRoundTrip(func(yield func(agentkit.Event) bool) {
-		for _, ev := range events {
-			if !yield(ev) {
-				return
-			}
-		}
-	}, message, finish, usage, nil, err)
-}
-
-func newRoundTripWithClose(events []agentkit.Event, message agentkit.Message, closed *bool) *agentkit.RoundTrip {
-	return agentkit.NewRoundTrip(func(yield func(agentkit.Event) bool) {
-		defer func() {
-			*closed = true
-		}()
-		for _, ev := range events {
-			if !yield(ev) {
-				return
-			}
-		}
-	}, message, agentkit.FinishStop, agentkit.Usage{}, nil, nil)
+func newRoundTrip(message agentkit.Message, finish agentkit.FinishReason, usage agentkit.Usage, err error) *agentkit.RoundTrip {
+	return agentkit.NewRoundTrip(message, finish, usage, nil, err)
 }
 
 func textRoundTrip(text string) *agentkit.RoundTrip {
 	return newRoundTrip(
-		[]agentkit.Event{agentkit.TextDelta{Text: text}},
 		assistant(agentkit.TextBlock{Text: text}),
 		agentkit.FinishStop,
 		agentkit.Usage{InputUncached: 1, Output: 1, Total: 2},
@@ -532,11 +507,11 @@ func assistant(blocks ...agentkit.Block) agentkit.Message {
 	return agentkit.Message{Role: agentkit.RoleAssistant, Blocks: blocks}
 }
 
-func textDeltas(events []agentkit.Event) string {
+func messageText(message agentkit.Message) string {
 	var text string
-	for _, ev := range events {
-		if delta, ok := ev.(agentkit.TextDelta); ok {
-			text += delta.Text
+	for _, block := range message.Blocks {
+		if block, ok := block.(agentkit.TextBlock); ok {
+			text += block.Text
 		}
 	}
 	return text
@@ -623,7 +598,7 @@ func cloneMessages(messages []agentkit.Message) []agentkit.Message {
 func TestNewRoundTripAccessorsDefensivelyCopy(t *testing.T) {
 	warnings := []agentkit.Warning{{Setting: "reasoning", Detail: "degraded"}}
 	raw := json.RawMessage(`{"q":"x"}`)
-	rt := agentkit.NewRoundTrip(nil, assistant(agentkit.ToolUseBlock{ID: testToolUseID, Name: "lookup", Input: raw}), agentkit.FinishStop, agentkit.Usage{Total: 1}, warnings, nil)
+	rt := agentkit.NewRoundTrip(assistant(agentkit.ToolUseBlock{ID: testToolUseID, Name: "lookup", Input: raw}), agentkit.FinishStop, agentkit.Usage{Total: 1}, warnings, nil)
 	warnings[0].Detail = "mutated"
 	raw[0] = ' '
 
@@ -645,8 +620,8 @@ func ExampleConversation_Send() {
 	conv := &agentkit.Conversation{Provider: provider, Model: testModel}
 	stream := conv.Send(context.Background(), "hi")
 	for ev := range stream.Events() {
-		if delta, ok := ev.(agentkit.TextDelta); ok {
-			fmt.Print(delta.Text)
+		if done, ok := ev.(agentkit.MessageDone); ok {
+			fmt.Print(messageText(done.Message))
 		}
 	}
 	// Output: hello

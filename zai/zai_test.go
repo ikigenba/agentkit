@@ -304,8 +304,6 @@ func TestZaiDropsForeignReasoningFromWireRequest(t *testing.T) {
 			},
 		}},
 	})
-	for range rt.Events() {
-	}
 
 	// R-055A-NI1P
 	if err := rt.Err(); err != nil {
@@ -329,8 +327,6 @@ func TestZaiUsageMappingDisjointBucketsAndNativeTotal(t *testing.T) {
 		Model:    ModelGLM51,
 		Messages: []agentkit.Message{{Role: agentkit.RoleUser, Blocks: []agentkit.Block{agentkit.TextBlock{Text: "hi"}}}},
 	})
-	for range rt.Events() {
-	}
 
 	// R-Y810-TECF, R-Y98X-7634, R-YAGT-KXTT, R-YBOP-YPKI, R-YCWM-CHB7
 	if err := rt.Err(); err != nil {
@@ -355,8 +351,6 @@ func TestZaiUsageMappingDisjointBucketsAndNativeTotal(t *testing.T) {
 		fmt.Fprint(w, zaiBadUsageSSE())
 	})
 	rt = p.RoundTrip(context.Background(), &agentkit.Request{Model: ModelGLM51})
-	for range rt.Events() {
-	}
 	if err := rt.Err(); err == nil {
 		t.Fatal("native total mismatch did not error")
 	}
@@ -395,8 +389,6 @@ func TestZaiErrorMappingPreservesRawRetryAfterAndCodes(t *testing.T) {
 
 			p := New("test-key", WithBaseURL(server.URL), WithHTTPClient(server.Client()))
 			rt := p.RoundTrip(context.Background(), &agentkit.Request{Model: ModelGLM47})
-			for range rt.Events() {
-			}
 			err := rt.Err()
 			// R-BUR1-XAK8, R-BX6U-OU1M, R-BYER-2LSB, R-BZMN-GDJ0
 			if !errors.Is(err, tt.category) {

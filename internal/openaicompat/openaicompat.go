@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"iter"
 	"net/http"
 	"sort"
 	"strings"
@@ -67,47 +66,47 @@ func (p *Provider) Pricing(model string) (agentkit.Pricing, bool) {
 // RoundTrip performs one Chat-Completions model call.
 func (p *Provider) RoundTrip(ctx context.Context, req *agentkit.Request) *agentkit.RoundTrip {
 	if p == nil || p.cfg.APIKey == "" || req == nil || p.cfg.BaseURL == "" {
-		return agentkit.NewRoundTrip(nil, agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, nil, agentkit.ErrInvalidConfig)
+		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, nil, agentkit.ErrInvalidConfig)
 	}
 	if _, ok := p.Pricing(req.Model); !ok {
-		return agentkit.NewRoundTrip(nil, agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, nil, agentkit.ErrInvalidConfig)
+		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, nil, agentkit.ErrInvalidConfig)
 	}
 
 	body, warnings, err := p.buildRequest(req)
 	if err != nil {
-		return agentkit.NewRoundTrip(nil, agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, err)
+		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, err)
 	}
 
 	httpReq, err := httpx.JSONRequest(ctx, http.MethodPost, p.cfg.BaseURL+"/chat/completions", body)
 	if err != nil {
-		return agentkit.NewRoundTrip(nil, agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, p.transportError(err))
+		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, p.transportError(err))
 	}
 	httpReq.Header.Set("Authorization", "Bearer "+p.cfg.APIKey)
 	httpReq.Header.Set("Accept", "text/event-stream")
 
 	resp, err := httpx.Client(p.cfg.HTTPClient).Do(httpReq)
 	if err != nil {
-		return agentkit.NewRoundTrip(nil, agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, p.transportError(err))
+		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, p.transportError(err))
 	}
 	defer resp.Body.Close()
 
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return agentkit.NewRoundTrip(nil, agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, p.transportError(err))
+		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, p.transportError(err))
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return agentkit.NewRoundTrip(nil, agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, p.httpError(resp, raw))
+		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, p.httpError(resp, raw))
 	}
 
 	frames, err := sse.ReadAll(strings.NewReader(string(raw)))
 	if err != nil {
-		return agentkit.NewRoundTrip(nil, agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, p.transportError(err))
+		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, p.transportError(err))
 	}
 	assembled, err := p.assemble(frames)
 	if err != nil {
-		return agentkit.NewRoundTrip(nil, assembled.message, assembled.finish, assembled.usage, warnings, err)
+		return agentkit.NewRoundTrip(assembled.message, assembled.finish, assembled.usage, warnings, err)
 	}
-	return agentkit.NewRoundTrip(eventsSeq(assembled.events), assembled.message, assembled.finish, assembled.usage, warnings, nil)
+	return agentkit.NewRoundTrip(assembled.message, assembled.finish, assembled.usage, warnings, nil)
 }
 
 type chatRequest struct {
@@ -339,7 +338,6 @@ func reasoningContent(raw json.RawMessage) (string, bool) {
 }
 
 type assembledRoundTrip struct {
-	events  []agentkit.Event
 	message agentkit.Message
 	finish  agentkit.FinishReason
 	usage   agentkit.Usage
@@ -427,11 +425,9 @@ func (p *Provider) assemble(frames []sse.Event) (assembledRoundTrip, error) {
 		for _, choice := range chunk.Choices {
 			if choice.Delta.Content != "" {
 				visible.WriteString(choice.Delta.Content)
-				out.events = append(out.events, agentkit.TextDelta{Text: choice.Delta.Content})
 			}
 			if choice.Delta.ReasoningContent != "" {
 				reasoning.WriteString(choice.Delta.ReasoningContent)
-				out.events = append(out.events, agentkit.ReasoningDelta{Text: choice.Delta.ReasoningContent})
 			}
 			for _, call := range choice.Delta.ToolCalls {
 				tool := tools[call.Index]
@@ -544,16 +540,6 @@ func (p *Provider) mapUsage(native usagePayload) (agentkit.Usage, error) {
 		}
 	}
 	return usage, nil
-}
-
-func eventsSeq(events []agentkit.Event) iter.Seq[agentkit.Event] {
-	return func(yield func(agentkit.Event) bool) {
-		for _, ev := range events {
-			if !yield(ev) {
-				return
-			}
-		}
-	}
 }
 
 func (p *Provider) transportError(err error) error {

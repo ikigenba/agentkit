@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"iter"
 	"net"
 	"net/http"
 	"net/url"
@@ -168,7 +167,7 @@ func (p *Provider) Pricing(model string) (agentkit.Pricing, bool) {
 
 func (p *Provider) RoundTrip(ctx context.Context, req *agentkit.Request) *agentkit.RoundTrip {
 	if req == nil {
-		return agentkit.NewRoundTrip(nil, agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, nil, agentkit.ErrInvalidConfig)
+		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, nil, agentkit.ErrInvalidConfig)
 	}
 
 	body, warnings := p.requestBody(req)
@@ -193,11 +192,11 @@ func (p *Provider) RoundTrip(ctx context.Context, req *agentkit.Request) *agentk
 		return roundTripError(classifyError(resp.StatusCode, raw, resp.Header))
 	}
 
-	events, message, finish, usage, err := parseResponse(resp.Header.Get("Content-Type"), raw)
+	message, finish, usage, err := parseResponse(resp.Header.Get("Content-Type"), raw)
 	if err != nil {
 		return roundTripError(providerError(resp.StatusCode, raw, "", err.Error(), requestID(resp.Header), nil, 0))
 	}
-	return agentkit.NewRoundTrip(yieldEvents(events), message, finish, usage, warnings, nil)
+	return agentkit.NewRoundTrip(message, finish, usage, warnings, nil)
 }
 
 func (p *Provider) url(model string) string {
@@ -514,13 +513,12 @@ type usageMetadata struct {
 	TotalTokenCount         int64 `json:"totalTokenCount"`
 }
 
-func parseResponse(contentType string, raw []byte) ([]agentkit.Event, agentkit.Message, agentkit.FinishReason, agentkit.Usage, error) {
+func parseResponse(contentType string, raw []byte) (agentkit.Message, agentkit.FinishReason, agentkit.Usage, error) {
 	responses, err := decodeResponses(contentType, raw)
 	if err != nil {
-		return nil, agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, err
+		return agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, err
 	}
 
-	var events []agentkit.Event
 	message := agentkit.Message{Role: agentkit.RoleAssistant}
 	finish := agentkit.FinishStop
 	var usage agentkit.Usage
@@ -532,8 +530,7 @@ func parseResponse(contentType string, raw []byte) ([]agentkit.Event, agentkit.M
 		if len(response.Candidates) > 0 {
 			candidate := response.Candidates[0]
 			finish = mergeFinish(finish, candidate.FinishReason)
-			parsedEvents, blocks := parseParts(candidate.Content.Parts)
-			events = append(events, parsedEvents...)
+			blocks := parseParts(candidate.Content.Parts)
 			message.Blocks = append(message.Blocks, blocks...)
 		}
 		usage = addUsage(usage, mapUsage(response.UsageMetadata))
@@ -542,9 +539,9 @@ func parseResponse(contentType string, raw []byte) ([]agentkit.Event, agentkit.M
 		finish = agentkit.FinishToolUse
 	}
 	if usage.Total != sumUsage(usage) {
-		return nil, agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, fmt.Errorf("gemini usage total %d does not match bucket sum %d", usage.Total, sumUsage(usage))
+		return agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, fmt.Errorf("gemini usage total %d does not match bucket sum %d", usage.Total, sumUsage(usage))
 	}
-	return events, message, finish, usage, nil
+	return message, finish, usage, nil
 }
 
 func decodeResponses(contentType string, raw []byte) ([]generateContentResponse, error) {
@@ -574,8 +571,7 @@ func decodeResponses(contentType string, raw []byte) ([]generateContentResponse,
 	return []generateContentResponse{response}, nil
 }
 
-func parseParts(parts []part) ([]agentkit.Event, []agentkit.Block) {
-	var events []agentkit.Event
+func parseParts(parts []part) []agentkit.Block {
 	var blocks []agentkit.Block
 	var pending []agentkit.ReasoningBlock
 
@@ -600,9 +596,6 @@ func parseParts(parts []part) ([]agentkit.Event, []agentkit.Block) {
 			summary := ""
 			if part.Text != nil {
 				summary = *part.Text
-				if summary != "" {
-					events = append(events, agentkit.ReasoningDelta{Text: summary})
-				}
 			}
 			if signatureIndex >= 0 && summary != "" {
 				pending[signatureIndex].Summary = summary
@@ -612,7 +605,6 @@ func parseParts(parts []part) ([]agentkit.Event, []agentkit.Block) {
 		if part.Text != nil {
 			text := *part.Text
 			if text != "" {
-				events = append(events, agentkit.TextDelta{Text: text})
 				blocks = append(blocks, agentkit.TextBlock{Text: text})
 			}
 			continue
@@ -632,7 +624,7 @@ func parseParts(parts []part) ([]agentkit.Event, []agentkit.Block) {
 		}
 	}
 	flushPending("")
-	return events, blocks
+	return blocks
 }
 
 func encodeThoughtSignature(signature string) json.RawMessage {
@@ -707,18 +699,8 @@ func sumUsage(usage agentkit.Usage) int64 {
 	return usage.InputUncached + usage.CacheReadInput + usage.CacheWriteInput + usage.Output + usage.ReasoningOutput
 }
 
-func yieldEvents(events []agentkit.Event) iter.Seq[agentkit.Event] {
-	return func(yield func(agentkit.Event) bool) {
-		for _, event := range events {
-			if !yield(event) {
-				return
-			}
-		}
-	}
-}
-
 func roundTripError(err error) *agentkit.RoundTrip {
-	return agentkit.NewRoundTrip(nil, agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, nil, err)
+	return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, nil, err)
 }
 
 type googleErrorBody struct {
