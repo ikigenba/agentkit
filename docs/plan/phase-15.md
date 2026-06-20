@@ -1,0 +1,7 @@
+# Phase 15 — Fix: Anthropic streamed tool-call input assembly (placeholder concatenation)
+*Realizes design Decision 9 (the streamed tool-input assembly correction). Depends on Phase 8.*
+
+Fix a defect in the `anthropic` adapter's SSE assembly: for a `tool_use` block the `content_block_start` frame carries an empty `{}` input placeholder that is currently written into the fragment buffer and then concatenated with the `input_json_delta` fragments, producing invalid JSON like `{}{"command":"…"}`. This fails the assembled-input `json.Valid` check and surfaces as `ErrInvalidRequest: invalid Anthropic tool input JSON` on the first tool call of every turn (observed via agentrepl: a `bash` tool call errors out immediately after a clean text turn). End state: the opening placeholder is not prepended; the assembled `ToolUseBlock.Input` equals exactly the concatenation of the `input_json_delta` fragments, and an absent/empty fragment stream assembles to `{}`. The existing golden-SSE replay harness gains (or has corrected) a fixture whose `content_block_start` includes `input:{}` followed by `input_json_delta` fragments, so the regression is pinned and cannot silently return — the gap that let R-C8UE-VJ67's Anthropic slice pass while this case was broken.
+
+**Done when:** R-OUE3-L8VS is covered by a clearly-named test (Anthropic golden-SSE replay exercising the `{}`-placeholder-then-fragments path, asserting valid assembled `Input` and no `ErrInvalidRequest`); suite green.
+

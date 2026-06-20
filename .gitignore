@@ -28,3 +28,6 @@ go.work.sum
 
 # Local environment
 .envrc
+
+# Ephemeral per-phase build-loop contract — written by gather, deleted by verify.
+docs/brief.md
