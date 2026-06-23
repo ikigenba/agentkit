@@ -5,23 +5,16 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"math/rand"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/ikigenba/agentkit"
 	"github.com/ikigenba/agentkit/internal/httpx"
+	"github.com/ikigenba/agentkit/internal/retry"
 )
 
 const maxEmbeddingInputsPerRequest = 2048
-
-// EmbeddingRetryClock is the deterministic retry seam for embeddings.
-type EmbeddingRetryClock interface {
-	Now() time.Time
-	Sleep(context.Context, time.Duration) error
-	Jitter(time.Duration) time.Duration
-}
 
 // EmbeddingConfig describes one OpenAI-compatible embeddings endpoint.
 type EmbeddingConfig struct {
@@ -30,7 +23,7 @@ type EmbeddingConfig struct {
 	APIKey     string
 	HTTPClient *http.Client
 	Now        func() time.Time
-	Clock      EmbeddingRetryClock
+	Clock      retry.Clock
 	Pricing    map[string]agentkit.EmbeddingPricing
 	Specs      map[string]agentkit.EmbeddingSpec
 	Classify   ErrorClassifier
@@ -98,29 +91,25 @@ func (p *EmbeddingProvider) Embed(ctx context.Context, req *agentkit.EmbedReques
 }
 
 func (p *EmbeddingProvider) embedChunkWithRetry(ctx context.Context, req *agentkit.EmbedRequest, inputs []string) ([][]float32, agentkit.EmbeddingUsage, error) {
-	policy := embeddingRetryDefaults(req.Retry)
 	clock := p.cfg.Clock
 	if clock == nil {
-		clock = realEmbeddingRetryClock{}
+		clock = retry.RealClock{}
 	}
-	start := clock.Now()
-
-	for attempt := 1; ; attempt++ {
+	type chunk struct {
+		vectors [][]float32
+		usage   agentkit.EmbeddingUsage
+	}
+	result, err := retry.Do(ctx, embeddingRetryPolicy(req.Retry), clock, func() (chunk, error) {
 		vectors, usage, err := p.embedChunk(ctx, req, inputs)
 		if err == nil {
-			return vectors, usage, nil
+			return chunk{vectors: vectors, usage: usage}, nil
 		}
-		if !embeddingRetryable(err) || attempt >= policy.MaxAttempts {
-			return nil, agentkit.EmbeddingUsage{}, err
-		}
-		delay := embeddingRetryDelay(policy, clock, start, attempt, err)
-		if delay < 0 {
-			return nil, agentkit.EmbeddingUsage{}, err
-		}
-		if err := clock.Sleep(ctx, delay); err != nil {
-			return nil, agentkit.EmbeddingUsage{}, err
-		}
+		return chunk{}, err
+	}, embeddingRetryDecision, nil)
+	if err != nil {
+		return nil, agentkit.EmbeddingUsage{}, err
 	}
+	return result.vectors, result.usage, nil
 }
 
 func (p *EmbeddingProvider) embedChunk(ctx context.Context, req *agentkit.EmbedRequest, inputs []string) ([][]float32, agentkit.EmbeddingUsage, error) {
@@ -268,87 +257,31 @@ func (p *EmbeddingProvider) httpError(resp *http.Response, raw []byte) error {
 	}
 }
 
-func embeddingRetryDefaults(p agentkit.RetryPolicy) agentkit.RetryPolicy {
-	if p.MaxAttempts <= 0 {
-		p.MaxAttempts = 4
+func embeddingRetryPolicy(p agentkit.RetryPolicy) retry.Policy {
+	return retry.Policy{
+		MaxAttempts:      p.MaxAttempts,
+		BaseDelay:        p.BaseDelay,
+		MaxDelay:         p.MaxDelay,
+		MaxElapsed:       p.MaxElapsed,
+		IgnoreRetryAfter: p.IgnoreRetryAfter,
 	}
-	if p.BaseDelay <= 0 {
-		p.BaseDelay = 500 * time.Millisecond
-	}
-	if p.MaxDelay <= 0 {
-		p.MaxDelay = 30 * time.Second
-	}
-	return p
 }
 
-func embeddingRetryable(err error) bool {
-	return errors.Is(err, agentkit.ErrRateLimited) ||
-		errors.Is(err, agentkit.ErrOverloaded) ||
-		errors.Is(err, agentkit.ErrServerError) ||
-		errors.Is(err, agentkit.ErrTimeout) ||
-		errors.Is(err, agentkit.ErrNetwork)
+func embeddingRetryDecision(err error) retry.Decision {
+	return retry.Decision{
+		Retryable: errors.Is(err, agentkit.ErrRateLimited) ||
+			errors.Is(err, agentkit.ErrOverloaded) ||
+			errors.Is(err, agentkit.ErrServerError) ||
+			errors.Is(err, agentkit.ErrTimeout) ||
+			errors.Is(err, agentkit.ErrNetwork),
+		RetryAfter: embeddingRetryAfter(err),
+	}
 }
 
-func embeddingRetryDelay(policy agentkit.RetryPolicy, clock EmbeddingRetryClock, start time.Time, attempt int, err error) time.Duration {
+func embeddingRetryAfter(err error) time.Duration {
 	var providerErr *agentkit.Error
-	if !policy.IgnoreRetryAfter && errors.As(err, &providerErr) && providerErr.RetryAfter > 0 {
-		return boundedEmbeddingRetryDelay(policy, clock, start, providerErr.RetryAfter)
+	if errors.As(err, &providerErr) {
+		return providerErr.RetryAfter
 	}
-	return boundedEmbeddingRetryDelay(policy, clock, start, clock.Jitter(embeddingBackoffCap(policy, attempt)))
-}
-
-func boundedEmbeddingRetryDelay(policy agentkit.RetryPolicy, clock EmbeddingRetryClock, start time.Time, delay time.Duration) time.Duration {
-	if delay < 0 {
-		delay = 0
-	}
-	if policy.MaxElapsed == 0 {
-		return delay
-	}
-	remaining := policy.MaxElapsed - clock.Now().Sub(start)
-	if remaining < 0 || delay > remaining {
-		return -1
-	}
-	return delay
-}
-
-func embeddingBackoffCap(policy agentkit.RetryPolicy, attempt int) time.Duration {
-	delay := policy.BaseDelay
-	for i := 1; i < attempt && delay < policy.MaxDelay; i++ {
-		if delay > policy.MaxDelay/2 {
-			delay = policy.MaxDelay
-			break
-		}
-		delay *= 2
-	}
-	if delay > policy.MaxDelay {
-		return policy.MaxDelay
-	}
-	return delay
-}
-
-type realEmbeddingRetryClock struct{}
-
-func (realEmbeddingRetryClock) Now() time.Time {
-	return time.Now()
-}
-
-func (realEmbeddingRetryClock) Sleep(ctx context.Context, delay time.Duration) error {
-	if delay <= 0 {
-		return ctx.Err()
-	}
-	timer := time.NewTimer(delay)
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-timer.C:
-		return nil
-	}
-}
-
-func (realEmbeddingRetryClock) Jitter(cap time.Duration) time.Duration {
-	if cap <= 1 {
-		return 0
-	}
-	return time.Duration(rand.Int63n(int64(cap)))
+	return 0
 }

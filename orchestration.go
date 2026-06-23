@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ikigenba/agentkit/internal/mcp"
+	internalretry "github.com/ikigenba/agentkit/internal/retry"
 )
 
 const defaultMaxToolIterations = 1000
@@ -369,81 +370,23 @@ func (c *Conversation) runTurn(ctx context.Context, history *[]Message, tools []
 }
 
 func (c *Conversation) roundTripWithRetry(ctx context.Context, req *Request, s *Stream, yield func(Event) bool) (*RoundTrip, bool, error) {
-	policy := c.Retry.withDefaults()
 	clock := c.retryClock
 	if clock == nil {
 		clock = realRetryClock{}
 	}
-	start := clock.Now()
-
-	for attempt := 1; ; attempt++ {
+	rt, err := internalretry.Do(ctx, retryPolicy(c.Retry), clock, func() (*RoundTrip, error) {
 		rt := c.Provider.RoundTrip(ctx, req)
 		if rt == nil {
-			return nil, false, ErrInvalidConfig
+			return nil, ErrInvalidConfig
 		}
-
-		err := rt.Err()
-		if err == nil {
-			return rt, false, nil
-		}
-		if !isRetryable(err) || attempt >= policy.MaxAttempts {
-			return nil, false, err
-		}
-
-		delay := retryDelay(policy, clock, start, attempt, err)
-		if delay < 0 {
-			return nil, false, err
-		}
+		return rt, rt.Err()
+	}, retryDecision, func(err error, _ time.Duration) {
 		s.logError(c, "retry", err)
-		if err := clock.Sleep(ctx, delay); err != nil {
-			return nil, false, err
-		}
+	})
+	if err != nil {
+		return nil, false, err
 	}
-}
-
-func isRetryable(err error) bool {
-	return errors.Is(err, ErrRateLimited) ||
-		errors.Is(err, ErrOverloaded) ||
-		errors.Is(err, ErrServerError) ||
-		errors.Is(err, ErrTimeout) ||
-		errors.Is(err, ErrNetwork)
-}
-
-func retryDelay(policy RetryPolicy, clock retryClock, start time.Time, attempt int, err error) time.Duration {
-	var providerErr *Error
-	if !policy.IgnoreRetryAfter && errors.As(err, &providerErr) && providerErr.RetryAfter > 0 {
-		return boundedRetryDelay(policy, clock, start, providerErr.RetryAfter)
-	}
-	return boundedRetryDelay(policy, clock, start, clock.Jitter(backoffCap(policy, attempt)))
-}
-
-func boundedRetryDelay(policy RetryPolicy, clock retryClock, start time.Time, delay time.Duration) time.Duration {
-	if delay < 0 {
-		delay = 0
-	}
-	if policy.MaxElapsed == 0 {
-		return delay
-	}
-	remaining := policy.MaxElapsed - clock.Now().Sub(start)
-	if remaining < 0 || delay > remaining {
-		return -1
-	}
-	return delay
-}
-
-func backoffCap(policy RetryPolicy, attempt int) time.Duration {
-	delay := policy.BaseDelay
-	for i := 1; i < attempt && delay < policy.MaxDelay; i++ {
-		if delay > policy.MaxDelay/2 {
-			delay = policy.MaxDelay
-			break
-		}
-		delay *= 2
-	}
-	if delay > policy.MaxDelay {
-		return policy.MaxDelay
-	}
-	return delay
+	return rt, false, nil
 }
 
 func validateAndSortTools(tools []Tool) ([]Tool, error) {

@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"github.com/ikigenba/agentkit/internal/mcp"
+	internalretry "github.com/ikigenba/agentkit/internal/retry"
 )
 
 type mcpTool struct {
@@ -149,30 +150,17 @@ func (c *Conversation) resolveMCPTools(ctx context.Context) ([]Tool, []Warning, 
 }
 
 func (c *Conversation) discoverMCPTools(ctx context.Context, serverName string, client *mcp.Client) ([]mcp.Tool, error) {
-	policy := c.Retry.withDefaults()
 	clock := c.retryClock
 	if clock == nil {
 		clock = realRetryClock{}
 	}
-	start := clock.Now()
-
-	for attempt := 1; ; attempt++ {
+	return internalretry.Do(ctx, retryPolicy(c.Retry), clock, func() ([]mcp.Tool, error) {
 		tools, err := client.ListTools(ctx)
 		if err == nil {
 			return tools, nil
 		}
-		mapped := mcpError(serverName, err)
-		if !isRetryable(mapped) || attempt >= policy.MaxAttempts {
-			return nil, mapped
-		}
-		delay := retryDelay(policy, clock, start, attempt, mapped)
-		if delay < 0 {
-			return nil, mapped
-		}
-		if err := clock.Sleep(ctx, delay); err != nil {
-			return nil, err
-		}
-	}
+		return nil, mcpError(serverName, err)
+	}, retryDecision, nil)
 }
 
 func (c *Conversation) mcpSchemaWarnings(tools []Tool) []Warning {
