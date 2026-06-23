@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -293,6 +294,82 @@ func TestAnthropicReplayedThinkingBlockSerializesSummaryInThinkingField(t *testi
 	}
 	if _, ok := replayedThinking["text"]; ok {
 		t.Fatalf("thinking block serialized text field:\n%s", mustJSON(t, replayedThinking))
+	}
+}
+
+func TestAnthropicReplayedEmptyThinkingBlockKeepsThinkingField(t *testing.T) {
+	// R-T06O-8SZX
+	var rawRequest []byte
+	var body map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, `{"error":{"type":"invalid_request_error","message":"read request failed"}}`, http.StatusBadRequest)
+			return
+		}
+		rawRequest = append(rawRequest[:0], raw...)
+		if err := json.Unmarshal(raw, &body); err != nil {
+			http.Error(w, `{"error":{"type":"invalid_request_error","message":"malformed request JSON"}}`, http.StatusBadRequest)
+			return
+		}
+
+		block := findThinkingBlock(body)
+		if block == nil {
+			http.Error(w, `{"error":{"type":"invalid_request_error","message":"thinking block required"}}`, http.StatusBadRequest)
+			return
+		}
+		if _, ok := block["thinking"]; !ok {
+			http.Error(w, `{"error":{"type":"invalid_request_error","message":"messages.0.content.0.thinking.thinking: Field required"}}`, http.StatusBadRequest)
+			return
+		}
+		if block["thinking"] != "" || block["signature"] != "sig-empty-anthropic" {
+			http.Error(w, `{"error":{"type":"invalid_request_error","message":"unexpected replayed thinking block"}}`, http.StatusBadRequest)
+			return
+		}
+		if got := bytes.Count(raw, []byte(`"thinking":""`)); got != 1 {
+			http.Error(w, `{"error":{"type":"invalid_request_error","message":"empty thinking field must appear exactly once"}}`, http.StatusBadRequest)
+			return
+		}
+		if nonThinkingBlockHasThinkingField(body) {
+			http.Error(w, `{"error":{"type":"invalid_request_error","message":"non-thinking content block contains thinking field"}}`, http.StatusBadRequest)
+			return
+		}
+
+		writeSSEFile(t, w, "testdata/final_turn.sse")
+	}))
+	defer server.Close()
+
+	conv := &agentkit.Conversation{
+		Provider: New("key", WithBaseURL(server.URL), WithHTTPClient(server.Client())),
+		Model:    ModelSonnet46,
+		History: []agentkit.Message{{
+			Role: agentkit.RoleAssistant,
+			Blocks: []agentkit.Block{
+				agentkit.ReasoningBlock{
+					Opaque:  json.RawMessage(`{"signature":"sig-empty-anthropic"}`),
+					Summary: "",
+				},
+				agentkit.TextBlock{Text: "visible assistant text"},
+			},
+		}},
+	}
+
+	stream := conv.Send(context.Background(), "continue")
+	drain(stream)
+	if err := stream.Err(); err != nil {
+		if errors.Is(err, agentkit.ErrInvalidRequest) {
+			t.Fatalf("empty thinking replay returned invalid request: %v\nrequest:\n%s", err, rawRequest)
+		}
+		t.Fatalf("empty thinking replay error = %v, want nil", err)
+	}
+	if len(rawRequest) == 0 {
+		t.Fatal("server did not receive request")
+	}
+	if !bytes.Contains(rawRequest, []byte(`"thinking":""`)) {
+		t.Fatalf("raw request omitted empty thinking field:\n%s", rawRequest)
+	}
+	if nonThinkingBlockHasThinkingField(body) {
+		t.Fatalf("non-thinking block gained thinking field:\n%s", mustJSON(t, body))
 	}
 }
 
@@ -831,4 +908,20 @@ func findThinkingBlock(body map[string]any) map[string]any {
 		}
 	}
 	return nil
+}
+
+func nonThinkingBlockHasThinkingField(body map[string]any) bool {
+	messages, _ := body["messages"].([]any)
+	for _, msg := range messages {
+		content, _ := msg.(map[string]any)["content"].([]any)
+		for _, item := range content {
+			block, _ := item.(map[string]any)
+			if block["type"] != "thinking" {
+				if _, ok := block["thinking"]; ok {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
