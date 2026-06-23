@@ -19,7 +19,7 @@ One line per Decision, in number order — file, label, and the Verification ids
 - **D8** `docs/design/D08.md` — The uniform `Usage` struct (disjoint token buckets)
   - ids: R-Y810-TECF, R-Y98X-7634, R-YAGT-KXTT, R-YBOP-YPKI, R-YCWM-CHB7
 - **D9** `docs/design/D09.md` — Package architecture & the provider adapter seam (SPI)
-  - ids: R-01HL-I6TM, R-02PH-VYKB, R-OUE3-L8VS, R-03XE-9QB0, R-055A-NI1P, R-XR4M-U1ZT, R-OMKB-AY19, R-UJNS-PFLL, R-ZCMP-ARG8, R-DNS8-QC6Z, R-DRFX-VNF2, R-DTVQ-N6WG, R-GSIG-PT07, R-TQ77-6QLK, R-ELUQ-VJIQ, R-4YSE-6YBS
+  - ids: R-01HL-I6TM, R-02PH-VYKB, R-OUE3-L8VS, R-03XE-9QB0, R-055A-NI1P, R-XR4M-U1ZT, R-OMKB-AY19, R-UJNS-PFLL, R-ZCMP-ARG8, R-DNS8-QC6Z, R-DRFX-VNF2, R-DTVQ-N6WG, R-GSIG-PT07, R-TQ77-6QLK, R-T06O-8SZX, R-ELUQ-VJIQ, R-4YSE-6YBS
 - **D10** `docs/design/D10.md` — The orchestration layer: tool loop, history, transparency, reasoning replay, cache-prefix stability
   - ids: R-VV9Y-GMKH, R-VWHU-UEB6, R-VXPR-861V, R-VYXN-LXSK, R-W05J-ZPJ9, R-W1DG-DH9Y, R-W2LC-R90N, R-XZNX-IG6O, R-Y4JJ-1J5G, R-6W63-I4FW
 - **D11** `docs/design/D11.md` — Retry & backoff policy
@@ -124,6 +124,7 @@ R-S7V8-5QL3  D16  docs/design/D16.md
 R-S934-JIBS  D16  docs/design/D16.md
 R-SX1B-XRK2  D4  docs/design/D04.md
 R-SZH4-PB1G  D4  docs/design/D04.md
+R-T06O-8SZX  D9  docs/design/D09.md
 R-T40A-VZQ7  D6  docs/design/D06.md
 R-T587-9RGW  D6  docs/design/D06.md
 R-T6G3-NJ7L  D6  docs/design/D06.md
