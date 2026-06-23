@@ -34,4 +34,4 @@ Phase 29  ✅  realizes D19,D20,D18                       — Google embeddings 
 Phase 30  ✅  realizes D9                               — Fix: Anthropic replayed thinking block elides empty reasoning text (`thinking,omitempty`)
 Phase 31  ✅  realizes D21                              — Shared `internal/retry` executor: de-duplicate the four retry copies
 Phase 32  ✅  realizes D22                              — `ToolSchemaLimiter` capability interface: kill the `"google"` name-dispatch
-Phase 33  ⬜  realizes —                                — Release: patch version bump to `v0.1.3`
+Phase 33  ✅  realizes —                                — Release: patch version bump to `v0.1.3`
