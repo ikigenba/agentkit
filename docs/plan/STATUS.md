@@ -31,3 +31,4 @@ Phase 26  ✅  realizes D9                               — Fail-loud `default`
 Phase 27  ✅  realizes D18,D19,D20                       — Embeddings root surface: Embedder, Embed, the EmbeddingProvider SPI, and the registry value types
 Phase 28  ✅  realizes D19,D20,D18                       — OpenAI embeddings adapter (/v1/embeddings), the internal/openaicompat embeddings variant, and the OpenAI embedding registry
 Phase 29  ✅  realizes D19,D20,D18                       — Google embeddings adapter (:batchEmbedContents) and registry; discharge the cross-provider embeddings ids
+Phase 30  ✅  realizes D9                               — Fix: Anthropic replayed thinking block elides empty reasoning text (`thinking,omitempty`)
