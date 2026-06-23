@@ -40,6 +40,10 @@ One line per Decision, in number order — file, label, and the Verification ids
   - ids: R-YGQZ-C8S2, R-YHYV-Q0IR, R-YJ6S-3S9G, R-YKEO-HK05, R-YLMK-VBQU, R-YMUH-93HJ, R-YO2D-MV88
 - **D20** `docs/design/D20.md` — The embedding registry: usage, pricing/cost, and capability introspection
   - ids: R-YPAA-0MYX, R-YQI6-EEPM, R-YRQ2-S6GB, R-YSXZ-5Y70, R-YU5V-JPXP, R-YVDR-XHOE, R-YWLO-B9F3
+- **D21** `docs/design/D21.md` — The shared retry executor (`internal/retry`)
+  - ids: R-IUBG-95CC, R-IWR9-0OTQ, R-IXZ5-EGKF, R-IZ71-S8B4, R-J0EY-601T
+- **D22** `docs/design/D22.md` — Provider-driven tool-schema limits (no provider-name dispatch in the core)
+  - ids: R-SKVI-TSZQ, R-SNBB-LCH4, R-SOJ7-Z47T
 
 ## Verification ids → Decision
 Every minted id, sorted, mapped to its Decision and file (grep target for id lookup).
@@ -97,6 +101,11 @@ R-ILSN-CV1T  D3  docs/design/D03.md
 R-IN0J-QMSI  D3  docs/design/D03.md
 R-IO8G-4EJ7  D3  docs/design/D03.md
 R-IPGC-I69W  D3  docs/design/D03.md
+R-IUBG-95CC  D21  docs/design/D21.md
+R-IWR9-0OTQ  D21  docs/design/D21.md
+R-IXZ5-EGKF  D21  docs/design/D21.md
+R-IZ71-S8B4  D21  docs/design/D21.md
+R-J0EY-601T  D21  docs/design/D21.md
 R-OMKB-AY19  D9  docs/design/D09.md
 R-OUE3-L8VS  D9  docs/design/D09.md
 R-P3LQ-QY2X  D11  docs/design/D11.md
@@ -122,6 +131,9 @@ R-PX2L-AW41  D16  docs/design/D16.md
 R-S6NB-RYUE  D16  docs/design/D16.md
 R-S7V8-5QL3  D16  docs/design/D16.md
 R-S934-JIBS  D16  docs/design/D16.md
+R-SKVI-TSZQ  D22  docs/design/D22.md
+R-SNBB-LCH4  D22  docs/design/D22.md
+R-SOJ7-Z47T  D22  docs/design/D22.md
 R-SX1B-XRK2  D4  docs/design/D04.md
 R-SZH4-PB1G  D4  docs/design/D04.md
 R-T06O-8SZX  D9  docs/design/D09.md
