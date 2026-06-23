@@ -213,6 +213,27 @@ func TestGoogleRequestBodyPanicsOnUnknownOutboundBlockType(t *testing.T) {
 	})
 }
 
+func TestGoogleUnsupportedSchemaKeywords(t *testing.T) {
+	limiter := agentkit.ToolSchemaLimiter(New("test-key"))
+	schema := json.RawMessage(`{
+		"type":"object",
+		"properties":{
+			"legacy":{"$ref":"#/$defs/legacy"},
+			"choice":{"oneOf":[{"type":"string"},{"type":"number"}]}
+		},
+		"additionalProperties":false,
+		"$defs":{"legacy":{"type":"string"}}
+	}`)
+
+	// R-SOJ7-Z47T
+	if got, want := limiter.UnsupportedSchemaKeywords(schema), []string{"$ref", "additionalProperties", "oneOf"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("UnsupportedSchemaKeywords() = %#v, want %#v", got, want)
+	}
+	if got := limiter.UnsupportedSchemaKeywords(json.RawMessage(`{"type":"object","properties":{"city":{"type":"string"}}}`)); len(got) != 0 {
+		t.Fatalf("UnsupportedSchemaKeywords(simple schema) = %#v, want empty", got)
+	}
+}
+
 func assertUnknownBlockPanic(t *testing.T, fn func()) {
 	t.Helper()
 	defer func() {

@@ -47,6 +47,27 @@ func (p *mcpTestProvider) Pricing(string) (Pricing, bool) {
 	return Pricing{Tiers: []RateTier{{InputUncached: 1, Output: 1}}}, true
 }
 
+type mcpSchemaLimiterProvider struct {
+	mcpTestProvider
+	schemas []json.RawMessage
+}
+
+func (p *mcpSchemaLimiterProvider) UnsupportedSchemaKeywords(schema json.RawMessage) []string {
+	p.schemas = append(p.schemas, append(json.RawMessage(nil), schema...))
+	var keywords []string
+	text := string(schema)
+	if strings.Contains(text, "oneOf") {
+		keywords = append(keywords, "oneOf")
+	}
+	if strings.Contains(text, "$ref") {
+		keywords = append(keywords, "$ref")
+	}
+	if strings.Contains(text, "additionalProperties") {
+		keywords = append(keywords, "additionalProperties")
+	}
+	return keywords
+}
+
 func TestMCPDiscoveryMergesToolsAndRoutesCalls(t *testing.T) {
 	// R-6GBE-J3SV
 	// R-6HJA-WVJK
@@ -353,7 +374,7 @@ func TestMCPToolsJoinDeterministicOrderAndSchemaWarnings(t *testing.T) {
 	defer serverB.Close()
 
 	custom := RawTool("custom_mid", "custom", json.RawMessage(`{"type":"object"}`), func(context.Context, json.RawMessage) (string, error) { return "ok", nil })
-	provider := &mcpTestProvider{name: "google"}
+	provider := &mcpSchemaLimiterProvider{mcpTestProvider: mcpTestProvider{name: "schema-limited"}}
 	conv := &Conversation{
 		Provider: provider,
 		Model:    "mcp-model",
@@ -380,21 +401,34 @@ func TestMCPToolsJoinDeterministicOrderAndSchemaWarnings(t *testing.T) {
 		}
 	}
 	if len(stream.Warnings()) != 2 {
-		t.Fatalf("google MCP schema warnings = %#v, want two warnings", stream.Warnings())
+		t.Fatalf("MCP schema warnings = %#v, want two warnings", stream.Warnings())
+	}
+	// R-SKVI-TSZQ
+	if provider.Name() == "google" {
+		t.Fatal("test provider name unexpectedly matched google")
 	}
 	detail := stream.Warnings()[0].Detail + " " + stream.Warnings()[1].Detail
+	for _, attributed := range []string{"srvA.alpha", "srvZ.zeta"} {
+		if !strings.Contains(detail, attributed) {
+			t.Fatalf("warnings %q do not attribute MCP tool %s", detail, attributed)
+		}
+	}
 	for _, keyword := range []string{"$ref", "additionalProperties", "oneOf"} {
 		if !strings.Contains(detail, keyword) {
 			t.Fatalf("warnings %q do not name dropped keyword %s", detail, keyword)
 		}
 	}
+	if len(provider.schemas) == 0 {
+		t.Fatalf("schema limiter was not consulted")
+	}
 
-	nonGoogle := &mcpTestProvider{name: "openai"}
-	conv = &Conversation{Provider: nonGoogle, Model: "mcp-model", MCPServers: []MCPServer{{Name: "srvA", URL: serverB.URL}}}
+	nonLimiter := &mcpTestProvider{name: "google"}
+	conv = &Conversation{Provider: nonLimiter, Model: "mcp-model", MCPServers: []MCPServer{{Name: "srvA", URL: serverB.URL}}}
 	stream = conv.Send(context.Background(), "openai")
 	drainMCP(stream)
+	// R-SNBB-LCH4
 	if len(stream.Warnings()) != 0 {
-		t.Fatalf("non-Google warnings = %#v, want none", stream.Warnings())
+		t.Fatalf("non-limiter warnings = %#v, want none even when Provider.Name is google", stream.Warnings())
 	}
 }
 

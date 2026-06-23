@@ -28,6 +28,12 @@ type mcpTool struct {
 	client       *mcp.Client
 }
 
+// ToolSchemaLimiter reports schema keywords a provider will drop or degrade
+// when serializing tools to its native API shape.
+type ToolSchemaLimiter interface {
+	UnsupportedSchemaKeywords(schema json.RawMessage) []string
+}
+
 func (t *mcpTool) Name() string {
 	return t.name
 }
@@ -164,7 +170,8 @@ func (c *Conversation) discoverMCPTools(ctx context.Context, serverName string, 
 }
 
 func (c *Conversation) mcpSchemaWarnings(tools []Tool) []Warning {
-	if c.Provider == nil || c.Provider.Name() != "google" {
+	limiter, ok := c.Provider.(ToolSchemaLimiter)
+	if c.Provider == nil || !ok {
 		return nil
 	}
 	var warnings []Warning
@@ -173,14 +180,15 @@ func (c *Conversation) mcpSchemaWarnings(tools []Tool) []Warning {
 		if !ok {
 			continue
 		}
-		keywords := unsupportedGeminiSchemaKeywords(mt.schema)
+		keywords := append([]string(nil), limiter.UnsupportedSchemaKeywords(mt.schema)...)
+		sort.Strings(keywords)
 		if len(keywords) == 0 {
 			continue
 		}
 		warnings = append(warnings, Warning{
 			Setting: "mcp_schema",
 			Code:    WarnToolSchemaLossy,
-			Detail:  fmt.Sprintf("%s.%s drops unsupported schema keywords for Gemini: %s", mt.server, mt.originalName, strings.Join(keywords, ", ")),
+			Detail:  fmt.Sprintf("%s.%s schema uses unsupported keywords: %s", mt.server, mt.originalName, strings.Join(keywords, ", ")),
 		})
 	}
 	return warnings
@@ -343,38 +351,6 @@ func mcpHTTPCategory(status int) error {
 		return ErrInvalidRequest
 	}
 	return ErrUnknown
-}
-
-func unsupportedGeminiSchemaKeywords(raw json.RawMessage) []string {
-	var v any
-	if err := json.Unmarshal(raw, &v); err != nil {
-		return nil
-	}
-	seen := make(map[string]struct{})
-	collectUnsupportedSchemaKeywords(v, seen)
-	keywords := make([]string, 0, len(seen))
-	for keyword := range seen {
-		keywords = append(keywords, keyword)
-	}
-	sort.Strings(keywords)
-	return keywords
-}
-
-func collectUnsupportedSchemaKeywords(v any, seen map[string]struct{}) {
-	switch v := v.(type) {
-	case map[string]any:
-		for k, child := range v {
-			switch k {
-			case "$ref", "additionalProperties", "oneOf":
-				seen[k] = struct{}{}
-			}
-			collectUnsupportedSchemaKeywords(child, seen)
-		}
-	case []any:
-		for _, child := range v {
-			collectUnsupportedSchemaKeywords(child, seen)
-		}
-	}
 }
 
 var _ Tool = (*mcpTool)(nil)

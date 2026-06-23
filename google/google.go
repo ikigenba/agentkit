@@ -210,6 +210,10 @@ func (p *Provider) Pricing(model string) (agentkit.Pricing, bool) {
 	return entry.Pricing, ok
 }
 
+func (p *Provider) UnsupportedSchemaKeywords(schema json.RawMessage) []string {
+	return unsupportedSchemaKeywords(schema)
+}
+
 func (p *Provider) RoundTrip(ctx context.Context, req *agentkit.Request) *agentkit.RoundTrip {
 	if req == nil {
 		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, nil, agentkit.ErrInvalidConfig)
@@ -431,6 +435,38 @@ func convertSchemaArray(values []any) []any {
 		out = append(out, convertSchemaValue(value))
 	}
 	return out
+}
+
+func unsupportedSchemaKeywords(raw json.RawMessage) []string {
+	var v any
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return nil
+	}
+	seen := make(map[string]struct{})
+	collectUnsupportedSchemaKeywords(v, seen)
+	keywords := make([]string, 0, len(seen))
+	for keyword := range seen {
+		keywords = append(keywords, keyword)
+	}
+	sort.Strings(keywords)
+	return keywords
+}
+
+func collectUnsupportedSchemaKeywords(v any, seen map[string]struct{}) {
+	switch v := v.(type) {
+	case map[string]any:
+		for k, child := range v {
+			switch k {
+			case "$ref", "additionalProperties", "oneOf":
+				seen[k] = struct{}{}
+			}
+			collectUnsupportedSchemaKeywords(child, seen)
+		}
+	case []any:
+		for _, child := range v {
+			collectUnsupportedSchemaKeywords(child, seen)
+		}
+	}
 }
 
 func copyString(out, in map[string]any, key string) {
