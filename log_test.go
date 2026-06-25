@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"reflect"
 	"strings"
 	"testing"
@@ -179,16 +180,69 @@ func TestFailingLogWriterDoesNotAffectTurn(t *testing.T) {
 
 func TestNilLogDisablesRecordWriting(t *testing.T) {
 	// R-PM3H-UYFS
-	conv := &Conversation{Provider: &retryProvider{roundTrips: []*RoundTrip{retryTextRoundTrip("ok")}}, Model: "log-model", Log: nil}
+	tool := RawTool("lookup", "lookup", json.RawMessage(`{"type":"object"}`), func(context.Context, json.RawMessage) (string, error) {
+		return "tool ok", nil
+	})
+	newConversation := func(log io.Writer) *Conversation {
+		return &Conversation{
+			Provider: &retryProvider{roundTrips: []*RoundTrip{
+				NewRoundTrip(Message{Role: RoleAssistant, Blocks: []Block{ToolUseBlock{ID: "toolu_nil_log", Name: "lookup", Input: json.RawMessage(`{"q":"x"}`)}}}, FinishToolUse, Usage{InputUncached: 1, Total: 1}, nil, nil),
+				NewRoundTrip(Message{Role: RoleAssistant, Blocks: []Block{TextBlock{Text: "done"}}}, FinishStop, Usage{InputUncached: 2, Output: 3, Total: 5}, nil, nil),
+			}},
+			Model: "log-model",
+			Tools: []Tool{tool},
+			Log:   log,
+		}
+	}
 
-	stream := conv.Send(context.Background(), "hello")
-	drainRetry(stream)
+	var buf bytes.Buffer
+	loggedConv := newConversation(&buf)
+	logged := loggedConv.Send(context.Background(), "hello")
+	drainRetry(logged)
+	if err := logged.Err(); err != nil {
+		t.Fatalf("positive-control Err() = %v, want nil", err)
+	}
 
-	if err := stream.Err(); err != nil {
+	records := parseLogRecords(t, buf.String())
+	gotTypes := recordTypes(records)
+	wantTypes := []string{"turn_start", "message", "tool_use", "tool_result", "message", "usage", "turn_end"}
+	if !reflect.DeepEqual(gotTypes, wantTypes) {
+		t.Fatalf("positive-control record types = %v, want %v", gotTypes, wantTypes)
+	}
+	if records[1].Message == nil {
+		t.Fatalf("positive-control assistant message record missing message payload")
+	}
+	if records[2].ToolUse == nil || records[2].ToolUse.Name != "lookup" || string(records[2].ToolUse.Input) != `{"q":"x"}` {
+		t.Fatalf("positive-control tool_use record = %#v, want complete lookup call", records[2].ToolUse)
+	}
+	if records[3].Result == nil || records[3].Result.Output != "tool ok" || records[3].Result.IsError {
+		t.Fatalf("positive-control tool_result record = %#v, want successful result", records[3].Result)
+	}
+	if records[5].Usage == nil || *records[5].Usage != logged.Usage() {
+		t.Fatalf("positive-control usage record = %#v, want stream usage %#v", records[5].Usage, logged.Usage())
+	}
+	if records[6].Status != "ok" {
+		t.Fatalf("positive-control turn_end status = %q, want ok", records[6].Status)
+	}
+
+	nilLogConv := newConversation(nil)
+	nilLog := nilLogConv.Send(context.Background(), "hello")
+	drainRetry(nilLog)
+
+	if err := nilLog.Err(); err != nil {
 		t.Fatalf("Err() = %v, want nil with nil Log", err)
 	}
-	if conv.TotalUsage() != stream.Usage() {
-		t.Fatalf("TotalUsage() = %#v, want successful turn usage %#v", conv.TotalUsage(), stream.Usage())
+	if len(nilLogConv.History) != len(loggedConv.History) {
+		t.Fatalf("History len = %d, want positive-control len %d", len(nilLogConv.History), len(loggedConv.History))
+	}
+	if !reflect.DeepEqual(nilLogConv.History, loggedConv.History) {
+		t.Fatalf("History = %#v, want positive-control history %#v", nilLogConv.History, loggedConv.History)
+	}
+	if nilLogConv.TotalUsage() != loggedConv.TotalUsage() {
+		t.Fatalf("TotalUsage() = %#v, want positive-control usage %#v", nilLogConv.TotalUsage(), loggedConv.TotalUsage())
+	}
+	if nilLog.Usage() != logged.Usage() {
+		t.Fatalf("stream Usage() = %#v, want positive-control usage %#v", nilLog.Usage(), logged.Usage())
 	}
 }
 
