@@ -296,15 +296,6 @@ func TestProviderWarnsAndDefaultsNativeReasoningAtBuildTime(t *testing.T) {
 			requirement:  "R-B7YX-J342",
 		},
 		{
-			// R-B96T-WUUR
-			name:         "carried over native value validates against request model",
-			model:        ModelGPT55,
-			reasoning:    agentkit.Level("max"),
-			wantEffort:   "medium",
-			wantWarnings: []agentkit.WarningCode{agentkit.WarnReasoningUnsupported},
-			requirement:  "R-B96T-WUUR",
-		},
-		{
 			// R-P89V-WVXD
 			name:         "cannot disable defaults",
 			model:        ModelGPT55Pro,
@@ -359,6 +350,79 @@ func TestProviderWarnsAndDefaultsNativeReasoningAtBuildTime(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestConversationWarnsWhenCarriedReasoningInvalidForNewModel(t *testing.T) {
+	var mu sync.Mutex
+	var requests []map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode request: %v", err)
+		}
+		mu.Lock()
+		requests = append(requests, body)
+		n := len(requests)
+		mu.Unlock()
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		switch n {
+		case 1:
+			fmt.Fprint(w, textOnlySSE("first", 1, 0, 1, 0))
+		case 2:
+			fmt.Fprint(w, textOnlySSE("second", 1, 0, 1, 0))
+		default:
+			t.Errorf("unexpected request count: %d", n)
+		}
+	}))
+	defer server.Close()
+
+	conv := &agentkit.Conversation{
+		Provider: New("test-key", WithBaseURL(server.URL), WithHTTPClient(server.Client())),
+		Model:    ModelGPT55,
+		Gen:      agentkit.GenSettings{Reasoning: agentkit.Level("low")},
+	}
+
+	first := conv.Send(context.Background(), "first")
+	for range first.Events() {
+	}
+	if err := first.Err(); err != nil {
+		t.Fatalf("first stream error: %v", err)
+	}
+	if warnings := first.Warnings(); len(warnings) != 0 {
+		t.Fatalf("first warnings = %#v", warnings)
+	}
+
+	conv.Model = ModelGPT55Pro
+	// R-B96T-WUUR
+	second := conv.Send(context.Background(), "second")
+	for range second.Events() {
+	}
+	if err := second.Err(); err != nil {
+		t.Fatalf("second stream error: %v", err)
+	}
+	warnings := second.Warnings()
+	if len(warnings) != 1 {
+		t.Fatalf("second warnings = %#v", warnings)
+	}
+	if warnings[0].Setting != "reasoning" || warnings[0].Code != agentkit.WarnReasoningUnsupported {
+		t.Fatalf("second warning = %#v, want reasoning/%v", warnings[0], agentkit.WarnReasoningUnsupported)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(requests) != 2 {
+		t.Fatalf("requests = %d, want 2", len(requests))
+	}
+	firstReasoning, _ := requests[0]["reasoning"].(map[string]any)
+	if firstReasoning["effort"] != "low" {
+		t.Fatalf("first reasoning = %#v, want effort low", requests[0]["reasoning"])
+	}
+	secondReasoning, _ := requests[1]["reasoning"].(map[string]any)
+	if secondReasoning["effort"] != "high" {
+		t.Fatalf("second reasoning = %#v, want effort high", requests[1]["reasoning"])
 	}
 }
 
