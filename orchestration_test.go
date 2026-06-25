@@ -308,6 +308,60 @@ func TestToolLoopRunsToolsAndContinuesToFinalMessage(t *testing.T) {
 	}
 }
 
+func TestMessageDoneMirrorsHistoryForRichToolUseMessage(t *testing.T) {
+	tool := agentkit.RawTool("lookup", "look up", json.RawMessage(`{"type":"object"}`), func(context.Context, json.RawMessage) (string, error) {
+		return "sunny", nil
+	})
+	reasoning := agentkit.ReasoningBlock{Opaque: json.RawMessage(`{"signature":"opaque"}`), Summary: "looked at request"}
+	toolUse := agentkit.ToolUseBlock{ID: testToolUseID, Name: "lookup", Input: json.RawMessage(`{"city":"Tokyo"}`)}
+	provider := newFakeProvider(
+		newRoundTrip(
+			assistant(
+				reasoning,
+				agentkit.TextBlock{Text: "I'll check."},
+				toolUse,
+			),
+			agentkit.FinishToolUse,
+			agentkit.Usage{InputUncached: 1, Output: 1, Total: 2},
+			nil,
+		),
+		textRoundTrip("done"),
+	)
+	conv := &agentkit.Conversation{Provider: provider, Model: testModel, Tools: []agentkit.Tool{tool}}
+
+	events := drain(conv.Send(context.Background(), "weather"))
+
+	// R-CBA7-N2NL
+	if len(events) == 0 {
+		t.Fatalf("events = nil, want first MessageDone")
+	}
+	done, ok := events[0].(agentkit.MessageDone)
+	if !ok {
+		t.Fatalf("first event = %T, want MessageDone", events[0])
+	}
+	if len(conv.History) != 4 {
+		t.Fatalf("History len = %d, want user, assistant(tool_use), user(tool_result), assistant(final)", len(conv.History))
+	}
+	if !reflect.DeepEqual(done.Message, conv.History[1]) {
+		t.Fatalf("MessageDone message = %#v, want History assistant %#v", done.Message, conv.History[1])
+	}
+
+	gotReasoning, gotText, gotToolUse := false, false, false
+	for _, block := range conv.History[1].Blocks {
+		switch block := block.(type) {
+		case agentkit.ReasoningBlock:
+			gotReasoning = string(block.Opaque) == string(reasoning.Opaque) && block.Summary == reasoning.Summary
+		case agentkit.TextBlock:
+			gotText = block.Text == "I'll check."
+		case agentkit.ToolUseBlock:
+			gotToolUse = block.ID == toolUse.ID && block.Name == toolUse.Name && string(block.Input) == string(toolUse.Input)
+		}
+	}
+	if !gotReasoning || !gotText || !gotToolUse {
+		t.Fatalf("History assistant blocks include reasoning/text/tool_use = %v/%v/%v, want all true", gotReasoning, gotText, gotToolUse)
+	}
+}
+
 func TestUnknownToolAndToolErrorAreFedBackInBand(t *testing.T) {
 	t.Run("unknown tool", func(t *testing.T) {
 		provider := newFakeProvider(
