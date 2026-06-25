@@ -210,8 +210,8 @@ func (p *Provider) Pricing(model string) (agentkit.Pricing, bool) {
 	return entry.Pricing, ok
 }
 
-func (p *Provider) UnsupportedSchemaKeywords(schema json.RawMessage) []string {
-	return unsupportedSchemaKeywords(schema)
+func (p *Provider) UntranslatableSchemaConstructs(schema json.RawMessage) []string {
+	return untranslatableSchemaConstructs(schema)
 }
 
 func (p *Provider) RoundTrip(ctx context.Context, req *agentkit.Request) *agentkit.RoundTrip {
@@ -380,17 +380,25 @@ func convertSchema(raw json.RawMessage) map[string]any {
 	if err := json.Unmarshal(raw, &schema); err != nil {
 		return map[string]any{"type": "OBJECT"}
 	}
-	converted, ok := convertSchemaValue(schema).(map[string]any)
+	converted, ok := convertSchemaValue(schema, schema, nil).(map[string]any)
 	if !ok || len(converted) == 0 {
 		return map[string]any{"type": "OBJECT"}
 	}
 	return converted
 }
 
-func convertSchemaValue(v any) any {
+func convertSchemaValue(v any, root any, stack map[string]bool) any {
 	m, ok := v.(map[string]any)
 	if !ok {
 		return v
+	}
+
+	if ref, ok := m["$ref"].(string); ok {
+		if resolved, ok := resolveLocalRef(root, ref); ok && !stack[ref] {
+			nextStack := cloneRefStack(stack)
+			nextStack[ref] = true
+			return convertSchemaValue(resolved, root, nextStack)
+		}
 	}
 
 	out := make(map[string]any)
@@ -411,17 +419,19 @@ func convertSchemaValue(v any) any {
 	if props, ok := m["properties"].(map[string]any); ok {
 		converted := make(map[string]any, len(props))
 		for name, prop := range props {
-			converted[name] = convertSchemaValue(prop)
+			converted[name] = convertSchemaValue(prop, root, stack)
 		}
 		out["properties"] = converted
 	}
 	if items, ok := m["items"]; ok {
-		out["items"] = convertSchemaValue(items)
+		out["items"] = convertSchemaValue(items, root, stack)
 	} else if strings.EqualFold(fmt.Sprint(m["type"]), "array") {
 		out["items"] = map[string]any{"type": "STRING"}
 	}
 	if anyOf, ok := m["anyOf"].([]any); ok {
-		out["anyOf"] = convertSchemaArray(anyOf)
+		out["anyOf"] = convertSchemaArray(anyOf, root, stack)
+	} else if oneOf, ok := m["oneOf"].([]any); ok {
+		out["anyOf"] = convertSchemaArray(oneOf, root, stack)
 	}
 	if len(out) == 0 {
 		out["type"] = "OBJECT"
@@ -429,21 +439,21 @@ func convertSchemaValue(v any) any {
 	return out
 }
 
-func convertSchemaArray(values []any) []any {
+func convertSchemaArray(values []any, root any, stack map[string]bool) []any {
 	out := make([]any, 0, len(values))
 	for _, value := range values {
-		out = append(out, convertSchemaValue(value))
+		out = append(out, convertSchemaValue(value, root, stack))
 	}
 	return out
 }
 
-func unsupportedSchemaKeywords(raw json.RawMessage) []string {
+func untranslatableSchemaConstructs(raw json.RawMessage) []string {
 	var v any
 	if err := json.Unmarshal(raw, &v); err != nil {
 		return nil
 	}
 	seen := make(map[string]struct{})
-	collectUnsupportedSchemaKeywords(v, seen)
+	collectUntranslatableSchemaConstructs(v, v, nil, seen)
 	keywords := make([]string, 0, len(seen))
 	for keyword := range seen {
 		keywords = append(keywords, keyword)
@@ -452,21 +462,67 @@ func unsupportedSchemaKeywords(raw json.RawMessage) []string {
 	return keywords
 }
 
-func collectUnsupportedSchemaKeywords(v any, seen map[string]struct{}) {
+func collectUntranslatableSchemaConstructs(v any, root any, stack map[string]bool, seen map[string]struct{}) {
 	switch v := v.(type) {
 	case map[string]any:
 		for k, child := range v {
 			switch k {
-			case "$ref", "additionalProperties", "oneOf":
+			case "$ref":
+				ref, _ := child.(string)
+				resolved, ok := resolveLocalRef(root, ref)
+				if ref == "" || !ok || stack[ref] {
+					seen["$ref"] = struct{}{}
+					continue
+				}
+				nextStack := cloneRefStack(stack)
+				nextStack[ref] = true
+				collectUntranslatableSchemaConstructs(resolved, root, nextStack, seen)
+				continue
+			case "additionalProperties":
 				seen[k] = struct{}{}
+			case "$defs", "definitions":
+				continue
 			}
-			collectUnsupportedSchemaKeywords(child, seen)
+			collectUntranslatableSchemaConstructs(child, root, stack, seen)
 		}
 	case []any:
 		for _, child := range v {
-			collectUnsupportedSchemaKeywords(child, seen)
+			collectUntranslatableSchemaConstructs(child, root, stack, seen)
 		}
 	}
+}
+
+func cloneRefStack(stack map[string]bool) map[string]bool {
+	next := make(map[string]bool, len(stack)+1)
+	for ref, ok := range stack {
+		next[ref] = ok
+	}
+	return next
+}
+
+func resolveLocalRef(root any, ref string) (any, bool) {
+	if ref == "" || ref[0] != '#' {
+		return nil, false
+	}
+	if ref == "#" {
+		return root, true
+	}
+	if !strings.HasPrefix(ref, "#/") {
+		return nil, false
+	}
+	cur := root
+	for _, token := range strings.Split(ref[2:], "/") {
+		token = strings.ReplaceAll(strings.ReplaceAll(token, "~1", "/"), "~0", "~")
+		m, ok := cur.(map[string]any)
+		if !ok {
+			return nil, false
+		}
+		cur, ok = m[token]
+		if !ok {
+			return nil, false
+		}
+	}
+	return cur, true
 }
 
 func copyString(out, in map[string]any, key string) {

@@ -47,19 +47,16 @@ func (p *mcpTestProvider) Pricing(string) (Pricing, bool) {
 	return Pricing{Tiers: []RateTier{{InputUncached: 1, Output: 1}}}, true
 }
 
-type mcpSchemaLimiterProvider struct {
+type mcpSchemaTranslatorProvider struct {
 	mcpTestProvider
 	schemas []json.RawMessage
 }
 
-func (p *mcpSchemaLimiterProvider) UnsupportedSchemaKeywords(schema json.RawMessage) []string {
+func (p *mcpSchemaTranslatorProvider) UntranslatableSchemaConstructs(schema json.RawMessage) []string {
 	p.schemas = append(p.schemas, append(json.RawMessage(nil), schema...))
 	var keywords []string
 	text := string(schema)
-	if strings.Contains(text, "oneOf") {
-		keywords = append(keywords, "oneOf")
-	}
-	if strings.Contains(text, "$ref") {
+	if strings.Count(text, `"$ref":"#/$defs/node"`) > 1 {
 		keywords = append(keywords, "$ref")
 	}
 	if strings.Contains(text, "additionalProperties") {
@@ -553,13 +550,13 @@ func TestMCPToolsJoinDeterministicOrderAndSchemaWarnings(t *testing.T) {
 	// R-6ZTS-NFNZ
 	serverA := newMCPListOnlyServer(t, "zeta", `{"type":"object","oneOf":[{"type":"object"}]}`)
 	defer serverA.Close()
-	serverB := newMCPListOnlyServer(t, "alpha", `{"type":"object","properties":{"x":{"$ref":"#/$defs/X"}},"additionalProperties":false,"$defs":{"X":{"type":"string"}}}`)
+	serverB := newMCPListOnlyServer(t, "alpha", `{"type":"object","properties":{"x":{"$ref":"#/$defs/node"}},"additionalProperties":false,"$defs":{"node":{"type":"object","properties":{"x":{"$ref":"#/$defs/node"}}}}}`)
 	defer serverB.Close()
 	serverM := newMCPListOnlyServer(t, "middle", `{"type":"object"}`)
 	defer serverM.Close()
 
 	custom := RawTool("custom_mid", "custom", json.RawMessage(`{"type":"object"}`), func(context.Context, json.RawMessage) (string, error) { return "ok", nil })
-	provider := &mcpSchemaLimiterProvider{mcpTestProvider: mcpTestProvider{name: "schema-limited"}}
+	provider := &mcpSchemaTranslatorProvider{mcpTestProvider: mcpTestProvider{name: "schema-translator"}}
 	conv := &Conversation{
 		Provider: provider,
 		Model:    "mcp-model",
@@ -609,35 +606,43 @@ func TestMCPToolsJoinDeterministicOrderAndSchemaWarnings(t *testing.T) {
 	if got := toolNames(provider.calls[3].Tools); !reflect.DeepEqual(got, want) {
 		t.Fatalf("detached-one tools = %v, want re-sorted remaining merged order %v", got, want)
 	}
-	if len(schemaWarnings) != 2 {
-		t.Fatalf("MCP schema warnings = %#v, want two warnings", schemaWarnings)
+	if len(schemaWarnings) != 1 {
+		t.Fatalf("MCP schema warnings = %#v, want one warning", schemaWarnings)
+	}
+	for _, warning := range schemaWarnings {
+		if warning.Setting != "tool_schema" || warning.Code != WarnToolSchemaLossy {
+			t.Fatalf("MCP schema warning = %#v, want tool_schema/WarnToolSchemaLossy", warning)
+		}
 	}
 	// R-SKVI-TSZQ
 	if provider.Name() == "google" {
 		t.Fatal("test provider name unexpectedly matched google")
 	}
-	detail := schemaWarnings[0].Detail + " " + schemaWarnings[1].Detail
-	for _, attributed := range []string{"srvA.alpha", "srvZ.zeta"} {
-		if !strings.Contains(detail, attributed) {
-			t.Fatalf("warnings %q do not attribute MCP tool %s", detail, attributed)
-		}
+	detail := schemaWarnings[0].Detail
+	if !strings.Contains(detail, "srvA.alpha") {
+		t.Fatalf("warning %q does not attribute MCP tool srvA.alpha", detail)
 	}
-	for _, keyword := range []string{"$ref", "additionalProperties", "oneOf"} {
+	if strings.Contains(detail, "srvZ.zeta") || strings.Contains(detail, "oneOf") {
+		t.Fatalf("warning %q should not include faithfully translatable srvZ.zeta oneOf schema", detail)
+	}
+	for _, keyword := range []string{"$ref", "additionalProperties"} {
 		if !strings.Contains(detail, keyword) {
 			t.Fatalf("warnings %q do not name dropped keyword %s", detail, keyword)
 		}
 	}
 	if len(provider.schemas) == 0 {
-		t.Fatalf("schema limiter was not consulted")
+		t.Fatalf("schema translator was not consulted")
 	}
 
-	nonLimiter := &mcpTestProvider{name: "google"}
-	conv = &Conversation{Provider: nonLimiter, Model: "mcp-model", MCPServers: []MCPServer{{Name: "srvA", URL: serverB.URL}}}
-	stream = conv.Send(context.Background(), "openai")
-	drainMCP(stream)
-	// R-SNBB-LCH4
-	if len(stream.Warnings()) != 0 {
-		t.Fatalf("non-limiter warnings = %#v, want none even when Provider.Name is google", stream.Warnings())
+	for _, name := range []string{"google", "anthropic", "openai"} {
+		nonLimiter := &mcpTestProvider{name: name}
+		conv = &Conversation{Provider: nonLimiter, Model: "mcp-model", MCPServers: []MCPServer{{Name: "srvA", URL: serverB.URL}}}
+		stream = conv.Send(context.Background(), name)
+		drainMCP(stream)
+		// R-SNBB-LCH4
+		if len(stream.Warnings()) != 0 {
+			t.Fatalf("%s non-translator warnings = %#v, want none", name, stream.Warnings())
+		}
 	}
 }
 

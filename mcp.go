@@ -28,10 +28,10 @@ type mcpTool struct {
 	client       *mcp.Client
 }
 
-// ToolSchemaLimiter reports schema keywords a provider will drop or degrade
-// when serializing tools to its native API shape.
-type ToolSchemaLimiter interface {
-	UnsupportedSchemaKeywords(schema json.RawMessage) []string
+// ToolSchemaTranslator reports JSON Schema constructs a provider cannot carry
+// faithfully when serializing tools to its native API shape.
+type ToolSchemaTranslator interface {
+	UntranslatableSchemaConstructs(schema json.RawMessage) []string
 }
 
 func (t *mcpTool) Name() string {
@@ -76,7 +76,7 @@ func (e terminalToolError) Unwrap() error {
 }
 
 func (c *Conversation) resolveTools(ctx context.Context) ([]Tool, []Warning, error) {
-	mcpTools, warnings, err := c.resolveMCPTools(ctx)
+	mcpTools, err := c.resolveMCPTools(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -87,25 +87,25 @@ func (c *Conversation) resolveTools(ctx context.Context) ([]Tool, []Warning, err
 	if err != nil {
 		return nil, nil, err
 	}
-	return tools, warnings, nil
+	return tools, c.toolSchemaWarnings(tools), nil
 }
 
-func (c *Conversation) resolveMCPTools(ctx context.Context) ([]Tool, []Warning, error) {
+func (c *Conversation) resolveMCPTools(ctx context.Context) ([]Tool, error) {
 	if len(c.MCPServers) == 0 {
 		if len(c.mcpClients) > 0 {
 			c.closeMCP(ctx)
 		}
 		c.mcpCacheKey = ""
 		c.mcpToolCache = nil
-		return nil, nil, nil
+		return nil, nil
 	}
 
 	key, err := mcpServerSetKey(c.MCPServers)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	if key == c.mcpCacheKey {
-		return append([]Tool(nil), c.mcpToolCache...), c.mcpSchemaWarnings(c.mcpToolCache), nil
+		return append([]Tool(nil), c.mcpToolCache...), nil
 	}
 
 	c.closeMCP(ctx)
@@ -115,10 +115,10 @@ func (c *Conversation) resolveMCPTools(ctx context.Context) ([]Tool, []Warning, 
 	var tools []Tool
 	for _, server := range c.MCPServers {
 		if server.Name == "" || server.URL == "" {
-			return nil, nil, ErrInvalidConfig
+			return nil, ErrInvalidConfig
 		}
 		if _, ok := seenServers[server.Name]; ok {
-			return nil, nil, ErrInvalidConfig
+			return nil, ErrInvalidConfig
 		}
 		seenServers[server.Name] = struct{}{}
 
@@ -126,7 +126,7 @@ func (c *Conversation) resolveMCPTools(ctx context.Context) ([]Tool, []Warning, 
 		list, err := c.discoverMCPTools(ctx, server.Name, client)
 		if err != nil {
 			c.closeMCP(ctx)
-			return nil, nil, err
+			return nil, err
 		}
 		c.mcpClients[server.Name] = client
 		for _, discovered := range list {
@@ -148,11 +148,11 @@ func (c *Conversation) resolveMCPTools(ctx context.Context) ([]Tool, []Warning, 
 
 	if _, err := validateAndSortTools(append(append([]Tool(nil), c.Tools...), tools...)); err != nil {
 		c.closeMCP(ctx)
-		return nil, nil, err
+		return nil, err
 	}
 	c.mcpCacheKey = key
 	c.mcpToolCache = append([]Tool(nil), tools...)
-	return append([]Tool(nil), tools...), c.mcpSchemaWarnings(tools), nil
+	return append([]Tool(nil), tools...), nil
 }
 
 func (c *Conversation) discoverMCPTools(ctx context.Context, serverName string, client *mcp.Client) ([]mcp.Tool, error) {
@@ -169,29 +169,32 @@ func (c *Conversation) discoverMCPTools(ctx context.Context, serverName string, 
 	}, retryDecision, nil)
 }
 
-func (c *Conversation) mcpSchemaWarnings(tools []Tool) []Warning {
-	limiter, ok := c.Provider.(ToolSchemaLimiter)
+func (c *Conversation) toolSchemaWarnings(tools []Tool) []Warning {
+	translator, ok := c.Provider.(ToolSchemaTranslator)
 	if c.Provider == nil || !ok {
 		return nil
 	}
 	var warnings []Warning
 	for _, tool := range tools {
-		mt, ok := tool.(*mcpTool)
-		if !ok {
-			continue
-		}
-		keywords := append([]string(nil), limiter.UnsupportedSchemaKeywords(mt.schema)...)
-		sort.Strings(keywords)
-		if len(keywords) == 0 {
+		constructs := append([]string(nil), translator.UntranslatableSchemaConstructs(tool.JSONSchema())...)
+		sort.Strings(constructs)
+		if len(constructs) == 0 {
 			continue
 		}
 		warnings = append(warnings, Warning{
-			Setting: "mcp_schema",
+			Setting: "tool_schema",
 			Code:    WarnToolSchemaLossy,
-			Detail:  fmt.Sprintf("%s.%s schema uses unsupported keywords: %s", mt.server, mt.originalName, strings.Join(keywords, ", ")),
+			Detail:  fmt.Sprintf("%s schema uses untranslatable constructs: %s", toolSchemaWarningName(tool), strings.Join(constructs, ", ")),
 		})
 	}
 	return warnings
+}
+
+func toolSchemaWarningName(tool Tool) string {
+	if mt, ok := tool.(*mcpTool); ok {
+		return mt.server + "." + mt.originalName
+	}
+	return tool.Name()
 }
 
 func (c *Conversation) closeMCP(ctx context.Context) {

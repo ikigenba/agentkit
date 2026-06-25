@@ -213,24 +213,71 @@ func TestGoogleRequestBodyPanicsOnUnknownOutboundBlockType(t *testing.T) {
 	})
 }
 
-func TestGoogleUnsupportedSchemaKeywords(t *testing.T) {
-	limiter := agentkit.ToolSchemaLimiter(New("test-key"))
-	schema := json.RawMessage(`{
+func TestGoogleUntranslatableSchemaConstructs(t *testing.T) {
+	translator := New("test-key")
+	faithful := json.RawMessage(`{
 		"type":"object",
 		"properties":{
 			"legacy":{"$ref":"#/$defs/legacy"},
 			"choice":{"oneOf":[{"type":"string"},{"type":"number"}]}
 		},
-		"additionalProperties":false,
 		"$defs":{"legacy":{"type":"string"}}
 	}`)
 
 	// R-SOJ7-Z47T
-	if got, want := limiter.UnsupportedSchemaKeywords(schema), []string{"$ref", "additionalProperties", "oneOf"}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("UnsupportedSchemaKeywords() = %#v, want %#v", got, want)
+	if got := translator.UntranslatableSchemaConstructs(faithful); len(got) != 0 {
+		t.Fatalf("UntranslatableSchemaConstructs(faithful schema) = %#v, want empty", got)
 	}
-	if got := limiter.UnsupportedSchemaKeywords(json.RawMessage(`{"type":"object","properties":{"city":{"type":"string"}}}`)); len(got) != 0 {
-		t.Fatalf("UnsupportedSchemaKeywords(simple schema) = %#v, want empty", got)
+
+	recursive := json.RawMessage(`{
+		"type":"object",
+		"properties":{
+			"next":{"$ref":"#/$defs/node"}
+		},
+		"additionalProperties":false,
+		"$defs":{
+			"node":{
+				"type":"object",
+				"properties":{"next":{"$ref":"#/$defs/node"}}
+			}
+		}
+	}`)
+	if got, want := translator.UntranslatableSchemaConstructs(recursive), []string{"$ref", "additionalProperties"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("UntranslatableSchemaConstructs(recursive schema) = %#v, want %#v", got, want)
+	}
+}
+
+func TestGoogleConvertsRefsAndOneOfFaithfully(t *testing.T) {
+	schema := json.RawMessage(`{
+		"type":"object",
+		"properties":{
+			"legacy":{"$ref":"#/$defs/legacy"},
+			"choice":{"oneOf":[{"type":"string","description":"text"},{"type":"number","description":"count"}]}
+		},
+		"$defs":{"legacy":{"type":"string","description":"legacy value"}}
+	}`)
+
+	converted := convertSchema(schema)
+	props := field[map[string]any](t, converted, "properties")
+	legacy := field[map[string]any](t, props, "legacy")
+	// R-9QWF-E6VI
+	if legacy["type"] != "STRING" || legacy["description"] != "legacy value" || containsKey(legacy, "$ref") {
+		t.Fatalf("non-recursive $ref was not inlined faithfully: %#v", legacy)
+	}
+
+	choice := field[map[string]any](t, props, "choice")
+	anyOf := field[[]any](t, choice, "anyOf")
+	// R-9S4B-RYM7
+	if len(anyOf) != 2 || containsKey(choice, "oneOf") {
+		t.Fatalf("oneOf was not mapped to two anyOf branches: %#v", choice)
+	}
+	first := anyOf[0].(map[string]any)
+	second := anyOf[1].(map[string]any)
+	if first["type"] != "STRING" || first["description"] != "text" || second["type"] != "NUMBER" || second["description"] != "count" {
+		t.Fatalf("oneOf branches were not converted faithfully: %#v", anyOf)
+	}
+	if got := New("test-key").UntranslatableSchemaConstructs(schema); len(got) != 0 {
+		t.Fatalf("converted schema had residue: %#v", got)
 	}
 }
 
