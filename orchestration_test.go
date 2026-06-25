@@ -5,10 +5,18 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
+	"runtime"
+	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/ikigenba/agentkit"
+	"github.com/ikigenba/agentkit/openai"
 )
 
 const (
@@ -460,20 +468,60 @@ func TestStreamPendingAndEarlyBreakCleanup(t *testing.T) {
 	})
 
 	t.Run("early break releases resources and rolls back", func(t *testing.T) {
-		rt := newRoundTrip(assistant(agentkit.TextBlock{Text: "firstsecond"}), agentkit.FinishToolUse, agentkit.Usage{}, nil)
-		provider := newFakeProvider(rt, textRoundTrip("next"))
-		conv := &agentkit.Conversation{Provider: provider, Model: testModel}
+		var mu sync.Mutex
+		requests := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/v1/responses" {
+				t.Errorf("unexpected path: %s", r.URL.Path)
+			}
+			mu.Lock()
+			requests++
+			n := requests
+			mu.Unlock()
+
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.Header().Set("Connection", "close")
+			switch n {
+			case 1:
+				fmt.Fprint(w, openAIToolUseSSE())
+			case 2:
+				fmt.Fprint(w, openAITextOnlySSE("next ok"))
+			default:
+				t.Errorf("unexpected request count: %d", n)
+			}
+		}))
+		defer server.Close()
+
+		transport := &trackingTransport{base: &http.Transport{DisableKeepAlives: true}}
+		defer transport.closeIdleConnections()
+		client := &http.Client{Transport: transport}
+		conv := &agentkit.Conversation{
+			Provider: openai.New("test-key", openai.WithBaseURL(server.URL), openai.WithHTTPClient(client)),
+			Model:    openai.ModelGPT55,
+		}
+		baselineGoroutines := runtime.NumGoroutine()
+
 		stream := conv.Send(context.Background(), "first")
 		for range stream.Events() {
 			break
 		}
 
 		// R-CCI4-0UEA
+		if !transport.allClosed() {
+			t.Fatalf("tracked response bodies were not closed after early break")
+		}
+
 		next := conv.Send(context.Background(), "next")
 		drain(next)
 		if err := next.Err(); err != nil {
 			t.Fatalf("next Err() = %v, want nil after early-break cleanup", err)
 		}
+		if !transport.allClosed() {
+			t.Fatalf("tracked response bodies were not closed after drained follow-up turn")
+		}
+		transport.closeIdleConnections()
+		server.CloseClientConnections()
+		waitForGoroutineBaseline(t, baselineGoroutines)
 
 		// R-Y4JJ-1J5G
 		if len(conv.History) != 2 {
@@ -539,6 +587,107 @@ func countMessageDone(events []agentkit.Event) int {
 		}
 	}
 	return count
+}
+
+type trackingTransport struct {
+	base http.RoundTripper
+	mu   sync.Mutex
+	body []*trackedBody
+}
+
+func (t *trackingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	base := t.base
+	if base == nil {
+		base = http.DefaultTransport
+	}
+	resp, err := base.RoundTrip(req)
+	if err != nil {
+		return nil, err
+	}
+	body := &trackedBody{ReadCloser: resp.Body}
+	resp.Body = body
+	t.mu.Lock()
+	t.body = append(t.body, body)
+	t.mu.Unlock()
+	return resp, nil
+}
+
+func (t *trackingTransport) allClosed() bool {
+	t.mu.Lock()
+	bodies := append([]*trackedBody(nil), t.body...)
+	t.mu.Unlock()
+	if len(bodies) == 0 {
+		return false
+	}
+	for _, body := range bodies {
+		if !body.isClosed() {
+			return false
+		}
+	}
+	return true
+}
+
+func (t *trackingTransport) closeIdleConnections() {
+	if closer, ok := t.base.(interface{ CloseIdleConnections() }); ok {
+		closer.CloseIdleConnections()
+	}
+}
+
+type trackedBody struct {
+	io.ReadCloser
+	mu     sync.Mutex
+	closed bool
+}
+
+func (b *trackedBody) Close() error {
+	err := b.ReadCloser.Close()
+	b.mu.Lock()
+	b.closed = true
+	b.mu.Unlock()
+	return err
+}
+
+func (b *trackedBody) isClosed() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.closed
+}
+
+func waitForGoroutineBaseline(t *testing.T, baseline int) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		runtime.GC()
+		if got := runtime.NumGoroutine(); got <= baseline {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("goroutines = %d, want <= pre-turn baseline %d", runtime.NumGoroutine(), baseline)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func openAIToolUseSSE() string {
+	return strings.Join([]string{
+		openAISSEData(`{"type":"response.output_item.added","item":{"id":"fc_early","type":"function_call","call_id":"call_early","name":"lookup"}}`),
+		openAISSEData(`{"type":"response.function_call_arguments.delta","item_id":"fc_early","delta":"{}"}`),
+		openAISSEData(`{"type":"response.output_item.done","item":{"id":"fc_early","type":"function_call","call_id":"call_early","name":"lookup"}}`),
+		openAISSEData(`{"type":"response.completed","response":{"status":"completed","usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2,"input_tokens_details":{"cached_tokens":0},"output_tokens_details":{"reasoning_tokens":0}}}}`),
+		"data: [DONE]\n\n",
+	}, "")
+}
+
+func openAITextOnlySSE(text string) string {
+	return strings.Join([]string{
+		openAISSEData(fmt.Sprintf(`{"type":"response.output_text.delta","delta":%q}`, text)),
+		openAISSEData(`{"type":"response.completed","response":{"status":"completed","usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2,"input_tokens_details":{"cached_tokens":0},"output_tokens_details":{"reasoning_tokens":0}}}}`),
+		"data: [DONE]\n\n",
+	}, "")
+}
+
+func openAISSEData(data string) string {
+	return "data: " + data + "\n\n"
 }
 
 func eventIndexes[T agentkit.Event](events []agentkit.Event) int {
