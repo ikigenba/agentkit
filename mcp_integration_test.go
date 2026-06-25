@@ -299,40 +299,96 @@ func TestMCPAuthHeadersAndPermissionMapping(t *testing.T) {
 
 func TestMCPDiscoveryRetriesButToolCallDoesNot(t *testing.T) {
 	// R-6XDZ-VW6L
-	var listCalls int
-	server := newMCPTestServer(t, func(w http.ResponseWriter, _ *http.Request, req mcpTestRequest) {
-		switch req.Method {
-		case "initialize":
-			writeMCPResult(w, req.ID, `{"protocolVersion":"2025-11-25"}`)
-		case "notifications/initialized":
-			w.WriteHeader(http.StatusAccepted)
-		case "tools/list":
-			listCalls++
-			if listCalls == 1 {
-				http.Error(w, "temporary", http.StatusInternalServerError)
-				return
+	t.Run("transient discovery retries", func(t *testing.T) {
+		var listCalls int
+		server := newMCPTestServer(t, func(w http.ResponseWriter, _ *http.Request, req mcpTestRequest) {
+			switch req.Method {
+			case "initialize":
+				writeMCPResult(w, req.ID, `{"protocolVersion":"2025-11-25"}`)
+			case "notifications/initialized":
+				w.WriteHeader(http.StatusAccepted)
+			case "tools/list":
+				listCalls++
+				if listCalls == 1 {
+					http.Error(w, "temporary", http.StatusInternalServerError)
+					return
+				}
+				writeMCPResult(w, req.ID, `{"tools":[{"name":"ok","inputSchema":{"type":"object"}}]}`)
 			}
-			writeMCPResult(w, req.ID, `{"tools":[{"name":"ok","inputSchema":{"type":"object"}}]}`)
+		})
+		defer server.Close()
+		clock := &fakeMCPClock{}
+		provider := &mcpTestProvider{}
+		conv := &Conversation{
+			Provider:   provider,
+			Model:      "mcp-model",
+			Retry:      RetryPolicy{MaxAttempts: 2, BaseDelay: time.Millisecond, MaxDelay: time.Millisecond},
+			MCPServers: []MCPServer{{Name: "srv", URL: server.URL}},
+			retryClock: clock,
+		}
+		stream := conv.Send(context.Background(), "hello")
+		drainMCP(stream)
+		if err := stream.Err(); err != nil {
+			t.Fatalf("Err() = %v, want nil after discovery retry", err)
+		}
+		if listCalls != 2 || !reflect.DeepEqual(clock.sleeps, []time.Duration{time.Millisecond}) {
+			t.Fatalf("listCalls/sleeps = %d/%v, want one retry", listCalls, clock.sleeps)
 		}
 	})
-	defer server.Close()
-	clock := &fakeMCPClock{}
-	provider := &mcpTestProvider{}
-	conv := &Conversation{
-		Provider:   provider,
-		Model:      "mcp-model",
-		Retry:      RetryPolicy{MaxAttempts: 2, BaseDelay: time.Millisecond, MaxDelay: time.Millisecond},
-		MCPServers: []MCPServer{{Name: "srv", URL: server.URL}},
-		retryClock: clock,
-	}
-	stream := conv.Send(context.Background(), "hello")
-	drainMCP(stream)
-	if err := stream.Err(); err != nil {
-		t.Fatalf("Err() = %v, want nil after discovery retry", err)
-	}
-	if listCalls != 2 || !reflect.DeepEqual(clock.sleeps, []time.Duration{time.Millisecond}) {
-		t.Fatalf("listCalls/sleeps = %d/%v, want one retry", listCalls, clock.sleeps)
-	}
+
+	t.Run("non retryable discovery HTTP status fails fast", func(t *testing.T) {
+		tests := []struct {
+			name     string
+			status   int
+			category error
+		}{
+			{name: "400", status: http.StatusBadRequest, category: ErrInvalidRequest},
+			{name: "401", status: http.StatusUnauthorized, category: ErrAuthentication},
+			{name: "403", status: http.StatusForbidden, category: ErrPermission},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				var listCalls int
+				server := newMCPTestServer(t, func(w http.ResponseWriter, _ *http.Request, req mcpTestRequest) {
+					switch req.Method {
+					case "initialize":
+						writeMCPResult(w, req.ID, `{"protocolVersion":"2025-11-25"}`)
+					case "notifications/initialized":
+						w.WriteHeader(http.StatusAccepted)
+					case "tools/list":
+						listCalls++
+						http.Error(w, "not mcp", tt.status)
+					}
+				})
+				defer server.Close()
+				clock := &fakeMCPClock{}
+				provider := &mcpTestProvider{}
+				conv := &Conversation{
+					Provider:   provider,
+					Model:      "mcp-model",
+					Retry:      RetryPolicy{MaxAttempts: 3, BaseDelay: time.Millisecond, MaxDelay: time.Millisecond},
+					MCPServers: []MCPServer{{Name: "srv", URL: server.URL}},
+					retryClock: clock,
+				}
+
+				stream := conv.Send(context.Background(), "hello")
+				drainMCP(stream)
+
+				if !errors.Is(stream.Err(), tt.category) {
+					t.Fatalf("Err() = %v, want %v", stream.Err(), tt.category)
+				}
+				if listCalls != 1 {
+					t.Fatalf("tools/list calls = %d, want exactly one fail-fast attempt", listCalls)
+				}
+				if len(clock.sleeps) != 0 {
+					t.Fatalf("sleeps = %v, want none for non-retryable discovery failure", clock.sleeps)
+				}
+				if len(conv.History) != 0 || len(provider.calls) != 0 {
+					t.Fatalf("history/provider calls = %d/%d, want unchanged/no provider call", len(conv.History), len(provider.calls))
+				}
+			})
+		}
+	})
 
 	// R-6YLW-9NXA
 	var toolCalls int
@@ -343,19 +399,19 @@ func TestMCPDiscoveryRetriesButToolCallDoesNot(t *testing.T) {
 		}
 	})
 	defer callServer.Close()
-	provider = &mcpTestProvider{rounds: []*RoundTrip{
+	provider := &mcpTestProvider{rounds: []*RoundTrip{
 		mcpRoundTrip(Message{Role: RoleAssistant, Blocks: []Block{ToolUseBlock{ID: "toolu_mcp", Name: "srv_fail", Input: json.RawMessage(`{}`)}}}, FinishToolUse, nil),
 		mcpTextRoundTrip("unreached"),
 	}}
-	clock = &fakeMCPClock{}
-	conv = &Conversation{
+	clock := &fakeMCPClock{}
+	conv := &Conversation{
 		Provider:   provider,
 		Model:      "mcp-model",
 		Retry:      RetryPolicy{MaxAttempts: 3, BaseDelay: time.Millisecond, MaxDelay: time.Millisecond},
 		MCPServers: []MCPServer{{Name: "srv", URL: callServer.URL}},
 		retryClock: clock,
 	}
-	stream = conv.Send(context.Background(), "call")
+	stream := conv.Send(context.Background(), "call")
 	drainMCP(stream)
 	if !errors.Is(stream.Err(), ErrServerError) {
 		t.Fatalf("tool call Err() = %v, want ErrServerError", stream.Err())
