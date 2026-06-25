@@ -46,4 +46,4 @@ Phase 41  ✅  realizes D11                              — Audit B: MCP discov
 Phase 42  ✅  realizes D17                              — Audit B: unreachable MCP server and cross-server isolation (R-6L70-26RN)
 Phase 43  ✅  realizes D11                              — Audit B: reconcile streaming-idempotency claims to the message-granular seam (R-P61J-IHKB, R-Y878-6UDJ, R-6YLW-9NXA)
 Phase 44  ✅  realizes D22,D04,D17                      — Faithful tool-schema translation: inline `$ref`, map `oneOf`→`anyOf`, warn loudly on residue across all tools
-Phase 45  ⬜  realizes D22                              — Live Gemini integration: faithfully-translated tool schema accepted, tool-using turn round-trips (R-9UK4-JI3L)
+Phase 45  ✅  realizes D22                              — Live Gemini integration: faithfully-translated tool schema accepted, tool-using turn round-trips (R-9UK4-JI3L)
