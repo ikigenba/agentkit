@@ -44,4 +44,4 @@ Phase 39  ✅  realizes D3                               — Audit B: exercise p
 Phase 40  ✅  realizes D10                              — Audit B: deterministic re-ordering on MCP attach/detach (R-6W63-I4FW)
 Phase 41  ✅  realizes D11                              — Audit B: MCP discovery fails fast on 400/401/403, retries 5xx (R-6XDZ-VW6L)
 Phase 42  ✅  realizes D17                              — Audit B: unreachable MCP server and cross-server isolation (R-6L70-26RN)
-Phase 43  ⬜  realizes D11                              — Audit B: reconcile streaming-idempotency claims to the message-granular seam (R-P61J-IHKB, R-Y878-6UDJ, R-6YLW-9NXA)
+Phase 43  ✅  realizes D11                              — Audit B: reconcile streaming-idempotency claims to the message-granular seam (R-P61J-IHKB, R-Y878-6UDJ, R-6YLW-9NXA)
