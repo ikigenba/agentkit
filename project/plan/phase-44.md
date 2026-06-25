@@ -1,0 +1,26 @@
+# Phase 44 — Faithful tool-schema translation (inline `$ref`, map `oneOf`→`anyOf`, warn loudly on residue across all tools)
+
+*Realizes design Decision 22 (faithful tool-schema translation) and Decision 4 (the tool surface — R-X3VB-65U3, R-6ZTS-NFNZ); brings the code in line with the rewritten Decision 17 MCP-boundary prose. Depends on Phase 32 (the `ToolSchemaLimiter` capability this supersedes), Phase 11 (the Google adapter), and Phase 13 (MCP integration into the orchestrator).*
+
+Replace the "silently drop unsupported keywords" model with **faithful translation**: AgentKit carries a tool's JSON-Schema contract to the provider preserving meaning, and only warns — loudly, non-fatally, and uniformly for every tool — about the irreducible residue it genuinely cannot represent. The old `convertSchema` dropped `$ref`/`oneOf`/`additionalProperties` wholesale, weakening the consumer's contract (a stripped `oneOf` or `additionalProperties:false` lets the model emit input the real tool rejects). Root and `google` change together so a schema warning never disappears between the two edits, exactly as Phase 32 coupled them.
+
+End state:
+
+- **Interface rename + reshape (root).** `ToolSchemaLimiter`/`UnsupportedSchemaKeywords(json.RawMessage) []string` becomes `ToolSchemaTranslator`/`UntranslatableSchemaConstructs(json.RawMessage) []string` — an optional capability discovered by type assertion, returning the sorted set of constructs the provider cannot faithfully represent *after* best-effort translation (empty/nil = full fidelity). No provider name anywhere in the core.
+- **Faithful translation (google).** `convertSchema` performs the transforms instead of dropping: **inline** a non-recursive `$ref` by resolving it against `$defs`/`definitions` in place, and **map** `oneOf` to the dialect's `anyOf` (Gemini accepts `anyOf`; `convertSchemaValue` already passes it through). A single internal translate routine feeds both `convertSchema` (what is sent) and `UntranslatableSchemaConstructs` (the residue reported) so the two can never drift. Residue = a constraining `additionalProperties` (e.g. `false`) and a recursive `$ref` (cannot be inlined finitely).
+- **Generalized, consistent warning (root).** `mcpSchemaWarnings` becomes `toolSchemaWarnings`, checking residue for **every** tool in the assembled set at the `Send`/discovery boundary — custom (`NewTool`/`RawTool`) and MCP alike — not MCP-only. Attribution: `<server>.<originalName>` for an MCP tool, the tool's `Name()` for a custom tool. The warning is `Warning{Setting:"tool_schema", Code:WarnToolSchemaLossy, Detail:"<tool> could not be faithfully translated for <provider>; unconveyed: <construct…>"}` — `Setting` is now `"tool_schema"` (was the MCP-only `"mcp_schema"`), and `WarnToolSchemaLossy` fires only when residue is non-empty. This change of `Setting` resolves the prior code/design mismatch (audit finding R-6ZTS-NFNZ) by making the design's `"tool_schema"` value correct for a new reason: the warning now spans all tool sources.
+- **Other providers unchanged.** Anthropic/OpenAI/Z.ai do not implement `ToolSchemaTranslator`; they accept these constructs and produce no schema warnings — structurally (interface absent), not by name-exclusion.
+- D04/D17/D22 are already rewritten in place in this change set; this phase makes the code match.
+
+**Done when:** the offline Verification ids are each covered by a clearly-named test and the suite is green per design Conventions —
+
+- R-SKVI-TSZQ — a `ToolSchemaTranslator` provider whose `Name()` is **not** `"google"` and whose residue is non-empty produces a `WarnToolSchemaLossy` at the `Send` boundary naming the constructs and attributing the tool (interface-not-name dispatch).
+- R-SNBB-LCH4 — a provider not implementing `ToolSchemaTranslator` yields no schema warnings for the same tool; no provider-name branch in the core.
+- R-SOJ7-Z47T — `google`'s `UntranslatableSchemaConstructs` returns **empty** for a schema using only a non-recursive `$ref`/`$defs` and a `oneOf` (both translated), and **exactly** the residue (`additionalProperties`, recursive `$ref`) for a schema using those — the old drop-list (reporting `$ref`/`oneOf`) fails this.
+- R-9QWF-E6VI — `google`'s conversion inlines a non-recursive `$ref` so the produced schema carries the referenced definition in place, with no residue.
+- R-9S4B-RYM7 — `google`'s conversion maps `oneOf` to `anyOf`, carrying each converted branch subschema, with no residue.
+- R-9TC8-5QCW — a **custom** (non-MCP) tool with an untranslatable construct produces the same `WarnToolSchemaLossy` (`Setting:"tool_schema"`) attributed to its `Name()` — a build warning only for MCP tools fails this.
+- R-X3VB-65U3 — `google` converts a tool schema by faithfully translating (`$ref` inlined, `oneOf`→`anyOf`) rather than dropping; a schema using only those converts with no residue and without erroring.
+- R-6ZTS-NFNZ — an MCP tool whose `inputSchema` carries an untranslatable construct emits the `tool_schema`/`WarnToolSchemaLossy` warning naming `<server>.<tool>` and the construct and the turn still proceeds; a faithfully-translatable schema emits no warning; Anthropic/OpenAI register it with no warning.
+
+(The live-Gemini real-substrate id R-9UK4-JI3L is Phase 45.)

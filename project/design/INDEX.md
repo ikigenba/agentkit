@@ -42,8 +42,8 @@ One line per Decision, in number order — file, label, and the Verification ids
   - ids: R-YPAA-0MYX, R-YQI6-EEPM, R-YRQ2-S6GB, R-YSXZ-5Y70, R-YU5V-JPXP, R-YVDR-XHOE, R-YWLO-B9F3
 - **D21** `project/design/D21.md` — The shared retry executor (`internal/retry`)
   - ids: R-IUBG-95CC, R-IWR9-0OTQ, R-IXZ5-EGKF, R-IZ71-S8B4, R-J0EY-601T
-- **D22** `project/design/D22.md` — Provider-driven tool-schema limits (no provider-name dispatch in the core)
-  - ids: R-SKVI-TSZQ, R-SNBB-LCH4, R-SOJ7-Z47T
+- **D22** `project/design/D22.md` — Faithful tool-schema translation (provider-driven, no provider-name dispatch)
+  - ids: R-SKVI-TSZQ, R-SNBB-LCH4, R-SOJ7-Z47T, R-9QWF-E6VI, R-9S4B-RYM7, R-9TC8-5QCW, R-9UK4-JI3L
 
 ## Verification ids → Decision
 Every minted id, sorted, mapped to its Decision and file (grep target for id lookup).
@@ -72,6 +72,10 @@ R-6ZTS-NFNZ  D4  project/design/D04.md
 R-711P-17EO  D13  project/design/D13.md
 R-7CYE-KS40  D7  project/design/D07.md
 R-7GGH-BPYN  D5  project/design/D05.md
+R-9QWF-E6VI  D22  project/design/D22.md
+R-9S4B-RYM7  D22  project/design/D22.md
+R-9TC8-5QCW  D22  project/design/D22.md
+R-9UK4-JI3L  D22  project/design/D22.md
 R-B7YX-J342  D6  project/design/D06.md
 R-B96T-WUUR  D6  project/design/D06.md
 R-BUR1-XAK8  D7  project/design/D07.md
