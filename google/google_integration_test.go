@@ -14,7 +14,7 @@ import (
 	"github.com/ikigenba/agentkit"
 )
 
-func TestGeminiIntegrationAcceptsRefOneOfToolSchemaAndRoundTripsToolCall(t *testing.T) {
+func TestGoogleIntegrationAcceptsRefOneOfToolSchemaAndRoundTripsToolCall(t *testing.T) {
 	// R-9UK4-JI3L
 	key := os.Getenv("GEMINI_API_KEY")
 	if key == "" {
