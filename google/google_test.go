@@ -316,6 +316,46 @@ func TestGoogleSignatureOnFunctionCallPartPreservesToolUse(t *testing.T) {
 	}
 }
 
+func TestGoogleParallelReasoningBindsPositionallyToToolCalls(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeSSE(t, w, `{"candidates":[{"content":{"role":"model","parts":[{"text":"choose weather source","thought":true,"thoughtSignature":"sig-a"},{"functionCall":{"name":"lookup_weather","args":{"city":"Austin"}}},{"text":"choose calendar source","thought":true,"thoughtSignature":"sig-b"},{"functionCall":{"name":"lookup_calendar","args":{"date":"2026-06-25"}}}]},"finishReason":"STOP"}]}`)
+	}))
+	defer server.Close()
+
+	rt := New("key", WithBaseURL(server.URL), WithHTTPClient(server.Client())).RoundTrip(context.Background(), &agentkit.Request{Model: ModelFlash25})
+	if err := rt.Err(); err != nil {
+		t.Fatalf("RoundTrip error: %v", err)
+	}
+
+	var reasonings []agentkit.ReasoningBlock
+	var uses []agentkit.ToolUseBlock
+	for _, block := range rt.Message().Blocks {
+		switch block := block.(type) {
+		case agentkit.ReasoningBlock:
+			reasonings = append(reasonings, block)
+		case agentkit.ToolUseBlock:
+			uses = append(uses, block)
+		}
+	}
+
+	// R-IPGC-I69W
+	if len(reasonings) != 2 || len(uses) != 2 {
+		t.Fatalf("blocks = %#v, want two reasoning blocks and two tool-use blocks", rt.Message().Blocks)
+	}
+	if uses[0].ID == "" || uses[1].ID == "" || uses[0].ID == uses[1].ID {
+		t.Fatalf("tool-use IDs were not distinct non-empty values: %#v", uses)
+	}
+	if decodeThoughtSignature(reasonings[0].Opaque) != "sig-a" || reasonings[0].BoundToID != uses[0].ID {
+		t.Fatalf("reasoning A was not bound to call A: reasoning=%#v useA=%#v", reasonings[0], uses[0])
+	}
+	if decodeThoughtSignature(reasonings[1].Opaque) != "sig-b" || reasonings[1].BoundToID != uses[1].ID {
+		t.Fatalf("reasoning B was not bound to call B: reasoning=%#v useB=%#v", reasonings[1], uses[1])
+	}
+	if reasonings[0].BoundToID == uses[1].ID {
+		t.Fatalf("reasoning A incorrectly bound to call B: reasoning=%#v useB=%#v", reasonings[0], uses[1])
+	}
+}
+
 func TestGoogleSignatureOnTextPartPreservesVisibleText(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		writeSSE(t, w, `{"candidates":[{"content":{"role":"model","parts":[{"text":"visible answer","thoughtSignature":"sig-on-text"}]},"finishReason":"STOP"}]}`)
