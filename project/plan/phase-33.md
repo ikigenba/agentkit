@@ -2,7 +2,7 @@
 
 *Realizes — (no design Decision; a release action carries no Verification ids). Depends on Phase 31 (shared retry executor) and Phase 32 (`ToolSchemaLimiter`).*
 
-Cut the patch release that bundles the two maintenance fixes from D21 and D22. The version is carried by git tags (`v0.1.0`/`v0.1.1`/`v0.1.2` exist; `v0.1.2` is current); there is no version constant in code to edit, and `docs/product.md`'s "starting version `v0.1.0`" is a historical contractual constant that stays untouched.
+Cut the patch release that bundles the two maintenance fixes from D21 and D22. The version is carried by git tags (`v0.1.0`/`v0.1.1`/`v0.1.2` exist; `v0.1.2` is current); there is no version constant in code to edit, and `project/product/product.md`'s "starting version `v0.1.0`" is a historical contractual constant that stays untouched.
 
 End state:
 

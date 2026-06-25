@@ -1,6 +1,6 @@
 # AgentKit — Product
 
-**Authority: intent.** This document owns *why* AgentKit exists, *for whom*, what is in and out of scope, and the behavior we **promise** the user — stated once, in outcome terms. It does **not** state mechanism, type shapes, exact wire formats, error/category names, retry policies, vector dimensionality numbers, normalization or chunking mechanics, exit codes, or test assertions; those belong to `docs/design.md`. Where the two could overlap on behavior, this doc states the *promise* (what the consumer observes) and design states the *exact, checkable proof* of that promise. That boundary is load-bearing: it keeps product, design, and plan from overlapping.
+**Authority: intent.** This document owns *why* AgentKit exists, *for whom*, what is in and out of scope, and the behavior we **promise** the user — stated once, in outcome terms. It does **not** state mechanism, type shapes, exact wire formats, error/category names, retry policies, vector dimensionality numbers, normalization or chunking mechanics, exit codes, or test assertions; those belong to `project/design/design.md`. Where the two could overlap on behavior, this doc states the *promise* (what the consumer observes) and design states the *exact, checkable proof* of that promise. That boundary is load-bearing: it keeps product, design, and plan from overlapping.
 
 ## Problem
 

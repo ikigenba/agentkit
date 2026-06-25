@@ -109,7 +109,7 @@ tests). The REPL is fully gone (this is a library; no CLI/app surface).
 
 - [x] **Finding 5 — Design-prose contradiction at the pricing tier boundary.**
   *(RESOLVED 2026-06-20 — doc-only; no phase.)* Rewrote the `R-V2SM-WC8V` prose in
-  `docs/design/D16.md` to "reach or exceed → high; **strictly below** → base," with
+  `project/design/D16.md` to "reach or exceed → high; **strictly below** → base," with
   an explicit note that the boundary is inclusive on the high side
   (`totalInput >= MinInputTokens`), matching `pricing.go`. Impl and tests were
   already correct; only the contradicted sentence changed.

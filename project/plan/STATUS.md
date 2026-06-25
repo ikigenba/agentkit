@@ -1,6 +1,6 @@
 # AgentKit — Plan Status
 
-The manifest. One line per phase, in build order — the **only** place a phase's status marker lives. Each phase line begins with the literal word `Phase` and carries a done-marker (U+2705) or not-started-marker (U+2B1C). The build loop finds the next work with `grep -nE '^Phase .* ⬜' docs/plan/STATUS.md | head -1`, reads only that phase's `docs/plan/phase-NN.md`, and on completion flips that phase's one marker here to done. Nothing else in this file or any phase file is edited at build time. Append a new line (and a new phase file) to extend. (This paragraph deliberately carries no bare status glyph, so the anchored grep matches only phase lines.)
+The manifest. One line per phase, in build order — the **only** place a phase's status marker lives. Each phase line begins with the literal word `Phase` and carries a done-marker (U+2705) or not-started-marker (U+2B1C). The build loop finds the next work with `grep -nE '^Phase .* ⬜' project/plan/STATUS.md | head -1`, reads only that phase's `project/plan/phase-NN.md`, and on completion flips that phase's one marker here to done. Nothing else in this file or any phase file is edited at build time. Append a new line (and a new phase file) to extend. (This paragraph deliberately carries no bare status glyph, so the anchored grep matches only phase lines.)
 
 Phase 01  ✅  realizes D3                              — Neutral data model and tool-call ID minter
 Phase 02  ✅  realizes D7                              — Error model
