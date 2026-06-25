@@ -142,6 +142,41 @@ func TestMCPDiscoveryMergesToolsAndRoutesCalls(t *testing.T) {
 }
 
 func TestMCPDiscoveryFailuresAndCollisionsStopBeforeProvider(t *testing.T) {
+	t.Run("unreachable server fails before provider", func(t *testing.T) {
+		// R-6L70-26RN
+		server := httptest.NewServer(http.NotFoundHandler())
+		server.Close()
+		provider := &mcpTestProvider{}
+		clock := &fakeMCPClock{}
+		conv := &Conversation{
+			Provider:   provider,
+			Model:      "mcp-model",
+			Retry:      RetryPolicy{MaxAttempts: 1},
+			MCPServers: []MCPServer{{Name: "down", URL: server.URL}},
+			retryClock: clock,
+		}
+
+		stream := conv.Send(context.Background(), "hello")
+		drainMCP(stream)
+
+		if !errors.Is(stream.Err(), ErrNetwork) {
+			t.Fatalf("Err() = %v, want ErrNetwork", stream.Err())
+		}
+		var akErr *Error
+		if !errors.As(stream.Err(), &akErr) {
+			t.Fatalf("Err() = %T %[1]v, want *Error", stream.Err())
+		}
+		if akErr.MCPServer != "down" || akErr.Provider != "" || akErr.Message == "" {
+			t.Fatalf("MCP error = %+v, want attributed network error without provider", akErr)
+		}
+		if len(conv.History) != 0 || len(provider.calls) != 0 {
+			t.Fatalf("history/provider calls = %d/%d, want unchanged/no provider call", len(conv.History), len(provider.calls))
+		}
+		if len(clock.sleeps) != 0 {
+			t.Fatalf("sleeps = %v, want no backoff for single-attempt discovery", clock.sleeps)
+		}
+	})
+
 	t.Run("collision", func(t *testing.T) {
 		// R-6IR7-ANA9
 		server := newMCPTestServer(t, func(w http.ResponseWriter, _ *http.Request, req mcpTestRequest) {
@@ -204,6 +239,92 @@ func TestMCPDiscoveryFailuresAndCollisionsStopBeforeProvider(t *testing.T) {
 		}
 		if len(conv.History) != 0 || len(provider.calls) != 0 {
 			t.Fatalf("history/provider calls = %d/%d, want unchanged/no provider call", len(conv.History), len(provider.calls))
+		}
+	})
+
+	t.Run("bad server does not corrupt detached healthy server", func(t *testing.T) {
+		// R-6L70-26RN
+		var healthyCalls int
+		healthy := newMCPTestServer(t, func(w http.ResponseWriter, _ *http.Request, req mcpTestRequest) {
+			switch req.Method {
+			case "initialize":
+				writeMCPResult(w, req.ID, `{"protocolVersion":"2025-11-25"}`)
+			case "notifications/initialized":
+				w.WriteHeader(http.StatusAccepted)
+			case "tools/list":
+				writeMCPResult(w, req.ID, `{"tools":[{"name":"echo","inputSchema":{"type":"object"}}]}`)
+			case "tools/call":
+				healthyCalls++
+				writeMCPResult(w, req.ID, `{"content":[{"type":"text","text":"healthy ok"}]}`)
+			default:
+				t.Fatalf("unexpected healthy MCP method %q", req.Method)
+			}
+		})
+		defer healthy.Close()
+		bad := newMCPTestServer(t, func(w http.ResponseWriter, _ *http.Request, req mcpTestRequest) {
+			switch req.Method {
+			case "initialize":
+				writeMCPResult(w, req.ID, `{"protocolVersion":"2025-11-25"}`)
+			case "notifications/initialized":
+				w.WriteHeader(http.StatusAccepted)
+			case "tools/list":
+				writeMCPError(w, req.ID, -32601, "bad tools")
+			default:
+				t.Fatalf("unexpected bad MCP method %q", req.Method)
+			}
+		})
+		defer bad.Close()
+
+		provider := &mcpTestProvider{}
+		clock := &fakeMCPClock{}
+		conv := &Conversation{
+			Provider: provider,
+			Model:    "mcp-model",
+			Retry:    RetryPolicy{MaxAttempts: 1},
+			MCPServers: []MCPServer{
+				{Name: "good", URL: healthy.URL},
+				{Name: "bad", URL: bad.URL},
+			},
+			retryClock: clock,
+		}
+
+		stream := conv.Send(context.Background(), "hello")
+		drainMCP(stream)
+
+		if !errors.Is(stream.Err(), ErrInvalidRequest) {
+			t.Fatalf("Err() = %v, want ErrInvalidRequest", stream.Err())
+		}
+		var akErr *Error
+		if !errors.As(stream.Err(), &akErr) {
+			t.Fatalf("Err() = %T %[1]v, want *Error", stream.Err())
+		}
+		if akErr.MCPServer != "bad" || akErr.Provider != "" || akErr.Type != "-32601" {
+			t.Fatalf("MCP error = %+v, want attribution only to bad server", akErr)
+		}
+		if len(conv.History) != 0 || len(provider.calls) != 0 {
+			t.Fatalf("history/provider calls = %d/%d, want unchanged/no provider call", len(conv.History), len(provider.calls))
+		}
+
+		provider.rounds = []*RoundTrip{
+			mcpRoundTrip(Message{Role: RoleAssistant, Blocks: []Block{ToolUseBlock{ID: "toolu_good", Name: "good_echo", Input: json.RawMessage(`{}`)}}}, FinishToolUse, nil),
+			mcpTextRoundTrip("done"),
+		}
+		conv.MCPServers = []MCPServer{{Name: "good", URL: healthy.URL}}
+		stream = conv.Send(context.Background(), "hello again")
+		events := drainMCP(stream)
+
+		if err := stream.Err(); err != nil {
+			t.Fatalf("detached healthy Err() = %v, want nil", err)
+		}
+		if healthyCalls != 1 {
+			t.Fatalf("healthy tool calls = %d, want one successful call", healthyCalls)
+		}
+		result := firstMCPEvent[ToolResult](t, events)
+		if result.Name != "good_echo" || result.Output != "healthy ok" || result.IsError {
+			t.Fatalf("ToolResult = %#v, want successful healthy server result", result)
+		}
+		if got := toolNames(provider.calls[0].Tools); !reflect.DeepEqual(got, []string{"good_echo"}) {
+			t.Fatalf("healthy tools = %v, want only good server tool", got)
 		}
 	})
 }
