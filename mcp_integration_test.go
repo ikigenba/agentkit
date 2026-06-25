@@ -372,6 +372,8 @@ func TestMCPToolsJoinDeterministicOrderAndSchemaWarnings(t *testing.T) {
 	defer serverA.Close()
 	serverB := newMCPListOnlyServer(t, "alpha", `{"type":"object","properties":{"x":{"$ref":"#/$defs/X"}},"additionalProperties":false,"$defs":{"X":{"type":"string"}}}`)
 	defer serverB.Close()
+	serverM := newMCPListOnlyServer(t, "middle", `{"type":"object"}`)
+	defer serverM.Close()
 
 	custom := RawTool("custom_mid", "custom", json.RawMessage(`{"type":"object"}`), func(context.Context, json.RawMessage) (string, error) { return "ok", nil })
 	provider := &mcpSchemaLimiterProvider{mcpTestProvider: mcpTestProvider{name: "schema-limited"}}
@@ -400,14 +402,38 @@ func TestMCPToolsJoinDeterministicOrderAndSchemaWarnings(t *testing.T) {
 			t.Fatalf("call %d tools = %v, want %v", i, got, want)
 		}
 	}
-	if len(stream.Warnings()) != 2 {
-		t.Fatalf("MCP schema warnings = %#v, want two warnings", stream.Warnings())
+	schemaWarnings := stream.Warnings()
+	conv.MCPServers = append(conv.MCPServers, MCPServer{Name: "srvM", URL: serverM.URL})
+	stream = conv.Send(context.Background(), "three")
+	drainMCP(stream)
+	if err := stream.Err(); err != nil {
+		t.Fatalf("attach Err() = %v, want nil", err)
+	}
+	want = []string{"custom_mid", "srvA_alpha", "srvM_middle", "srvZ_zeta"}
+	if got := toolNames(provider.calls[2].Tools); !reflect.DeepEqual(got, want) {
+		t.Fatalf("attached tools = %v, want newly sorted merged order %v", got, want)
+	}
+	conv.MCPServers = []MCPServer{
+		{Name: "srvZ", URL: serverA.URL},
+		{Name: "srvM", URL: serverM.URL},
+	}
+	stream = conv.Send(context.Background(), "four")
+	drainMCP(stream)
+	if err := stream.Err(); err != nil {
+		t.Fatalf("detach one Err() = %v, want nil", err)
+	}
+	want = []string{"custom_mid", "srvM_middle", "srvZ_zeta"}
+	if got := toolNames(provider.calls[3].Tools); !reflect.DeepEqual(got, want) {
+		t.Fatalf("detached-one tools = %v, want re-sorted remaining merged order %v", got, want)
+	}
+	if len(schemaWarnings) != 2 {
+		t.Fatalf("MCP schema warnings = %#v, want two warnings", schemaWarnings)
 	}
 	// R-SKVI-TSZQ
 	if provider.Name() == "google" {
 		t.Fatal("test provider name unexpectedly matched google")
 	}
-	detail := stream.Warnings()[0].Detail + " " + stream.Warnings()[1].Detail
+	detail := schemaWarnings[0].Detail + " " + schemaWarnings[1].Detail
 	for _, attributed := range []string{"srvA.alpha", "srvZ.zeta"} {
 		if !strings.Contains(detail, attributed) {
 			t.Fatalf("warnings %q do not attribute MCP tool %s", detail, attributed)
