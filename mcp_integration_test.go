@@ -533,12 +533,18 @@ func TestMCPDiscoveryRetriesButToolCallDoesNot(t *testing.T) {
 		retryClock: clock,
 	}
 	stream := conv.Send(context.Background(), "call")
-	drainMCP(stream)
+	events := drainMCP(stream)
 	if !errors.Is(stream.Err(), ErrServerError) {
 		t.Fatalf("tool call Err() = %v, want ErrServerError", stream.Err())
 	}
 	if toolCalls != 1 || len(clock.sleeps) != 0 {
 		t.Fatalf("toolCalls/sleeps = %d/%v, want no automatic retry", toolCalls, clock.sleeps)
+	}
+	if eventIndexMCP[ToolResult](events) >= 0 {
+		t.Fatalf("events included partial ToolResult for terminal MCP transport failure: %#v", events)
+	}
+	if len(provider.calls) != 1 {
+		t.Fatalf("provider calls = %d, want no continuation after terminal MCP transport failure", len(provider.calls))
 	}
 }
 

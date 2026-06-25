@@ -18,10 +18,12 @@ var retryTestPricing = Pricing{Tiers: []RateTier{{
 type retryProvider struct {
 	roundTrips []*RoundTrip
 	calls      int
+	requests   []Request
 }
 
-func (p *retryProvider) RoundTrip(context.Context, *Request) *RoundTrip {
+func (p *retryProvider) RoundTrip(_ context.Context, req *Request) *RoundTrip {
 	p.calls++
+	p.requests = append(p.requests, cloneRetryRequest(req))
 	if len(p.roundTrips) == 0 {
 		return retryTextRoundTrip("ok")
 	}
@@ -143,6 +145,8 @@ func TestNonRetryableFailuresAreNeverRetried(t *testing.T) {
 
 func TestRetryableFailureWithPartialMessageRetries(t *testing.T) {
 	// R-P61J-IHKB
+	// Decision 2 invariant: a failed round-trip publishes no consumer events;
+	// any partial assembled output is discarded before retrying the same request.
 	provider := &retryProvider{roundTrips: []*RoundTrip{
 		retryRoundTrip(retryAssistant(TextBlock{Text: "partial"}), FinishOther, retryErr(ErrNetwork)),
 		retryTextRoundTrip("retried"),
@@ -158,8 +162,12 @@ func TestRetryableFailureWithPartialMessageRetries(t *testing.T) {
 	stream := conv.Send(context.Background(), "hello")
 	events := drainRetry(stream)
 
-	if got := retryText(events); got != "retried" {
-		t.Fatalf("text events = %q, want retried message", got)
+	dones := retryMessageDones(events)
+	if len(dones) != 1 {
+		t.Fatalf("MessageDone events = %#v, want exactly one retried message", dones)
+	}
+	if !reflect.DeepEqual(dones[0], retryAssistant(TextBlock{Text: "retried"})) {
+		t.Fatalf("MessageDone = %#v, want retried message with no partial output", dones[0])
 	}
 	if err := stream.Err(); err != nil {
 		t.Fatalf("Err() = %v, want nil", err)
@@ -170,6 +178,10 @@ func TestRetryableFailureWithPartialMessageRetries(t *testing.T) {
 	if !reflect.DeepEqual(clock.sleeps, []time.Duration{time.Millisecond}) {
 		t.Fatalf("sleeps = %v, want one backoff", clock.sleeps)
 	}
+	if len(provider.requests) != 2 {
+		t.Fatalf("recorded requests = %d, want original plus retry", len(provider.requests))
+	}
+	assertSameRetryRequest(t, provider.requests[0], provider.requests[1])
 }
 
 func TestRetryBudgetIsPerRoundTripInToolLoop(t *testing.T) {
@@ -211,6 +223,14 @@ func TestRetryBudgetIsPerRoundTripInToolLoop(t *testing.T) {
 	}
 	if got := retryText(events); got != "callingdone" {
 		t.Fatalf("text events = %q, want callingdone", got)
+	}
+	if len(provider.requests) != 4 {
+		t.Fatalf("recorded requests = %d, want two attempts for each round-trip", len(provider.requests))
+	}
+	assertSameRetryRequest(t, provider.requests[0], provider.requests[1])
+	assertSameRetryRequest(t, provider.requests[2], provider.requests[3])
+	if reflect.DeepEqual(provider.requests[1].Messages, provider.requests[2].Messages) {
+		t.Fatalf("second round-trip request did not include the delivered tool call/result context")
 	}
 }
 
@@ -342,4 +362,40 @@ func retryText(events []Event) string {
 		}
 	}
 	return text
+}
+
+func retryMessageDones(events []Event) []Message {
+	var messages []Message
+	for _, ev := range events {
+		if done, ok := ev.(MessageDone); ok {
+			messages = append(messages, done.Message)
+		}
+	}
+	return messages
+}
+
+func cloneRetryRequest(req *Request) Request {
+	if req == nil {
+		return Request{}
+	}
+	return Request{
+		Model:    req.Model,
+		System:   req.System,
+		Messages: cloneMessages(req.Messages),
+		Tools:    append([]Tool(nil), req.Tools...),
+		Gen:      req.Gen,
+	}
+}
+
+func assertSameRetryRequest(t *testing.T, first, second Request) {
+	t.Helper()
+	if first.Model != second.Model || first.System != second.System || !reflect.DeepEqual(first.Gen, second.Gen) {
+		t.Fatalf("request envelope changed across retry: first=%#v second=%#v", first, second)
+	}
+	if !reflect.DeepEqual(first.Messages, second.Messages) {
+		t.Fatalf("request messages changed across retry: first=%#v second=%#v", first.Messages, second.Messages)
+	}
+	if !reflect.DeepEqual(toolNames(first.Tools), toolNames(second.Tools)) {
+		t.Fatalf("request tools changed across retry: first=%v second=%v", toolNames(first.Tools), toolNames(second.Tools))
+	}
 }
