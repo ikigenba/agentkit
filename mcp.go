@@ -80,10 +80,10 @@ func (c *Conversation) resolveTools(ctx context.Context) ([]Tool, []Warning, err
 	if err != nil {
 		return nil, nil, err
 	}
-	all := make([]Tool, 0, len(c.Tools)+len(mcpTools))
-	all = append(all, c.Tools...)
-	all = append(all, mcpTools...)
-	tools, err := validateAndSortTools(all)
+	base := make([]Tool, 0, len(c.Tools)+len(mcpTools))
+	base = append(base, c.Tools...)
+	base = append(base, mcpTools...)
+	tools, err := c.resolveDeferredTools(base)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -165,19 +165,21 @@ type Conversation struct {
 	Gen               GenSettings
 	Retry             RetryPolicy
 	Tools             []Tool
+	DeferredTools     []DeferredToolGroup
 	MCPServers        []MCPServer
 	History           []Message
 	MaxToolIterations int
 
-	streamLive   bool
-	closed       bool
-	turns        int
-	totalUsage   Usage
-	totalCost    Cost
-	retryClock   retryClock
-	mcpCacheKey  string
-	mcpClients   map[string]*mcp.Client
-	mcpToolCache []Tool
+	streamLive          bool
+	closed              bool
+	turns               int
+	totalUsage          Usage
+	totalCost           Cost
+	retryClock          retryClock
+	mcpCacheKey         string
+	mcpClients          map[string]*mcp.Client
+	mcpToolCache        []Tool
+	loadedDeferredNames []string
 }
 
 // Send starts one turn and returns its stream.
@@ -291,6 +293,10 @@ func (c *Conversation) runTurn(ctx context.Context, history *[]Message, tools []
 	for _, tool := range tools {
 		toolByName[tool.Name()] = tool
 	}
+	deferredByName, err := c.deferredToolCatalog(nil)
+	if err != nil {
+		return false, err
+	}
 
 	maxIterations := c.MaxToolIterations
 	if maxIterations == 0 {
@@ -353,9 +359,24 @@ func (c *Conversation) runTurn(ctx context.Context, history *[]Message, tools []
 				return false, nil
 			}
 
-			result, err := runTool(ctx, toolByName[use.Name], use)
+			var result ToolResultBlock
+			var newlyLoaded []Tool
+			if use.Name == loadToolsName && len(c.DeferredTools) > 0 {
+				result, newlyLoaded, err = c.runLoadTools(ctx, deferredByName, use)
+			} else if toolByName[use.Name] == nil {
+				result, newlyLoaded, err = c.runDeferredToolMiss(ctx, deferredByName, use)
+			} else {
+				result, err = runTool(ctx, toolByName[use.Name], use)
+			}
 			if err != nil {
 				return false, err
+			}
+			for _, tool := range newlyLoaded {
+				if toolByName[tool.Name()] != nil {
+					continue
+				}
+				tools = append(tools, tool)
+				toolByName[tool.Name()] = tool
 			}
 			resultBlocks = append(resultBlocks, result)
 			toolResult := ToolResult{ID: result.ToolUseID, Name: result.Name, Output: result.Content, IsError: result.IsError}

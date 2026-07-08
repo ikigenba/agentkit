@@ -425,6 +425,279 @@ func TestToolsAreSortedDeterministicallyAcrossTurns(t *testing.T) {
 	}
 }
 
+func TestDeferredToolsAdvertiseLoadToolsAndEmptyIsNoop(t *testing.T) {
+	schema := json.RawMessage(`{"type":"object","properties":{"secret_prop":{"type":"string"}}}`)
+	deferred := agentkit.RawTool("later_search", "SECRET deferred search description", schema, func(context.Context, json.RawMessage) (string, error) {
+		return "later", nil
+	})
+	provider := newFakeProvider(textRoundTrip("ok"))
+	conv := &agentkit.Conversation{
+		Provider: provider,
+		Model:    testModel,
+		DeferredTools: []agentkit.DeferredToolGroup{{
+			Name:  "research",
+			Blurb: "Find archived documents",
+			Tools: []agentkit.Tool{deferred},
+		}},
+	}
+	drain(conv.Send(context.Background(), "hello"))
+
+	// R-9RQ8-9G3W
+	if len(provider.calls) != 1 || len(provider.calls[0].Tools) != 1 {
+		t.Fatalf("request tools = %#v, want exactly synthetic load_tools", provider.calls)
+	}
+	loadTools := provider.calls[0].Tools[0]
+	if loadTools.Name() != "load_tools" {
+		t.Fatalf("tool name = %q, want load_tools", loadTools.Name())
+	}
+	description := loadTools.Description()
+	for _, want := range []string{"research", "Find archived documents", "later_search"} {
+		if !strings.Contains(description, want) {
+			t.Fatalf("load_tools description %q missing %q", description, want)
+		}
+	}
+	for _, forbidden := range []string{"SECRET deferred search description", "secret_prop"} {
+		if strings.Contains(description, forbidden) {
+			t.Fatalf("load_tools description leaked deferred detail %q: %q", forbidden, description)
+		}
+	}
+
+	noDeferredProvider := newFakeProvider(textRoundTrip("ok"))
+	emptyDeferredProvider := newFakeProvider(textRoundTrip("ok"))
+	drain((&agentkit.Conversation{Provider: noDeferredProvider, Model: testModel}).Send(context.Background(), "same"))
+	drain((&agentkit.Conversation{Provider: emptyDeferredProvider, Model: testModel, DeferredTools: []agentkit.DeferredToolGroup{}}).Send(context.Background(), "same"))
+
+	// R-9SY4-N7UL
+	if !reflect.DeepEqual(noDeferredProvider.calls, emptyDeferredProvider.calls) {
+		t.Fatalf("empty DeferredTools request = %#v, want identical to absent field %#v", emptyDeferredProvider.calls, noDeferredProvider.calls)
+	}
+}
+
+func TestDeferredLoadToolsLoadsWithinTurnAndReturnsSchemas(t *testing.T) {
+	var calledWith json.RawMessage
+	deferred := agentkit.RawTool("later_lookup", "Lookup deferred facts", json.RawMessage(`{"type":"object","properties":{"q":{"type":"string"}}}`), func(_ context.Context, input json.RawMessage) (string, error) {
+		calledWith = append(json.RawMessage(nil), input...)
+		return "fact", nil
+	})
+	provider := newFakeProvider(
+		newRoundTrip(assistant(agentkit.ToolUseBlock{ID: "toolu_load", Name: "load_tools", Input: json.RawMessage(`{"tools":["later_lookup"]}`)}), agentkit.FinishToolUse, agentkit.Usage{}, nil),
+		newRoundTrip(assistant(agentkit.ToolUseBlock{ID: "toolu_later", Name: "later_lookup", Input: json.RawMessage(`{"q":"agentkit"}`)}), agentkit.FinishToolUse, agentkit.Usage{}, nil),
+		textRoundTrip("done"),
+		textRoundTrip("next"),
+	)
+	conv := &agentkit.Conversation{
+		Provider: provider,
+		Model:    testModel,
+		DeferredTools: []agentkit.DeferredToolGroup{{
+			Name:  "facts",
+			Blurb: "Fact lookup tools",
+			Tools: []agentkit.Tool{deferred},
+		}},
+	}
+	events := drain(conv.Send(context.Background(), "load then call"))
+
+	// R-D6XP-LUMJ
+	loadResult := toolResultByName(t, events, "load_tools")
+	if loadResult.IsError || !strings.Contains(loadResult.Output, "Lookup deferred facts") || !strings.Contains(loadResult.Output, `"input_schema"`) || !strings.Contains(loadResult.Output, `"q"`) {
+		t.Fatalf("load_tools result = %#v, want loaded description and input schema", loadResult)
+	}
+
+	// R-D5PT-82VU
+	if len(provider.calls) != 3 {
+		t.Fatalf("provider calls = %d, want load, native call, final", len(provider.calls))
+	}
+	if !reflect.DeepEqual(requestToolNames(provider.calls[1]), []string{"load_tools", "later_lookup"}) {
+		t.Fatalf("second request tools = %v, want load_tools then loaded tool", requestToolNames(provider.calls[1]))
+	}
+	callResult := toolResultByName(t, events, "later_lookup")
+	if callResult.Output != "fact" || callResult.IsError || string(calledWith) != `{"q":"agentkit"}` {
+		t.Fatalf("deferred call result/input = %#v/%s, want real tool dispatch", callResult, calledWith)
+	}
+
+	drain(conv.Send(context.Background(), "still loaded"))
+	// R-D9DI-DE3X
+	if !reflect.DeepEqual(requestToolNames(provider.calls[3]), []string{"load_tools", "later_lookup"}) {
+		t.Fatalf("later Send request tools = %v, want loaded deferred tool retained", requestToolNames(provider.calls[3]))
+	}
+}
+
+func TestDeferredLoadToolsMixedNamesReportsUnknownAndContinues(t *testing.T) {
+	deferred := agentkit.RawTool("valid_deferred", "Valid deferred tool", json.RawMessage(`{"type":"object"}`), func(context.Context, json.RawMessage) (string, error) {
+		return "valid", nil
+	})
+	provider := newFakeProvider(
+		newRoundTrip(assistant(agentkit.ToolUseBlock{ID: "toolu_load", Name: "load_tools", Input: json.RawMessage(`{"tools":["valid_deferred","missing_one","missing_two"]}`)}), agentkit.FinishToolUse, agentkit.Usage{}, nil),
+		textRoundTrip("continued"),
+	)
+	conv := &agentkit.Conversation{
+		Provider: provider,
+		Model:    testModel,
+		DeferredTools: []agentkit.DeferredToolGroup{{
+			Name:  "mixed",
+			Blurb: "Mixed load group",
+			Tools: []agentkit.Tool{deferred},
+		}},
+	}
+	events := drain(conv.Send(context.Background(), "load mixed"))
+
+	// R-D85L-ZMD8
+	result := toolResultByName(t, events, "load_tools")
+	if !result.IsError || !strings.Contains(result.Output, "valid_deferred") || !strings.Contains(result.Output, "missing_one") || !strings.Contains(result.Output, "missing_two") {
+		t.Fatalf("mixed load_tools result = %#v, want valid load and each unknown name", result)
+	}
+	if len(provider.calls) != 2 || !reflect.DeepEqual(requestToolNames(provider.calls[1]), []string{"load_tools", "valid_deferred"}) {
+		t.Fatalf("provider calls/tools = %d/%v, want continued turn with valid tool loaded", len(provider.calls), requestToolNames(provider.calls[1]))
+	}
+}
+
+func TestDeferredUnloadedDirectCallLoadsAndUnknownStillInBand(t *testing.T) {
+	called := false
+	deferred := agentkit.RawTool("cold_lookup", "Cold lookup", json.RawMessage(`{"type":"object"}`), func(context.Context, json.RawMessage) (string, error) {
+		called = true
+		return "should not run", nil
+	})
+	provider := newFakeProvider(
+		newRoundTrip(assistant(agentkit.ToolUseBlock{ID: "toolu_cold", Name: "cold_lookup", Input: json.RawMessage(`{"guessed":true}`)}), agentkit.FinishToolUse, agentkit.Usage{}, nil),
+		textRoundTrip("recovered"),
+	)
+	conv := &agentkit.Conversation{
+		Provider: provider,
+		Model:    testModel,
+		DeferredTools: []agentkit.DeferredToolGroup{{
+			Name:  "cold",
+			Blurb: "Cold tools",
+			Tools: []agentkit.Tool{deferred},
+		}},
+	}
+	events := drain(conv.Send(context.Background(), "guess"))
+
+	// R-DALE-R5UM
+	result := toolResultByName(t, events, "cold_lookup")
+	if !result.IsError || !strings.Contains(result.Output, "load_tools") || called {
+		t.Fatalf("direct deferred result/called = %#v/%v, want load_tools error and no real call", result, called)
+	}
+	if !reflect.DeepEqual(requestToolNames(provider.calls[1]), []string{"load_tools", "cold_lookup"}) {
+		t.Fatalf("second request tools = %v, want deferred tool loaded as side effect", requestToolNames(provider.calls[1]))
+	}
+
+	unknownProvider := newFakeProvider(
+		newRoundTrip(assistant(agentkit.ToolUseBlock{ID: "toolu_unknown", Name: "not_anywhere", Input: json.RawMessage(`{}`)}), agentkit.FinishToolUse, agentkit.Usage{}, nil),
+		textRoundTrip("still recovered"),
+	)
+	unknownEvents := drain((&agentkit.Conversation{Provider: unknownProvider, Model: testModel, DeferredTools: conv.DeferredTools}).Send(context.Background(), "unknown"))
+
+	// R-DE93-WH2P
+	unknownResult := toolResultByName(t, unknownEvents, "not_anywhere")
+	if !unknownResult.IsError || !strings.Contains(unknownResult.Output, "unknown tool: not_anywhere") || len(unknownProvider.calls) != 2 {
+		t.Fatalf("unknown result/calls = %#v/%d, want in-band unknown tool and continued turn", unknownResult, len(unknownProvider.calls))
+	}
+}
+
+func TestDeferredToolOrderFreezesBaseAndAppendsLoads(t *testing.T) {
+	schema := json.RawMessage(`{"type":"object"}`)
+	aBase := agentkit.RawTool("a_base", "base a", schema, func(context.Context, json.RawMessage) (string, error) { return "a", nil })
+	zBase := agentkit.RawTool("z_base", "base z", schema, func(context.Context, json.RawMessage) (string, error) { return "z", nil })
+	alpha := agentkit.RawTool("alpha_deferred", "alpha", schema, func(context.Context, json.RawMessage) (string, error) { return "alpha", nil })
+	gamma := agentkit.RawTool("gamma_deferred", "gamma", schema, func(context.Context, json.RawMessage) (string, error) { return "gamma", nil })
+	provider := newFakeProvider(
+		newRoundTrip(assistant(agentkit.ToolUseBlock{ID: "toolu_alpha", Name: "load_tools", Input: json.RawMessage(`{"tools":["alpha_deferred"]}`)}), agentkit.FinishToolUse, agentkit.Usage{}, nil),
+		newRoundTrip(assistant(agentkit.ToolUseBlock{ID: "toolu_gamma", Name: "load_tools", Input: json.RawMessage(`{"tools":["gamma_deferred"]}`)}), agentkit.FinishToolUse, agentkit.Usage{}, nil),
+		textRoundTrip("done"),
+	)
+	conv := &agentkit.Conversation{
+		Provider: provider,
+		Model:    testModel,
+		Tools:    []agentkit.Tool{zBase, aBase},
+		DeferredTools: []agentkit.DeferredToolGroup{{
+			Name:  "ordered",
+			Blurb: "Ordered loads",
+			Tools: []agentkit.Tool{gamma, alpha},
+		}},
+	}
+	drain(conv.Send(context.Background(), "order"))
+
+	// R-DBTB-4XLB
+	if len(provider.calls) != 3 {
+		t.Fatalf("provider calls = %d, want 3", len(provider.calls))
+	}
+	baseNames := []string{"a_base", "load_tools", "z_base"}
+	if !reflect.DeepEqual(requestToolNames(provider.calls[0]), baseNames) {
+		t.Fatalf("first request tools = %v, want sorted base %v", requestToolNames(provider.calls[0]), baseNames)
+	}
+	if !reflect.DeepEqual(requestToolNames(provider.calls[1]), []string{"a_base", "load_tools", "z_base", "alpha_deferred"}) {
+		t.Fatalf("second request tools = %v, want base plus alpha", requestToolNames(provider.calls[1]))
+	}
+	if !reflect.DeepEqual(requestToolNames(provider.calls[2]), []string{"a_base", "load_tools", "z_base", "alpha_deferred", "gamma_deferred"}) {
+		t.Fatalf("third request tools = %v, want base plus alpha then gamma", requestToolNames(provider.calls[2]))
+	}
+	wantPrefix := toolSerializations(t, provider.calls[0].Tools)
+	for i := 1; i < len(provider.calls); i++ {
+		if got := toolSerializations(t, provider.calls[i].Tools[:len(baseNames)]); !reflect.DeepEqual(got, wantPrefix) {
+			t.Fatalf("call %d base serialization = %v, want frozen prefix %v", i, got, wantPrefix)
+		}
+	}
+}
+
+func TestDeferredToolInvalidConfigFailsAtSendBoundary(t *testing.T) {
+	schema := json.RawMessage(`{"type":"object"}`)
+	cases := []struct {
+		name string
+		conv agentkit.Conversation
+	}{
+		{
+			name: "eager duplicates deferred",
+			conv: agentkit.Conversation{
+				Tools: []agentkit.Tool{agentkit.RawTool("same", "eager", schema, func(context.Context, json.RawMessage) (string, error) { return "eager", nil })},
+				DeferredTools: []agentkit.DeferredToolGroup{{
+					Name:  "dup",
+					Blurb: "dup",
+					Tools: []agentkit.Tool{agentkit.RawTool("same", "deferred", schema, func(context.Context, json.RawMessage) (string, error) { return "deferred", nil })},
+				}},
+			},
+		},
+		{
+			name: "reserved load_tools",
+			conv: agentkit.Conversation{
+				DeferredTools: []agentkit.DeferredToolGroup{{
+					Name:  "reserved",
+					Blurb: "reserved",
+					Tools: []agentkit.Tool{agentkit.RawTool("load_tools", "reserved", schema, func(context.Context, json.RawMessage) (string, error) { return "reserved", nil })},
+				}},
+			},
+		},
+		{
+			name: "invalid deferred schema",
+			conv: agentkit.Conversation{
+				DeferredTools: []agentkit.DeferredToolGroup{{
+					Name:  "invalid",
+					Blurb: "invalid",
+					Tools: []agentkit.Tool{agentkit.RawTool("bad_schema", "bad", json.RawMessage(`{`), func(context.Context, json.RawMessage) (string, error) { return "bad", nil })},
+				}},
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			provider := newFakeProvider(textRoundTrip("never"))
+			tc.conv.Provider = provider
+			tc.conv.Model = testModel
+			stream := tc.conv.Send(context.Background(), "hello")
+			drain(stream)
+
+			// R-DD17-IPC0
+			if !errors.Is(stream.Err(), agentkit.ErrInvalidConfig) {
+				t.Fatalf("Err() = %v, want ErrInvalidConfig", stream.Err())
+			}
+			if len(tc.conv.History) != 0 {
+				t.Fatalf("History len = %d, want unchanged", len(tc.conv.History))
+			}
+			if len(provider.calls) != 0 {
+				t.Fatalf("provider calls = %d, want none", len(provider.calls))
+			}
+		})
+	}
+}
+
 func TestReasoningBlockIsReplayedOnToolLoopRequest(t *testing.T) {
 	tool := agentkit.RawTool("ok", "ok", json.RawMessage(`{"type":"object"}`), func(context.Context, json.RawMessage) (string, error) {
 		return "ok", nil
@@ -763,6 +1036,47 @@ func firstEvent[T agentkit.Event](t *testing.T, events []agentkit.Event) T {
 	var zero T
 	t.Fatalf("event %T not found in %v", zero, events)
 	return zero
+}
+
+func toolResultByName(t *testing.T, events []agentkit.Event, name string) agentkit.ToolResult {
+	t.Helper()
+	for _, ev := range events {
+		result, ok := ev.(agentkit.ToolResult)
+		if ok && result.Name == name {
+			return result
+		}
+	}
+	t.Fatalf("ToolResult %q not found in %v", name, events)
+	return agentkit.ToolResult{}
+}
+
+func requestToolNames(call agentkit.Request) []string {
+	names := make([]string, len(call.Tools))
+	for i, tool := range call.Tools {
+		names[i] = tool.Name()
+	}
+	return names
+}
+
+func toolSerializations(t *testing.T, tools []agentkit.Tool) []string {
+	t.Helper()
+	out := make([]string, len(tools))
+	for i, tool := range tools {
+		data, err := json.Marshal(struct {
+			Name        string          `json:"name"`
+			Description string          `json:"description"`
+			Schema      json.RawMessage `json:"schema"`
+		}{
+			Name:        tool.Name(),
+			Description: tool.Description(),
+			Schema:      tool.JSONSchema(),
+		})
+		if err != nil {
+			t.Fatalf("marshal tool signature: %v", err)
+		}
+		out[i] = string(data)
+	}
+	return out
 }
 
 func messagesContainReasoning(messages []agentkit.Message, want agentkit.ReasoningBlock) bool {

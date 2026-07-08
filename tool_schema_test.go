@@ -55,3 +55,46 @@ func TestCustomToolSchemaWarningAtSendBoundary(t *testing.T) {
 		t.Fatalf("translator schemas = %#v, want custom tool schema", provider.schemas)
 	}
 }
+
+func TestDeferredToolSchemaWarningAppearsAfterLoad(t *testing.T) {
+	provider := newSchemaTranslatorProvider()
+	provider.roundTrips = []*agentkit.RoundTrip{
+		newRoundTrip(assistant(agentkit.ToolUseBlock{ID: testToolUseID, Name: "load_tools", Input: json.RawMessage(`{"tools":["deferred_lossy"]}`)}), agentkit.FinishToolUse, agentkit.Usage{}, nil),
+		textRoundTrip("loaded"),
+		textRoundTrip("next"),
+	}
+	tool := agentkit.RawTool("deferred_lossy", "custom", json.RawMessage(`{
+		"type":"object",
+		"additionalProperties":false
+	}`), func(context.Context, json.RawMessage) (string, error) { return "ok", nil })
+	conv := &agentkit.Conversation{
+		Provider: provider,
+		Model:    testModel,
+		DeferredTools: []agentkit.DeferredToolGroup{{
+			Name:  "schemas",
+			Blurb: "Schema-heavy tools",
+			Tools: []agentkit.Tool{tool},
+		}},
+	}
+
+	first := conv.Send(context.Background(), "load")
+	drain(first)
+	if err := first.Err(); err != nil {
+		t.Fatalf("first Err() = %v, want nil", err)
+	}
+	second := conv.Send(context.Background(), "next")
+	drain(second)
+	if err := second.Err(); err != nil {
+		t.Fatalf("second Err() = %v, want nil", err)
+	}
+
+	var sawDeferred bool
+	for _, warning := range second.Warnings() {
+		if strings.Contains(warning.Detail, "deferred_lossy") && warning.Code == agentkit.WarnToolSchemaLossy {
+			sawDeferred = true
+		}
+	}
+	if !sawDeferred {
+		t.Fatalf("second Warnings() = %#v, want loaded deferred tool schema warning", second.Warnings())
+	}
+}
