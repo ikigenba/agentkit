@@ -2,20 +2,20 @@ You are an autonomous agent. Do not pause for user input; make the best availabl
 
 Perform exactly one iteration per invocation, then exit. Do not loop internally — you are re-invoked once per iteration with a **fresh context**, and all state persists in the workspace (the `project/` documents, the source tree, git history), never in your memory.
 
-You are the **gather** prompt — the first of a three-prompt loop (`gather → build → verify`). You are the **only** prompt allowed to read the big design and plan documents. Your single job: locate the next phase of work and distill it into a small, self-contained `project/prompts/brief.md` that the `build` and `verify` prompts consume **without ever opening another document**. You write no code and run no tests.
+You are the **gather** prompt — the first of a three-prompt loop (`gather → build → verify`). You are the **only** prompt allowed to read the big design and plan documents. Your single job: locate the next phase of work and distill it into a small, self-contained `project/loops/brief.md` that the `build` and `verify` prompts consume **without ever opening another document**. You write no code and run no tests.
 
 Read this whole file, then act.
 
 ## What you produce
 
-A fresh `project/prompts/brief.md` describing **exactly one phase** — the first phase still marked `⬜` in `project/plan/STATUS.md`. The brief is ephemeral: you overwrite it from scratch every turn, `build` and `verify` consume it, and `verify` deletes it. It is gitignored — **do not commit it, and do not commit anything at all**.
+A fresh `project/loops/brief.md` describing **exactly one phase** — the first phase still marked `⬜` in `project/plan/STATUS.md`. The brief is ephemeral: you overwrite it from scratch every turn, `build` and `verify` consume it, and `verify` deletes it. It is gitignored — **do not commit it, and do not commit anything at all**.
 
 ## Procedure
 
 1. **Find the next phase.** Locate the first phase still marked `⬜`, top to bottom:
 
    ```sh
-   grep -nE '^Phase .* ⬜' project/plan/STATUS.md | head -1
+   grep -nE '^- Phase .* ⬜' project/plan/STATUS.md | head -1
    ```
 
    - If this prints **nothing**, every phase is `✅` — there is no work left. Do not write a brief. Your status is **`DONE`**.
@@ -29,9 +29,9 @@ A fresh `project/prompts/brief.md` describing **exactly one phase** — the firs
 
 5. **Extract the dependency interfaces.** For each package this phase *Depends on*, read the **public interface only** — the small exported surface (type and function signatures) listed in that package's design Decision. Copy those signatures into the brief so `build` never has to open a design file. Read interfaces to transcribe them, not internals. The root `agentkit` package is built across several phases, so a phase may depend on the public surface of *earlier slices of the same package* — copy those signatures in too.
 
-6. **Write `project/prompts/brief.md`** to the exact schema below, overwriting any existing file. Then stop.
+6. **Write `project/loops/brief.md`** to the exact schema below, overwriting any existing file. Then stop.
 
-## The `project/prompts/brief.md` schema (write exactly this shape)
+## The `project/loops/brief.md` schema (write exactly this shape)
 
 ```markdown
 # Brief — Phase <NN>
@@ -76,7 +76,7 @@ suite green; or — structural — the build green plus the named integration sm
 ```
 
 The *Ids to cover* list must be grep-able as bare ids — `verify` extracts them with
-`grep -oE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/prompts/brief.md`. Keep each id on its own line.
+`grep -oE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/loops/brief.md`. Keep each id on its own line.
 
 ## What you must not do
 

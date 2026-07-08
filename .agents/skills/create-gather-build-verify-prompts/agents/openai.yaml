@@ -1,0 +1,6 @@
+interface:
+  display_name: "Create Build Loop Prompts"
+  short_description: "Generate the gather-build-verify ralph loop prompts."
+  default_prompt: "$create-gather-build-verify-prompts"
+policy:
+  allow_implicit_invocation: false

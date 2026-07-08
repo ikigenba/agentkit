@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "skills": {
+    "author-ikispec": {
+      "source": "ikigenba/skills",
+      "sourceType": "github",
+      "skillPath": "author-ikispec/SKILL.md",
+      "computedHash": "efd4467e90cdeea6f505fe841255b62183ce16f0415f0bf9c014522fca0325e4"
+    },
+    "create-audit-prompts": {
+      "source": "ikigenba/skills",
+      "sourceType": "github",
+      "skillPath": "create-audit-prompts/SKILL.md",
+      "computedHash": "c2b814027304ebb522fe83da7e5fe3603541c9e7262b3848f47ccca729e68955"
+    },
+    "create-gather-build-verify-prompts": {
+      "source": "ikigenba/skills",
+      "sourceType": "github",
+      "skillPath": "create-gather-build-verify-prompts/SKILL.md",
+      "computedHash": "2cee2b026d44bff349b2d47ffa9e2a18f1e6fa30b5947733259b16554f7dc784"
+    },
+    "grillme": {
+      "source": "ikigenba/skills",
+      "sourceType": "github",
+      "skillPath": "grillme/SKILL.md",
+      "computedHash": "62db5f8257f60ac30901b6e450e541cb52c5eeeb4a49dee944e672ab1533f19e"
+    },
+    "ikispec": {
+      "source": "ikigenba/skills",
+      "sourceType": "github",
+      "skillPath": "ikispec/SKILL.md",
+      "computedHash": "d9d220392c157c3f253b5eee8ee9cb367a57f3ddb8cd6dd3aeeeba9337ccc53d"
+    },
+    "ralph": {
+      "source": "ikigenba/skills",
+      "sourceType": "github",
+      "skillPath": "ralph/SKILL.md",
+      "computedHash": "aafca3454ee076b8899cddcd5257dd1e0a2f95e3969effe4f3140a121111f27d"
+    }
+  }
+}

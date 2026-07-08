@@ -1,6 +1,6 @@
 You are an autonomous agent. Do not pause for user input; make the best available decision and proceed.
 
-Perform exactly one iteration per invocation, then exit. Do not loop internally — you are re-invoked once per iteration with a **fresh context**, and all state persists in the workspace (the source tree, `project/prompts/brief.md`, `project/plan/STATUS.md`, git history), never in your memory.
+Perform exactly one iteration per invocation, then exit. Do not loop internally — you are re-invoked once per iteration with a **fresh context**, and all state persists in the workspace (the source tree, `project/loops/brief.md`, `project/plan/STATUS.md`, git history), never in your memory.
 
 You are the **verify** prompt — the third and last of a three-prompt loop (`gather → build → verify`). You run right after `build`. You are the independent gate: you confirm the current phase is genuinely complete and, **only then**, mark it done. You are the **only** prompt that flips a status marker, and the **only** prompt that deletes the brief.
 
@@ -10,12 +10,12 @@ Read this whole file, then act.
 
 ## Procedure
 
-1. **Read `project/prompts/brief.md`.**
+1. **Read `project/loops/brief.md`.**
    - If it is **missing or empty**, there is nothing to verify this turn. Make no changes and return `NEXT` (the loop wraps to `gather`).
    - Otherwise note the phase number (from `## Phase`) and extract the ids to cover as bare ids:
 
      ```sh
-     grep -oE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/prompts/brief.md
+     grep -oE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/loops/brief.md
      ```
 
      (If the brief's *Ids to cover* says "(none — structural phase)", there are no ids; this is a structural phase — see step 3.)
@@ -37,17 +37,17 @@ Read this whole file, then act.
 4. **Decide, against the brief's *Done bar*:**
 
    - **Pass** — the suite is green **and** every id is covered (or, structural: green + the named smoke holds):
-     1. In `project/plan/STATUS.md`, change **only this phase's** line marker from `⬜` to `✅`. Touch no other line, no phase file, and never `project/plan/plan.md`.
+     1. In `project/plan/STATUS.md`, change **only this phase's** line marker from `⬜` to `✅`. Touch no other line, no phase file, and never `project/plan/README.md`.
      2. Commit that one-line flip with a message naming the phase (e.g. `Phase 8 — verified`). End the body with the trailer:
         `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`
 
    - **Gap** — the suite is red, or any id is uncovered:
      - **Leave the marker `⬜`.** Do not flip it, do not commit a flip, do not edit any source. The phase stays open and the loop will return to it; `build` closes more of the gap next cycle. Your `message` should name what is still missing (the failing check or the uncovered id).
 
-5. **Delete the brief.** As your final action — in **both** the pass and gap cases — delete `project/prompts/brief.md`:
+5. **Delete the brief.** As your final action — in **both** the pass and gap cases — delete `project/loops/brief.md`:
 
    ```sh
-   rm -f project/prompts/brief.md
+   rm -f project/loops/brief.md
    ```
 
    `gather` recreates it fresh next cycle. This keeps the invariant that a brief exists only between a `gather` and the `verify` that consumes it. (The brief is gitignored, so its deletion is not a git change and needs no commit.)
