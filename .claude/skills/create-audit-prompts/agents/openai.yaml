@@ -1,0 +1,6 @@
+interface:
+  display_name: "Create Audit Prompt"
+  short_description: "Generate the adversarial coverage audit loop prompt."
+  default_prompt: "$create-audit-prompts"
+policy:
+  allow_implicit_invocation: false
