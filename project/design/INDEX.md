@@ -45,7 +45,7 @@ One line per Decision, in number order — file, label, and the Verification ids
 - **D22** `project/design/D22.md` — Faithful tool-schema translation (provider-driven, no provider-name dispatch)
   - ids: R-SKVI-TSZQ, R-SNBB-LCH4, R-SOJ7-Z47T, R-9QWF-E6VI, R-9S4B-RYM7, R-9TC8-5QCW, R-9UK4-JI3L
 - **D23** `project/design/D23.md` — Deferred tools & the built-in `load_tools` meta-tool
-  - ids: R-9RQ8-9G3W, R-9SY4-N7UL, R-D5PT-82VU, R-D6XP-LUMJ, R-D85L-ZMD8, R-D9DI-DE3X, R-DALE-R5UM, R-DE93-WH2P, R-DBTB-4XLB, R-DD17-IPC0, R-DFH0-A8TE
+  - ids: R-9RQ8-9G3W, R-9SY4-N7UL, R-D5PT-82VU, R-D6XP-LUMJ, R-D85L-ZMD8, R-D9DI-DE3X, R-DALE-R5UM, R-DE93-WH2P, R-DBTB-4XLB, R-DD17-IPC0, R-B5BR-U5M1, R-B6JO-7XCQ, R-B7RK-LP3F, R-DFH0-A8TE
 
 ## Verification ids → Decision
 Every minted id, sorted, mapped to its Decision and file (grep target for id lookup).
@@ -80,6 +80,9 @@ R-9S4B-RYM7  D22  project/design/D22.md
 R-9SY4-N7UL  D23  project/design/D23.md
 R-9TC8-5QCW  D22  project/design/D22.md
 R-9UK4-JI3L  D22  project/design/D22.md
+R-B5BR-U5M1  D23  project/design/D23.md
+R-B6JO-7XCQ  D23  project/design/D23.md
+R-B7RK-LP3F  D23  project/design/D23.md
 R-B7YX-J342  D6  project/design/D06.md
 R-B96T-WUUR  D6  project/design/D06.md
 R-BUR1-XAK8  D7  project/design/D07.md
