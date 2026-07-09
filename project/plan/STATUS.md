@@ -50,5 +50,5 @@ The manifest. One line per phase, in build order — the **only** place a phase'
 - Phase 46  ✅  realizes D23,D10                          — Deferred tools & the built-in `load_tools` meta-tool (offline)
 - Phase 47  ✅  realizes D23                              — Live deferred-tools integration: real provider accepts the mid-turn grown tools array (R-DFH0-A8TE)
 - Phase 48  ✅  realizes —                                — Release: minor version bump to `v0.2.0`
-- Phase 49  ⬜  realizes D23 (amended)                    — `load_tools` accepts group names: a group name loads every tool in that group (R-B5BR-U5M1, R-B6JO-7XCQ, R-B7RK-LP3F)
+- Phase 49  ✅  realizes D23 (amended)                    — `load_tools` accepts group names: a group name loads every tool in that group (R-B5BR-U5M1, R-B6JO-7XCQ, R-B7RK-LP3F)
 - Phase 50  ⬜  realizes —                                — Release: patch version bump to `v0.2.1`
