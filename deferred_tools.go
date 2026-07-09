@@ -62,7 +62,7 @@ func (c *Conversation) resolveDeferredTools(base []Tool) ([]Tool, error) {
 		if _, ok := loaded[name]; ok {
 			continue
 		}
-		tool, ok := catalog[name]
+		tool, ok := catalog.tools[name]
 		if !ok {
 			continue
 		}
@@ -72,7 +72,12 @@ func (c *Conversation) resolveDeferredTools(base []Tool) ([]Tool, error) {
 	return tools, nil
 }
 
-func (c *Conversation) deferredToolCatalog(base []Tool) (map[string]Tool, error) {
+type deferredCatalog struct {
+	tools  map[string]Tool
+	groups map[string][]Tool
+}
+
+func (c *Conversation) deferredToolCatalog(base []Tool) (*deferredCatalog, error) {
 	if len(c.DeferredTools) == 0 {
 		return nil, nil
 	}
@@ -93,10 +98,16 @@ func (c *Conversation) deferredToolCatalog(base []Tool) (map[string]Tool, error)
 	}
 	seen[loadToolsName] = struct{}{}
 
-	catalog := make(map[string]Tool)
+	catalog := &deferredCatalog{
+		tools:  make(map[string]Tool),
+		groups: make(map[string][]Tool),
+	}
 	for _, group := range c.DeferredTools {
 		if group.Name == "" {
 			return nil, ErrInvalidConfig
+		}
+		if _, ok := catalog.groups[group.Name]; !ok {
+			catalog.groups[group.Name] = nil
 		}
 		for _, tool := range group.Tools {
 			if tool == nil || tool.Name() == "" || !validJSONSchema(tool.JSONSchema()) {
@@ -107,7 +118,8 @@ func (c *Conversation) deferredToolCatalog(base []Tool) (map[string]Tool, error)
 				return nil, ErrInvalidConfig
 			}
 			seen[name] = struct{}{}
-			catalog[name] = tool
+			catalog.tools[name] = tool
+			catalog.groups[group.Name] = append(catalog.groups[group.Name], tool)
 		}
 	}
 	return catalog, nil
@@ -115,7 +127,7 @@ func (c *Conversation) deferredToolCatalog(base []Tool) (map[string]Tool, error)
 
 func loadToolsDescription(groups []DeferredToolGroup) string {
 	var b strings.Builder
-	b.WriteString("Load deferred tools by name so they are available for later tool calls. Available groups:")
+	b.WriteString("Load deferred tools by tool name or group name so they are available for later tool calls. Naming a group loads every tool in that group. Available groups:")
 	for _, group := range groups {
 		names := make([]string, 0, len(group.Tools))
 		for _, tool := range group.Tools {
@@ -139,7 +151,7 @@ func loadToolsDescription(groups []DeferredToolGroup) string {
 	return b.String()
 }
 
-func (c *Conversation) runLoadTools(_ context.Context, catalog map[string]Tool, use ToolUseBlock) (ToolResultBlock, []Tool, error) {
+func (c *Conversation) runLoadTools(_ context.Context, catalog *deferredCatalog, use ToolUseBlock) (ToolResultBlock, []Tool, error) {
 	names, err := parseLoadToolNames(use.Input)
 	if err != nil {
 		return ToolResultBlock{
@@ -163,8 +175,8 @@ func (c *Conversation) runLoadTools(_ context.Context, catalog map[string]Tool, 
 	}, newlyLoaded, nil
 }
 
-func (c *Conversation) runDeferredToolMiss(ctx context.Context, catalog map[string]Tool, use ToolUseBlock) (ToolResultBlock, []Tool, error) {
-	if _, ok := catalog[use.Name]; !ok {
+func (c *Conversation) runDeferredToolMiss(ctx context.Context, catalog *deferredCatalog, use ToolUseBlock) (ToolResultBlock, []Tool, error) {
+	if catalog == nil || catalog.tools[use.Name] == nil {
 		result, err := runTool(ctx, nil, use)
 		return result, nil, err
 	}
@@ -178,7 +190,7 @@ func (c *Conversation) runDeferredToolMiss(ctx context.Context, catalog map[stri
 	}, newlyLoaded, nil
 }
 
-func (c *Conversation) loadDeferredTools(catalog map[string]Tool, names []string) ([]Tool, []Tool, []string) {
+func (c *Conversation) loadDeferredTools(catalog *deferredCatalog, names []string) ([]Tool, []Tool, []string) {
 	loadedSet := make(map[string]struct{}, len(c.loadedDeferredNames))
 	for _, name := range c.loadedDeferredNames {
 		loadedSet[name] = struct{}{}
@@ -188,20 +200,37 @@ func (c *Conversation) loadDeferredTools(catalog map[string]Tool, names []string
 	var loaded []Tool
 	var unknown []string
 	for _, name := range names {
-		tool, ok := catalog[name]
+		resolved, ok := catalog.resolve(name)
 		if !ok {
 			unknown = append(unknown, name)
 			continue
 		}
-		loaded = append(loaded, tool)
-		if _, ok := loadedSet[name]; ok {
-			continue
+		loaded = append(loaded, resolved...)
+		for _, tool := range resolved {
+			toolName := tool.Name()
+			if _, ok := loadedSet[toolName]; ok {
+				continue
+			}
+			loadedSet[toolName] = struct{}{}
+			c.loadedDeferredNames = append(c.loadedDeferredNames, toolName)
+			newlyLoaded = append(newlyLoaded, tool)
 		}
-		loadedSet[name] = struct{}{}
-		c.loadedDeferredNames = append(c.loadedDeferredNames, name)
-		newlyLoaded = append(newlyLoaded, tool)
 	}
 	return newlyLoaded, loaded, unknown
+}
+
+func (catalog *deferredCatalog) resolve(name string) ([]Tool, bool) {
+	if catalog == nil {
+		return nil, false
+	}
+	if tool := catalog.tools[name]; tool != nil {
+		return []Tool{tool}, true
+	}
+	tools, ok := catalog.groups[name]
+	if !ok {
+		return nil, false
+	}
+	return tools, true
 }
 
 func parseLoadToolNames(input json.RawMessage) ([]string, error) {

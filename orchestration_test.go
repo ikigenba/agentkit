@@ -521,6 +521,58 @@ func TestDeferredLoadToolsLoadsWithinTurnAndReturnsSchemas(t *testing.T) {
 	}
 }
 
+func TestDeferredLoadToolsGroupNameLoadsGroupInOrder(t *testing.T) {
+	var calledWith json.RawMessage
+	first := agentkit.RawTool("z_group_first", "First grouped tool", json.RawMessage(`{"type":"object","properties":{"first":{"type":"string"}}}`), func(context.Context, json.RawMessage) (string, error) {
+		return "first", nil
+	})
+	second := agentkit.RawTool("a_group_second", "Second grouped tool", json.RawMessage(`{"type":"object","properties":{"second":{"type":"string"}}}`), func(_ context.Context, input json.RawMessage) (string, error) {
+		calledWith = append(json.RawMessage(nil), input...)
+		return "second", nil
+	})
+	provider := newFakeProvider(
+		newRoundTrip(assistant(agentkit.ToolUseBlock{ID: "toolu_load_group", Name: "load_tools", Input: json.RawMessage(`{"tools":["grouped"]}`)}), agentkit.FinishToolUse, agentkit.Usage{}, nil),
+		newRoundTrip(assistant(agentkit.ToolUseBlock{ID: "toolu_second", Name: "a_group_second", Input: json.RawMessage(`{"second":"value"}`)}), agentkit.FinishToolUse, agentkit.Usage{}, nil),
+		textRoundTrip("done"),
+	)
+	conv := &agentkit.Conversation{
+		Provider: provider,
+		Model:    testModel,
+		DeferredTools: []agentkit.DeferredToolGroup{{
+			Name:  "grouped",
+			Blurb: "Grouped tools",
+			Tools: []agentkit.Tool{first, second},
+		}},
+	}
+	events := drain(conv.Send(context.Background(), "load group"))
+
+	// R-B5BR-U5M1
+	if len(provider.calls) != 3 {
+		t.Fatalf("provider calls = %d, want load, native call, final", len(provider.calls))
+	}
+	description := provider.calls[0].Tools[0].Description()
+	if !strings.Contains(description, "group name") || !strings.Contains(description, "loads every tool in that group") {
+		t.Fatalf("load_tools description = %q, want group-name whole-group guidance", description)
+	}
+	payload := decodeLoadToolsResult(t, toolResultByName(t, events, "load_tools").Output)
+	if got := loadResultNames(payload); !reflect.DeepEqual(got, []string{"z_group_first", "a_group_second"}) {
+		t.Fatalf("loaded result names = %v, want group order", got)
+	}
+	if payload.Loaded[0].Description != "First grouped tool" || !strings.Contains(string(payload.Loaded[0].InputSchema), `"first"`) {
+		t.Fatalf("first load result = %#v, want description and input schema", payload.Loaded[0])
+	}
+	if payload.Loaded[1].Description != "Second grouped tool" || !strings.Contains(string(payload.Loaded[1].InputSchema), `"second"`) {
+		t.Fatalf("second load result = %#v, want description and input schema", payload.Loaded[1])
+	}
+	if !reflect.DeepEqual(requestToolNames(provider.calls[1]), []string{"load_tools", "z_group_first", "a_group_second"}) {
+		t.Fatalf("second request tools = %v, want loaded group tools in group order", requestToolNames(provider.calls[1]))
+	}
+	callResult := toolResultByName(t, events, "a_group_second")
+	if callResult.IsError || callResult.Output != "second" || string(calledWith) != `{"second":"value"}` {
+		t.Fatalf("group tool result/input = %#v/%s, want real tool dispatch", callResult, calledWith)
+	}
+}
+
 func TestDeferredLoadToolsMixedNamesReportsUnknownAndContinues(t *testing.T) {
 	deferred := agentkit.RawTool("valid_deferred", "Valid deferred tool", json.RawMessage(`{"type":"object"}`), func(context.Context, json.RawMessage) (string, error) {
 		return "valid", nil
@@ -547,6 +599,85 @@ func TestDeferredLoadToolsMixedNamesReportsUnknownAndContinues(t *testing.T) {
 	}
 	if len(provider.calls) != 2 || !reflect.DeepEqual(requestToolNames(provider.calls[1]), []string{"load_tools", "valid_deferred"}) {
 		t.Fatalf("provider calls/tools = %d/%v, want continued turn with valid tool loaded", len(provider.calls), requestToolNames(provider.calls[1]))
+	}
+}
+
+func TestDeferredLoadToolsMixedToolGroupAndUnknown(t *testing.T) {
+	solo := agentkit.RawTool("solo_deferred", "Solo deferred tool", json.RawMessage(`{"type":"object","properties":{"solo":{"type":"boolean"}}}`), func(context.Context, json.RawMessage) (string, error) {
+		return "solo", nil
+	})
+	groupFirst := agentkit.RawTool("group_first", "First mixed group tool", json.RawMessage(`{"type":"object","properties":{"one":{"type":"string"}}}`), func(context.Context, json.RawMessage) (string, error) {
+		return "first", nil
+	})
+	groupSecond := agentkit.RawTool("group_second", "Second mixed group tool", json.RawMessage(`{"type":"object","properties":{"two":{"type":"string"}}}`), func(context.Context, json.RawMessage) (string, error) {
+		return "second", nil
+	})
+	provider := newFakeProvider(
+		newRoundTrip(assistant(agentkit.ToolUseBlock{ID: "toolu_mixed_group", Name: "load_tools", Input: json.RawMessage(`{"tools":["solo_deferred","mixed_group","missing_name"]}`)}), agentkit.FinishToolUse, agentkit.Usage{}, nil),
+		textRoundTrip("continued"),
+	)
+	conv := &agentkit.Conversation{
+		Provider: provider,
+		Model:    testModel,
+		DeferredTools: []agentkit.DeferredToolGroup{
+			{Name: "solo_group", Blurb: "Solo group", Tools: []agentkit.Tool{solo}},
+			{Name: "mixed_group", Blurb: "Mixed group", Tools: []agentkit.Tool{groupFirst, groupSecond}},
+		},
+	}
+	events := drain(conv.Send(context.Background(), "load mixed group"))
+
+	// R-B6JO-7XCQ
+	result := toolResultByName(t, events, "load_tools")
+	if !result.IsError {
+		t.Fatalf("load_tools result IsError = false, want true for unknown name")
+	}
+	payload := decodeLoadToolsResult(t, result.Output)
+	if got := loadResultNames(payload); !reflect.DeepEqual(got, []string{"solo_deferred", "group_first", "group_second"}) {
+		t.Fatalf("loaded result names = %v, want named tool then group tools", got)
+	}
+	if !reflect.DeepEqual(payload.Unknown, []string{"missing_name"}) {
+		t.Fatalf("unknown names = %v, want only missing_name", payload.Unknown)
+	}
+	if len(provider.calls) != 2 || !reflect.DeepEqual(requestToolNames(provider.calls[1]), []string{"load_tools", "solo_deferred", "group_first", "group_second"}) {
+		t.Fatalf("provider calls/tools = %d/%v, want turn continuation with loaded tool and group", len(provider.calls), requestToolNames(provider.calls[1]))
+	}
+	if got := lastMessageDoneText(t, events); got != "continued" {
+		t.Fatalf("final message = %q, want continued turn", got)
+	}
+}
+
+func TestDeferredLoadToolsNamePrefersToolOverGroup(t *testing.T) {
+	shadowTool := agentkit.RawTool("shadow_name", "Shadow tool", json.RawMessage(`{"type":"object","properties":{"shadow":{"type":"string"}}}`), func(context.Context, json.RawMessage) (string, error) {
+		return "shadow", nil
+	})
+	groupOnly := agentkit.RawTool("group_only", "Group-only tool", json.RawMessage(`{"type":"object","properties":{"group":{"type":"string"}}}`), func(context.Context, json.RawMessage) (string, error) {
+		return "group", nil
+	})
+	provider := newFakeProvider(
+		newRoundTrip(assistant(agentkit.ToolUseBlock{ID: "toolu_shadow", Name: "load_tools", Input: json.RawMessage(`{"tools":["shadow_name"]}`)}), agentkit.FinishToolUse, agentkit.Usage{}, nil),
+		textRoundTrip("continued"),
+	)
+	conv := &agentkit.Conversation{
+		Provider: provider,
+		Model:    testModel,
+		DeferredTools: []agentkit.DeferredToolGroup{
+			{Name: "source_group", Blurb: "Source group", Tools: []agentkit.Tool{shadowTool}},
+			{Name: "shadow_name", Blurb: "Name colliding group", Tools: []agentkit.Tool{groupOnly}},
+		},
+	}
+	events := drain(conv.Send(context.Background(), "load shadow"))
+
+	// R-B7RK-LP3F
+	result := toolResultByName(t, events, "load_tools")
+	if result.IsError {
+		t.Fatalf("load_tools result = %#v, want successful tool-name load", result)
+	}
+	payload := decodeLoadToolsResult(t, result.Output)
+	if got := loadResultNames(payload); !reflect.DeepEqual(got, []string{"shadow_name"}) {
+		t.Fatalf("loaded result names = %v, want only deferred tool named shadow_name", got)
+	}
+	if len(provider.calls) != 2 || !reflect.DeepEqual(requestToolNames(provider.calls[1]), []string{"load_tools", "shadow_name"}) {
+		t.Fatalf("second request tools = %v, want only the tool, not the same-named group", requestToolNames(provider.calls[1]))
 	}
 }
 
@@ -916,6 +1047,22 @@ func countMessageDone(events []agentkit.Event) int {
 	return count
 }
 
+func lastMessageDoneText(t *testing.T, events []agentkit.Event) string {
+	t.Helper()
+	var last *agentkit.Message
+	for _, ev := range events {
+		done, ok := ev.(agentkit.MessageDone)
+		if ok {
+			message := done.Message
+			last = &message
+		}
+	}
+	if last == nil {
+		t.Fatalf("MessageDone not found in %v", events)
+	}
+	return messageText(*last)
+}
+
 type trackingTransport struct {
 	base http.RoundTripper
 	mu   sync.Mutex
@@ -1048,6 +1195,32 @@ func toolResultByName(t *testing.T, events []agentkit.Event, name string) agentk
 	}
 	t.Fatalf("ToolResult %q not found in %v", name, events)
 	return agentkit.ToolResult{}
+}
+
+type testLoadToolsResult struct {
+	Loaded []struct {
+		Name        string          `json:"name"`
+		Description string          `json:"description"`
+		InputSchema json.RawMessage `json:"input_schema"`
+	} `json:"loaded"`
+	Unknown []string `json:"unknown,omitempty"`
+}
+
+func decodeLoadToolsResult(t *testing.T, output string) testLoadToolsResult {
+	t.Helper()
+	var result testLoadToolsResult
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		t.Fatalf("decode load_tools output %q: %v", output, err)
+	}
+	return result
+}
+
+func loadResultNames(result testLoadToolsResult) []string {
+	names := make([]string, len(result.Loaded))
+	for i, loaded := range result.Loaded {
+		names[i] = loaded.Name
+	}
+	return names
 }
 
 func requestToolNames(call agentkit.Request) []string {
