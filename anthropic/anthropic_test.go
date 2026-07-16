@@ -754,7 +754,7 @@ func TestAnthropicStreamErrorEventClassifiesFromEnvelopeType(t *testing.T) {
 
 func TestAnthropicRegistryAndPricingTable(t *testing.T) {
 	provider := New("key")
-	models := []string{ModelOpus48, ModelSonnet46, ModelHaiku45}
+	models := []string{ModelOpus48, ModelSonnet46, ModelHaiku45, ModelFable5, ModelSonnet5}
 	for _, model := range models {
 		t.Run(model, func(t *testing.T) {
 			// R-V1KQ-IKI6
@@ -775,6 +775,55 @@ func TestAnthropicRegistryAndPricingTable(t *testing.T) {
 		if len(pricing.Tiers) != 1 || pricing.Tiers[0] != wantTier {
 			t.Fatalf("Pricing(%q) = %#v, want one tier %#v", model, pricing, wantTier)
 		}
+	}
+}
+
+func TestClaude5Pricing(t *testing.T) {
+	// R-CH7P-Y5OU
+	provider := New("key")
+	want := map[string]agentkit.RateTier{
+		ModelFable5:  {MinInputTokens: 0, InputUncached: 10000, CacheReadInput: 1000, CacheWrite5m: 12500, CacheWrite1h: 20000, Output: 50000},
+		ModelSonnet5: {MinInputTokens: 0, InputUncached: 3000, CacheReadInput: 300, CacheWrite5m: 3750, CacheWrite1h: 6000, Output: 15000},
+	}
+	for model, wantTier := range want {
+		t.Run(model, func(t *testing.T) {
+			pricing, ok := provider.Pricing(model)
+			if !ok {
+				t.Fatalf("Pricing(%q) ok=false, want true", model)
+			}
+			if len(pricing.Tiers) != 1 || pricing.Tiers[0] != wantTier {
+				t.Fatalf("Pricing(%q) = %#v, want one tier %#v", model, pricing, wantTier)
+			}
+		})
+	}
+}
+
+func TestClaude5ReasoningSpecs(t *testing.T) {
+	// R-CIFM-BXFJ
+	want := map[string]agentkit.ReasoningSpec{
+		ModelFable5: {
+			Term: "effort", Kind: agentkit.ReasoningEnum,
+			Levels:     []string{"low", "medium", "high", "xhigh", "max"},
+			Default:    agentkit.Level("medium"),
+			CanDisable: false,
+		},
+		ModelSonnet5: {
+			Term: "effort", Kind: agentkit.ReasoningEnum,
+			Levels:     []string{"low", "medium", "high", "xhigh", "max"},
+			Default:    agentkit.Level("medium"),
+			CanDisable: true,
+		},
+	}
+	for model, wantSpec := range want {
+		t.Run(model, func(t *testing.T) {
+			got, ok := Reasoning.ReasoningSpec(model)
+			if !ok {
+				t.Fatalf("ReasoningSpec(%q) ok=false, want true", model)
+			}
+			if !reflect.DeepEqual(got, wantSpec) {
+				t.Fatalf("ReasoningSpec(%q) = %#v, want %#v", model, got, wantSpec)
+			}
+		})
 	}
 }
 

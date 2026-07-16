@@ -75,6 +75,18 @@ func TestProviderReasoningInspectorsExposeDesignSpecs(t *testing.T) {
 					Default:    agentkit.DisableReasoning(),
 					CanDisable: true,
 				},
+				anthropic.ModelFable5: {
+					Term: "effort", Kind: agentkit.ReasoningEnum,
+					Levels:     []string{"low", "medium", "high", "xhigh", "max"},
+					Default:    agentkit.Level("medium"),
+					CanDisable: false,
+				},
+				anthropic.ModelSonnet5: {
+					Term: "effort", Kind: agentkit.ReasoningEnum,
+					Levels:     []string{"low", "medium", "high", "xhigh", "max"},
+					Default:    agentkit.Level("medium"),
+					CanDisable: true,
+				},
 			},
 		},
 		"google": {

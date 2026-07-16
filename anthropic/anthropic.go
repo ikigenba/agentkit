@@ -21,6 +21,8 @@ const (
 	ModelOpus48   = "claude-opus-4-8"
 	ModelSonnet46 = "claude-sonnet-4-6"
 	ModelHaiku45  = "claude-haiku-4-5"
+	ModelFable5   = "claude-fable-5"
+	ModelSonnet5  = "claude-sonnet-5"
 )
 
 const (
@@ -69,6 +71,28 @@ var registry = map[string]modelEntry{
 			Min:        1024,
 			Max:        defaultMaxOut,
 			Default:    agentkit.DisableReasoning(),
+			CanDisable: true,
+		},
+	},
+	ModelFable5: {
+		Pricing: agentkit.Pricing{Tiers: []agentkit.RateTier{{
+			MinInputTokens: 0, InputUncached: 10000, CacheReadInput: 1000, CacheWrite5m: 12500, CacheWrite1h: 20000, Output: 50000,
+		}}},
+		Reasoning: agentkit.ReasoningSpec{
+			Term: "effort", Kind: agentkit.ReasoningEnum,
+			Levels:     []string{"low", "medium", "high", "xhigh", "max"},
+			Default:    agentkit.Level("medium"),
+			CanDisable: false,
+		},
+	},
+	ModelSonnet5: {
+		Pricing: agentkit.Pricing{Tiers: []agentkit.RateTier{{
+			MinInputTokens: 0, InputUncached: 3000, CacheReadInput: 300, CacheWrite5m: 3750, CacheWrite1h: 6000, Output: 15000,
+		}}},
+		Reasoning: agentkit.ReasoningSpec{
+			Term: "effort", Kind: agentkit.ReasoningEnum,
+			Levels:     []string{"low", "medium", "high", "xhigh", "max"},
+			Default:    agentkit.Level("medium"),
 			CanDisable: true,
 		},
 	},
