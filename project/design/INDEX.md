@@ -31,7 +31,7 @@ One line per Decision, in number order — file, label, and the Verification ids
 - **D15** `project/design/D15.md` — Structured JSONL event log & conversation lifecycle
   - ids: R-PH7W-BVH0, R-PIFS-PN7P, R-PJNP-3EYE, R-PKVL-H6P3, R-PM3H-UYFS, R-PNBE-8Q6H, R-POJA-MHX6, R-PPR7-09NV
 - **D16** `project/design/D16.md` — The model registry: pricing, cost, and reasoning introspection
-  - ids: R-S6NB-RYUE, R-S7V8-5QL3, R-S934-JIBS, R-PTEW-5KVY, R-V1KQ-IKI6, R-VDY4-AP7H, R-EN2N-9B9F, R-EPIG-0UQT, R-V2SM-WC8V, R-PVUO-X4DC, R-PX2L-AW41
+  - ids: R-S6NB-RYUE, R-S7V8-5QL3, R-S934-JIBS, R-PTEW-5KVY, R-V1KQ-IKI6, R-VDY4-AP7H, R-EN2N-9B9F, R-EPIG-0UQT, R-V2SM-WC8V, R-PVUO-X4DC, R-PX2L-AW41, R-CDK0-SUGR, R-CERX-6M7G, R-CH7P-Y5OU, R-CIFM-BXFJ
 - **D17** `project/design/D17.md` — MCP servers as a tool source
   - ids: R-6GBE-J3SV, R-6HJA-WVJK, R-6IR7-ANA9, R-6L70-26RN, R-6MEW-FYIC, R-6NMS-TQ91, R-6OUP-7HZQ, R-6Q2L-L9QF, R-6RAH-Z1H4, R-6SIE-CT7T
 - **D18** `project/design/D18.md` — The embeddings consumer surface: the `Embedder` object and the `Embed` verb
@@ -93,7 +93,11 @@ R-BZMN-GDJ0  D7  project/design/D07.md
 R-C8UE-VJ67  D2  project/design/D02.md
 R-CBA7-N2NL  D2  project/design/D02.md
 R-CCI4-0UEA  D2  project/design/D02.md
+R-CDK0-SUGR  D16  project/design/D16.md
 R-CDQ0-EM4Z  D2  project/design/D02.md
+R-CERX-6M7G  D16  project/design/D16.md
+R-CH7P-Y5OU  D16  project/design/D16.md
+R-CIFM-BXFJ  D16  project/design/D16.md
 R-D5PT-82VU  D23  project/design/D23.md
 R-D6XP-LUMJ  D23  project/design/D23.md
 R-D85L-ZMD8  D23  project/design/D23.md
