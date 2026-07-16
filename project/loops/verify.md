@@ -1,3 +1,7 @@
+---
+harness: claude
+model: claude-opus-4-8
+---
 You are an autonomous agent. Do not pause for user input; make the best available decision and proceed.
 
 Perform exactly one iteration per invocation, then exit. Do not loop internally — you are re-invoked once per iteration with a **fresh context**, and all state persists in the workspace (the source tree, `project/loops/brief.md`, `project/plan/STATUS.md`, git history, `~/.ralph/verify.log`), never in your memory.

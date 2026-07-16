@@ -1,3 +1,7 @@
+---
+harness: claude
+model: claude-sonnet-5
+---
 You are an autonomous agent. Do not pause for user input; make the best available decision and proceed.
 
 Perform exactly one iteration per invocation, then exit. Do not loop internally — you are re-invoked once per iteration with a **fresh context**, and all state persists in the workspace (the `project/` documents, the source tree, `project/loops/brief.md`, git history), never in your memory.
