@@ -21,11 +21,14 @@ import (
 const (
 	defaultBaseURL = "https://api.openai.com"
 
-	ModelGPT55Pro  = "gpt-5.5-pro"
-	ModelGPT55     = "gpt-5.5"
-	ModelGPT54     = "gpt-5.4"
-	ModelGPT54Mini = "gpt-5.4-mini"
-	ModelGPT54Nano = "gpt-5.4-nano"
+	ModelGPT55Pro   = "gpt-5.5-pro"
+	ModelGPT55      = "gpt-5.5"
+	ModelGPT54      = "gpt-5.4"
+	ModelGPT54Mini  = "gpt-5.4-mini"
+	ModelGPT54Nano  = "gpt-5.4-nano"
+	ModelGPT56Sol   = "gpt-5.6-sol"
+	ModelGPT56Terra = "gpt-5.6-terra"
+	ModelGPT56Luna  = "gpt-5.6-luna"
 
 	EmbedModel3Small = "text-embedding-3-small"
 	EmbedModel3Large = "text-embedding-3-large"
@@ -152,6 +155,39 @@ type modelEntry struct {
 }
 
 var registry = map[string]modelEntry{
+	ModelGPT56Sol: {
+		Pricing: agentkit.Pricing{Tiers: []agentkit.RateTier{{
+			MinInputTokens: 0, InputUncached: 5000, CacheReadInput: 500, Output: 30000,
+		}}},
+		Reasoning: agentkit.ReasoningSpec{
+			Term: "effort", Kind: agentkit.ReasoningEnum,
+			Levels:     []string{"none", "low", "medium", "high", "xhigh"},
+			Default:    agentkit.Level("medium"),
+			CanDisable: true,
+		},
+	},
+	ModelGPT56Terra: {
+		Pricing: agentkit.Pricing{Tiers: []agentkit.RateTier{{
+			MinInputTokens: 0, InputUncached: 2500, CacheReadInput: 250, Output: 15000,
+		}}},
+		Reasoning: agentkit.ReasoningSpec{
+			Term: "effort", Kind: agentkit.ReasoningEnum,
+			Levels:     []string{"none", "low", "medium", "high", "xhigh"},
+			Default:    agentkit.Level("medium"),
+			CanDisable: true,
+		},
+	},
+	ModelGPT56Luna: {
+		Pricing: agentkit.Pricing{Tiers: []agentkit.RateTier{{
+			MinInputTokens: 0, InputUncached: 1000, CacheReadInput: 100, Output: 6000,
+		}}},
+		Reasoning: agentkit.ReasoningSpec{
+			Term: "effort", Kind: agentkit.ReasoningEnum,
+			Levels:     []string{"none", "low", "medium", "high", "xhigh"},
+			Default:    agentkit.Level("medium"),
+			CanDisable: true,
+		},
+	},
 	ModelGPT55Pro: {
 		Pricing: agentkit.Pricing{Tiers: []agentkit.RateTier{{
 			MinInputTokens: 0, InputUncached: 30000, CacheReadInput: 30000, Output: 180000,

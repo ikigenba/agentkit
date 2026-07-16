@@ -112,6 +112,24 @@ func TestProviderReasoningInspectorsExposeDesignSpecs(t *testing.T) {
 		"openai": {
 			inspector: openai.Reasoning,
 			specs: map[string]agentkit.ReasoningSpec{
+				openai.ModelGPT56Sol: {
+					Term: "effort", Kind: agentkit.ReasoningEnum,
+					Levels:     []string{"none", "low", "medium", "high", "xhigh"},
+					Default:    agentkit.Level("medium"),
+					CanDisable: true,
+				},
+				openai.ModelGPT56Terra: {
+					Term: "effort", Kind: agentkit.ReasoningEnum,
+					Levels:     []string{"none", "low", "medium", "high", "xhigh"},
+					Default:    agentkit.Level("medium"),
+					CanDisable: true,
+				},
+				openai.ModelGPT56Luna: {
+					Term: "effort", Kind: agentkit.ReasoningEnum,
+					Levels:     []string{"none", "low", "medium", "high", "xhigh"},
+					Default:    agentkit.Level("medium"),
+					CanDisable: true,
+				},
 				openai.ModelGPT55Pro: {
 					Term: "effort", Kind: agentkit.ReasoningEnum,
 					Levels: []string{"high", "xhigh"}, Default: agentkit.Level("high"),

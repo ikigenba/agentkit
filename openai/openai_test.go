@@ -677,6 +677,54 @@ func TestOpenAIModelRegistryPricingAndTierSelection(t *testing.T) {
 	}
 }
 
+func TestGPT56ModelRegistryUsesSingleTierPricing(t *testing.T) {
+	p := New("test-key")
+	tests := map[string]agentkit.RateTier{
+		ModelGPT56Sol:   {MinInputTokens: 0, InputUncached: 5000, CacheReadInput: 500, Output: 30000},
+		ModelGPT56Terra: {MinInputTokens: 0, InputUncached: 2500, CacheReadInput: 250, Output: 15000},
+		ModelGPT56Luna:  {MinInputTokens: 0, InputUncached: 1000, CacheReadInput: 100, Output: 6000},
+	}
+
+	// R-CDK0-SUGR
+	for model, want := range tests {
+		pricing, ok := p.Pricing(model)
+		if !ok {
+			t.Fatalf("Pricing(%q) returned ok=false", model)
+		}
+		if len(pricing.Tiers) != 1 {
+			t.Fatalf("Pricing(%q) has %d tiers, want 1", model, len(pricing.Tiers))
+		}
+		if got := pricing.Tiers[0]; got != want {
+			t.Fatalf("Pricing(%q) tier = %#v, want %#v", model, got, want)
+		}
+	}
+}
+
+func TestGPT56ReasoningSpecsUseNativeEffortVocabulary(t *testing.T) {
+	models := []string{ModelGPT56Sol, ModelGPT56Terra, ModelGPT56Luna}
+	wantLevels := []string{"none", "low", "medium", "high", "xhigh"}
+
+	// R-CERX-6M7G
+	for _, model := range models {
+		spec, ok := Reasoning.ReasoningSpec(model)
+		if !ok {
+			t.Fatalf("ReasoningSpec(%q) returned ok=false", model)
+		}
+		if spec.Term != "effort" || spec.Kind != agentkit.ReasoningEnum {
+			t.Errorf("ReasoningSpec(%q) term/kind = %q/%v, want effort/%v", model, spec.Term, spec.Kind, agentkit.ReasoningEnum)
+		}
+		if !reflect.DeepEqual(spec.Levels, wantLevels) {
+			t.Errorf("ReasoningSpec(%q) levels = %v, want %v", model, spec.Levels, wantLevels)
+		}
+		if spec.Default != agentkit.Level("medium") {
+			t.Errorf("ReasoningSpec(%q) default = %#v, want %#v", model, spec.Default, agentkit.Level("medium"))
+		}
+		if !spec.CanDisable {
+			t.Errorf("ReasoningSpec(%q) CanDisable = false, want true", model)
+		}
+	}
+}
+
 func TestOpenAIEmbedderBatchesUsageOrderAndNormalizes(t *testing.T) {
 	var provider agentkit.EmbeddingProvider
 	var mu sync.Mutex
