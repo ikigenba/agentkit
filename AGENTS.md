@@ -5,6 +5,13 @@ root `agentkit` package holds the provider-agnostic core (orchestration, tools,
 blocks, streaming); provider-specific clients live in their own subpackages.
 Module path: `github.com/ikigenba/agentkit`.
 
+## How changes are made
+
+Changes go through the spec under `project/`, not direct edits — settle the
+spec, then let the build loop realize it. Edit code directly only on explicit
+operator instruction. See the `$ikispec` skill for the `project/` spec contracts
+and `$ralph` for the unattended build workflow.
+
 ## Layout
 
 - Root `.` — core `agentkit` package: `orchestration.go`, `tool.go`, `block.go`,
