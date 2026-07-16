@@ -1,13 +1,25 @@
 # AgentKit
 
+A Go library for driving LLM agents across providers behind one interface. The
+root `agentkit` package holds the provider-agnostic core (orchestration, tools,
+blocks, streaming); provider-specific clients live in their own subpackages.
+Module path: `github.com/ikigenba/agentkit`.
+
+## Layout
+
+- Root `.` — core `agentkit` package: `orchestration.go`, `tool.go`, `block.go`,
+  `mcp.go`, `stream.go`, `reasoning.go`, `retry.go`.
+- `anthropic/`, `openai/`, `google/`, `zai/` — per-provider client packages.
+- `internal/` — shared helpers: `httpx`, `sse`, `retry`, `mcp`, `openaicompat`.
+- `project/` — the spec (product/design/plan) the build loop works from.
+
+## Tests
+
+- Unit: `go test ./...`
+- Integration (real provider calls, needs API keys): `go test -tags integration ./...`
+
 ## Versioning
 
-Versions are specified **only** as annotated git tags in the form `vMAJOR.MINOR.PATCH`
-(e.g. `v0.1.4`). There is no `VERSION` file or version constant in the code.
-
-- The version is the plain tag — `v0.1.4` — never a `git describe` string.
-  Output like `v0.1.3-30-g1b9110d` is git synthesizing "30 commits past `v0.1.3`
-  at hash `1b9110d`"; it is **not** a version this project uses. No commit count,
-  no `g<hash>` suffix.
-- To cut a release: commit the work, then `git tag -a vX.Y.Z -m "vX.Y.Z"` on `main`.
-- The current/latest version is whatever `git tag --sort=-v:refname | head -1` reports.
+Versions are annotated git tags only, `vMAJOR.MINOR.PATCH` (e.g. `v0.1.4`) — no
+`VERSION` file, no version constant, no `git describe` suffix. Cut a release with
+`git tag -a vX.Y.Z -m "vX.Y.Z"` on `main`. Latest is `git tag --sort=-v:refname | head -1`.
