@@ -53,4 +53,4 @@ The manifest. One line per phase, in build order — the **only** place a phase'
 - Phase 49  ✅  realizes D23 (amended)                    — `load_tools` accepts group names: a group name loads every tool in that group (R-B5BR-U5M1, R-B6JO-7XCQ, R-B7RK-LP3F)
 - Phase 50  ✅  realizes —                                — Release: patch version bump to `v0.2.1`
 - Phase 51  ✅  realizes D16                              — OpenAI gpt-5.6 models: sol, terra, luna (R-CDK0-SUGR, R-CERX-6M7G)
-- Phase 52  ⬜  realizes D16                              — Anthropic Claude 5 models: fable-5, sonnet-5 (R-CH7P-Y5OU, R-CIFM-BXFJ)
+- Phase 52  ✅  realizes D16                              — Anthropic Claude 5 models: fable-5, sonnet-5 (R-CH7P-Y5OU, R-CIFM-BXFJ)
