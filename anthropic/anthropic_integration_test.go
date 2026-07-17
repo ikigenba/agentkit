@@ -16,7 +16,7 @@ func TestAnthropicIntegrationSkipsWithoutCredential(t *testing.T) {
 	if key == "" {
 		t.Skip("ANTHROPIC_API_KEY is not set")
 	}
-	conv := &agentkit.Conversation{Provider: New(key), Model: ModelHaiku45}
+	conv := &agentkit.Conversation{Provider: New(APIKey(key)), Model: "claude-haiku-4-5"}
 	stream := conv.Send(context.Background(), "Reply with one short sentence.")
 	for range stream.Events() {
 	}

@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/ikigenba/agentkit"
-	"github.com/ikigenba/agentkit/anthropic"
 	"github.com/ikigenba/agentkit/google"
 	"github.com/ikigenba/agentkit/openai"
 	"github.com/ikigenba/agentkit/zai"
@@ -53,42 +52,6 @@ func TestProviderReasoningInspectorsExposeDesignSpecs(t *testing.T) {
 		inspector agentkit.ReasoningInspector
 		specs     map[string]agentkit.ReasoningSpec
 	}{
-		"anthropic": {
-			inspector: anthropic.Reasoning,
-			specs: map[string]agentkit.ReasoningSpec{
-				anthropic.ModelOpus48: {
-					Term: "effort", Kind: agentkit.ReasoningEnum,
-					Levels:     []string{"low", "medium", "high", "xhigh", "max"},
-					Default:    agentkit.Level("high"),
-					CanDisable: true,
-				},
-				anthropic.ModelSonnet46: {
-					Term: "effort", Kind: agentkit.ReasoningEnum,
-					Levels:     []string{"low", "medium", "high", "max"},
-					Default:    agentkit.Level("high"),
-					CanDisable: true,
-				},
-				anthropic.ModelHaiku45: {
-					Term: "thinking budget", Kind: agentkit.ReasoningRange,
-					Min:        1024,
-					Max:        4096,
-					Default:    agentkit.DisableReasoning(),
-					CanDisable: true,
-				},
-				anthropic.ModelFable5: {
-					Term: "effort", Kind: agentkit.ReasoningEnum,
-					Levels:     []string{"low", "medium", "high", "xhigh", "max"},
-					Default:    agentkit.Level("medium"),
-					CanDisable: false,
-				},
-				anthropic.ModelSonnet5: {
-					Term: "effort", Kind: agentkit.ReasoningEnum,
-					Levels:     []string{"low", "medium", "high", "xhigh", "max"},
-					Default:    agentkit.Level("medium"),
-					CanDisable: true,
-				},
-			},
-		},
 		"google": {
 			inspector: google.Reasoning,
 			specs: map[string]agentkit.ReasoningSpec{

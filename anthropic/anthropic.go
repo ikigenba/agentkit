@@ -18,109 +18,20 @@ import (
 )
 
 const (
-	ModelOpus48   = "claude-opus-4-8"
-	ModelSonnet46 = "claude-sonnet-4-6"
-	ModelHaiku45  = "claude-haiku-4-5"
-	ModelFable5   = "claude-fable-5"
-	ModelSonnet5  = "claude-sonnet-5"
-)
-
-const (
 	defaultBaseURL = "https://api.anthropic.com"
 	apiVersion     = "2023-06-01"
 	defaultMaxOut  = 4096
 )
 
-// Reasoning exposes Anthropic's static native reasoning vocabulary.
-var Reasoning agentkit.ReasoningInspector = reasoningInspector{}
-
-type modelEntry struct {
-	Pricing   agentkit.Pricing
-	Reasoning agentkit.ReasoningSpec
+// Credential is the closed set of credentials accepted by New.
+type Credential interface {
+	anthropicCredential()
 }
 
-var registry = map[string]modelEntry{
-	ModelOpus48: {
-		Pricing: agentkit.Pricing{Tiers: []agentkit.RateTier{{
-			MinInputTokens: 0, InputUncached: 5000, CacheReadInput: 500, CacheWrite5m: 6250, CacheWrite1h: 10000, Output: 25000,
-		}}},
-		Reasoning: agentkit.ReasoningSpec{
-			Term: "effort", Kind: agentkit.ReasoningEnum,
-			Levels:     []string{"low", "medium", "high", "xhigh", "max"},
-			Default:    agentkit.Level("high"),
-			CanDisable: true,
-		},
-	},
-	ModelSonnet46: {
-		Pricing: agentkit.Pricing{Tiers: []agentkit.RateTier{{
-			MinInputTokens: 0, InputUncached: 3000, CacheReadInput: 300, CacheWrite5m: 3750, CacheWrite1h: 6000, Output: 15000,
-		}}},
-		Reasoning: agentkit.ReasoningSpec{
-			Term: "effort", Kind: agentkit.ReasoningEnum,
-			Levels:     []string{"low", "medium", "high", "max"},
-			Default:    agentkit.Level("high"),
-			CanDisable: true,
-		},
-	},
-	ModelHaiku45: {
-		Pricing: agentkit.Pricing{Tiers: []agentkit.RateTier{{
-			MinInputTokens: 0, InputUncached: 1000, CacheReadInput: 100, CacheWrite5m: 1250, CacheWrite1h: 2000, Output: 5000,
-		}}},
-		Reasoning: agentkit.ReasoningSpec{
-			Term: "thinking budget", Kind: agentkit.ReasoningRange,
-			Min:        1024,
-			Max:        defaultMaxOut,
-			Default:    agentkit.DisableReasoning(),
-			CanDisable: true,
-		},
-	},
-	ModelFable5: {
-		Pricing: agentkit.Pricing{Tiers: []agentkit.RateTier{{
-			MinInputTokens: 0, InputUncached: 10000, CacheReadInput: 1000, CacheWrite5m: 12500, CacheWrite1h: 20000, Output: 50000,
-		}}},
-		Reasoning: agentkit.ReasoningSpec{
-			Term: "effort", Kind: agentkit.ReasoningEnum,
-			Levels:     []string{"low", "medium", "high", "xhigh", "max"},
-			Default:    agentkit.Level("medium"),
-			CanDisable: false,
-		},
-	},
-	ModelSonnet5: {
-		Pricing: agentkit.Pricing{Tiers: []agentkit.RateTier{{
-			MinInputTokens: 0, InputUncached: 3000, CacheReadInput: 300, CacheWrite5m: 3750, CacheWrite1h: 6000, Output: 15000,
-		}}},
-		Reasoning: agentkit.ReasoningSpec{
-			Term: "effort", Kind: agentkit.ReasoningEnum,
-			Levels:     []string{"low", "medium", "high", "xhigh", "max"},
-			Default:    agentkit.Level("medium"),
-			CanDisable: true,
-		},
-	},
-}
+// APIKey authenticates with an Anthropic API key.
+type APIKey string
 
-type reasoningInspector struct{}
-
-func (reasoningInspector) ReasoningSpec(model string) (agentkit.ReasoningSpec, bool) {
-	entry, ok := registry[model]
-	if !ok {
-		return agentkit.ReasoningSpec{}, false
-	}
-	return cloneReasoningSpec(entry.Reasoning), true
-}
-
-func (reasoningInspector) SupportedReasoning() map[string]agentkit.ReasoningSpec {
-	out := make(map[string]agentkit.ReasoningSpec, len(registry))
-	for model, entry := range registry {
-		out[model] = cloneReasoningSpec(entry.Reasoning)
-	}
-	return out
-}
-
-func cloneReasoningSpec(spec agentkit.ReasoningSpec) agentkit.ReasoningSpec {
-	spec.Levels = append([]string(nil), spec.Levels...)
-	spec.Sentinels = append([]agentkit.Sentinel(nil), spec.Sentinels...)
-	return spec
-}
+func (APIKey) anthropicCredential() {}
 
 // Option customizes an Anthropic provider handle.
 type Option func(*Provider)
@@ -147,7 +58,11 @@ type Provider struct {
 }
 
 // New constructs an Anthropic provider handle.
-func New(apiKey string, opts ...Option) *Provider {
+func New(cred Credential, opts ...Option) *Provider {
+	var apiKey string
+	if key, ok := cred.(APIKey); ok {
+		apiKey = string(key)
+	}
 	p := &Provider{apiKey: apiKey, baseURL: defaultBaseURL}
 	for _, opt := range opts {
 		opt(p)
@@ -200,16 +115,36 @@ func (p *Provider) RoundTrip(ctx context.Context, req *agentkit.Request) *agentk
 }
 
 type messageRequest struct {
-	Model       string         `json:"model"`
-	MaxTokens   int            `json:"max_tokens"`
-	System      []wireBlock    `json:"system,omitempty"`
-	Messages    []wireMessage  `json:"messages"`
-	Tools       []wireTool     `json:"tools,omitempty"`
-	Stream      bool           `json:"stream"`
-	Temperature *float64       `json:"temperature,omitempty"`
-	TopP        *float64       `json:"top_p,omitempty"`
-	Thinking    map[string]any `json:"thinking,omitempty"`
-	Output      map[string]any `json:"output_config,omitempty"`
+	Model       string                     `json:"model"`
+	MaxTokens   int                        `json:"max_tokens"`
+	System      []wireBlock                `json:"system,omitempty"`
+	Messages    []wireMessage              `json:"messages"`
+	Tools       []wireTool                 `json:"tools,omitempty"`
+	Stream      bool                       `json:"stream"`
+	Temperature *float64                   `json:"temperature,omitempty"`
+	TopP        *float64                   `json:"top_p,omitempty"`
+	Thinking    map[string]any             `json:"thinking,omitempty"`
+	Output      map[string]any             `json:"output_config,omitempty"`
+	Extra       map[string]json.RawMessage `json:"-"`
+}
+
+func (r messageRequest) MarshalJSON() ([]byte, error) {
+	type wireRequest messageRequest
+	raw, err := json.Marshal(wireRequest(r))
+	if err != nil {
+		return nil, err
+	}
+	if len(r.Extra) == 0 {
+		return raw, nil
+	}
+	var merged map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &merged); err != nil {
+		return nil, err
+	}
+	for key, value := range r.Extra {
+		merged[key] = value
+	}
+	return json.Marshal(merged)
 }
 
 type wireMessage struct {
@@ -274,9 +209,17 @@ func buildRequest(req *agentkit.Request) (messageRequest, []agentkit.Warning, er
 		out.Messages = append(out.Messages, wire)
 	}
 
-	warnings := applyReasoning(req.Model, req.Gen.Reasoning, maxTokens, &out)
+	if len(req.ProviderOptions) != 0 {
+		if err := json.Unmarshal(req.ProviderOptions, &out.Extra); err != nil {
+			return out, nil, fmt.Errorf("anthropic provider options: %w", err)
+		}
+		if out.Extra == nil {
+			return out, nil, fmt.Errorf("anthropic provider options: %w", agentkit.ErrInvalidConfig)
+		}
+	}
+	applyReasoning(req.Gen.Reasoning, &out)
 	applyCacheControl(req, &out)
-	return out, warnings, nil
+	return out, nil, nil
 }
 
 func convertMessage(msg agentkit.Message) (wireMessage, error) {
@@ -302,66 +245,26 @@ func convertMessage(msg agentkit.Message) (wireMessage, error) {
 	return wireMessage{Role: role, Content: blocks}, nil
 }
 
-func applyReasoning(model string, value agentkit.ReasoningValue, maxTokens int, out *messageRequest) []agentkit.Warning {
-	value, warning := checkedReasoning(model, value)
+func applyReasoning(value agentkit.ReasoningValue, out *messageRequest) {
 	if value.IsUnset() {
-		return warning
+		return
 	}
 	if value.Disabled() {
 		out.Thinking = map[string]any{"type": "disabled"}
-		return warning
+		return
 	}
 	if level, ok := value.Level(); ok {
 		out.Thinking = map[string]any{"type": "adaptive"}
 		out.Output = map[string]any{"effort": level}
-		return warning
+		return
 	}
 	if budget, ok := value.Budget(); ok {
-		if model == ModelHaiku45 && maxTokens > 0 && budget >= maxTokens {
-			budget = maxTokens - 1
-		}
 		out.Thinking = map[string]any{"type": "enabled", "budget_tokens": budget}
 	}
-	return warning
-}
-
-func checkedReasoning(model string, value agentkit.ReasoningValue) (agentkit.ReasoningValue, []agentkit.Warning) {
-	if value.IsUnset() {
-		return value, nil
-	}
-	entry, ok := registry[model]
-	if !ok || entry.Reasoning.Accepts(value) {
-		return value, nil
-	}
-	code := agentkit.WarnReasoningUnsupported
-	if value.Disabled() && !entry.Reasoning.CanDisable {
-		code = agentkit.WarnReasoningCannotDisable
-	}
-	return entry.Reasoning.Default, []agentkit.Warning{{
-		Setting: "reasoning",
-		Code:    code,
-		Detail:  "requested " + describeReasoning(value) + "; applied " + describeReasoning(entry.Reasoning.Default),
-	}}
-}
-
-func describeReasoning(value agentkit.ReasoningValue) string {
-	if value.IsUnset() {
-		return "unset"
-	}
-	if value.Disabled() {
-		return "disabled"
-	}
-	if level, ok := value.Level(); ok {
-		return "level " + level
-	}
-	if budget, ok := value.Budget(); ok {
-		return fmt.Sprintf("budget %d", budget)
-	}
-	return "unknown"
 }
 
 func applyCacheControl(req *agentkit.Request, out *messageRequest) {
-	if stablePrefixTokens(req) < cacheMinimum(req.Model) {
+	if stablePrefixTokens(req) < 2048 {
 		return
 	}
 	cc := &cacheControl{Type: "ephemeral"}
@@ -379,13 +282,6 @@ func applyCacheControl(req *agentkit.Request, out *messageRequest) {
 	if len(out.System) > 0 {
 		out.System[len(out.System)-1].CacheControl = cc
 	}
-}
-
-func cacheMinimum(model string) int {
-	if model == ModelSonnet46 {
-		return 2048
-	}
-	return 4096
 }
 
 func stablePrefixTokens(req *agentkit.Request) int {

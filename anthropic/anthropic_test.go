@@ -26,9 +26,10 @@ type unknownBlock struct {
 }
 
 func TestNewProviderSendsAuthenticatedRequestToInjectedServer(t *testing.T) {
+	// R-CQO3-7EE9
 	// R-H3PK-QFG3
 	// R-WKTI-LIIE
-	var provider agentkit.Provider = New("test-key")
+	var provider agentkit.Provider = New(APIKey("test-key"))
 	if provider.Name() != "anthropic" {
 		t.Fatalf("Name() = %q, want anthropic", provider.Name())
 	}
@@ -42,8 +43,8 @@ func TestNewProviderSendsAuthenticatedRequestToInjectedServer(t *testing.T) {
 	defer server.Close()
 
 	conv := &agentkit.Conversation{
-		Provider: New("test-key", WithBaseURL(server.URL), WithHTTPClient(server.Client())),
-		Model:    ModelSonnet46,
+		Provider: New(APIKey("test-key"), WithBaseURL(server.URL), WithHTTPClient(server.Client())),
+		Model:    "claude-sonnet-4-6",
 	}
 	stream := conv.Send(context.Background(), "hello")
 	drain(stream)
@@ -56,6 +57,35 @@ func TestNewProviderSendsAuthenticatedRequestToInjectedServer(t *testing.T) {
 	}
 	if gotKey != "test-key" {
 		t.Fatalf("X-API-Key = %q, want test-key", gotKey)
+	}
+}
+
+func TestAnthropicArbitraryModelReachesWireAndVendorRejectionIsTyped(t *testing.T) {
+	// R-CT3V-YXVN
+	const model = "claude-never-cataloged-2099"
+	var gotModel string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotModel, _ = decodeRequest(t, r)["model"].(string)
+		w.Header().Set("request-id", "req_unknown_model")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"type":"error","error":{"type":"invalid_request_error","message":"unknown model"}}`))
+	}))
+	defer server.Close()
+
+	conv := &agentkit.Conversation{
+		Provider: New(APIKey("key"), WithBaseURL(server.URL), WithHTTPClient(server.Client())),
+		Model:    model,
+		Retry:    agentkit.RetryPolicy{MaxAttempts: 1},
+	}
+	stream := conv.Send(context.Background(), "hello")
+	drain(stream)
+
+	if gotModel != model {
+		t.Fatalf("wire model = %q, want %q", gotModel, model)
+	}
+	var providerErr *agentkit.Error
+	if !errors.As(stream.Err(), &providerErr) || providerErr.Provider != "anthropic" || !errors.Is(providerErr, agentkit.ErrInvalidRequest) {
+		t.Fatalf("Err() = %#v, want typed anthropic invalid-request error", stream.Err())
 	}
 }
 
@@ -187,8 +217,8 @@ func TestAnthropicFragmentsToolJSONAndReplaysReasoningOpaque(t *testing.T) {
 		return "21 C", nil
 	})
 	conv := &agentkit.Conversation{
-		Provider: New("key", WithBaseURL(server.URL), WithHTTPClient(server.Client())),
-		Model:    ModelSonnet46,
+		Provider: New(APIKey("key"), WithBaseURL(server.URL), WithHTTPClient(server.Client())),
+		Model:    "claude-sonnet-4-6",
 		Tools:    []agentkit.Tool{tool},
 	}
 
@@ -269,8 +299,8 @@ func TestAnthropicReplayedThinkingBlockSerializesSummaryInThinkingField(t *testi
 		return "21 C", nil
 	})
 	conv := &agentkit.Conversation{
-		Provider: New("key", WithBaseURL(server.URL), WithHTTPClient(server.Client())),
-		Model:    ModelSonnet46,
+		Provider: New(APIKey("key"), WithBaseURL(server.URL), WithHTTPClient(server.Client())),
+		Model:    "claude-sonnet-4-6",
 		Tools:    []agentkit.Tool{tool},
 		Gen:      agentkit.GenSettings{Reasoning: agentkit.Level("low")},
 	}
@@ -340,8 +370,8 @@ func TestAnthropicReplayedEmptyThinkingBlockKeepsThinkingField(t *testing.T) {
 	defer server.Close()
 
 	conv := &agentkit.Conversation{
-		Provider: New("key", WithBaseURL(server.URL), WithHTTPClient(server.Client())),
-		Model:    ModelSonnet46,
+		Provider: New(APIKey("key"), WithBaseURL(server.URL), WithHTTPClient(server.Client())),
+		Model:    "claude-sonnet-4-6",
 		History: []agentkit.Message{{
 			Role: agentkit.RoleAssistant,
 			Blocks: []agentkit.Block{
@@ -384,8 +414,8 @@ func TestAnthropicDropsForeignReasoningBlocksFromRequest(t *testing.T) {
 	defer server.Close()
 
 	conv := &agentkit.Conversation{
-		Provider: New("key", WithBaseURL(server.URL), WithHTTPClient(server.Client())),
-		Model:    ModelSonnet46,
+		Provider: New(APIKey("key"), WithBaseURL(server.URL), WithHTTPClient(server.Client())),
+		Model:    "claude-sonnet-4-6",
 		History: []agentkit.Message{{
 			Role: agentkit.RoleAssistant,
 			Blocks: []agentkit.Block{
@@ -405,6 +435,8 @@ func TestAnthropicDropsForeignReasoningBlocksFromRequest(t *testing.T) {
 
 func TestAnthropicRequestMapsGenerationSettingsAndWarnings(t *testing.T) {
 	t.Run("sampling and honored reasoning settings", func(t *testing.T) {
+		// R-CUBS-CPMC
+		// R-CVJO-QHD1
 		// R-P5U3-5CFZ
 		// R-PBXL-275G
 		// R-T40A-VZQ7
@@ -418,8 +450,8 @@ func TestAnthropicRequestMapsGenerationSettingsAndWarnings(t *testing.T) {
 		defer server.Close()
 
 		conv := &agentkit.Conversation{
-			Provider: New("key", WithBaseURL(server.URL), WithHTTPClient(server.Client())),
-			Model:    ModelSonnet46,
+			Provider: New(APIKey("key"), WithBaseURL(server.URL), WithHTTPClient(server.Client())),
+			Model:    "claude-sonnet-4-6",
 			Pricing:  &agentkit.Pricing{},
 			Gen: agentkit.GenSettings{
 				Temperature: &temp,
@@ -450,6 +482,7 @@ func TestAnthropicRequestMapsGenerationSettingsAndWarnings(t *testing.T) {
 	})
 
 	t.Run("zero sampling settings are omitted", func(t *testing.T) {
+		// R-CVJO-QHD1
 		// R-P5U3-5CFZ
 		// R-T587-9RGW
 		var body map[string]any
@@ -459,7 +492,7 @@ func TestAnthropicRequestMapsGenerationSettingsAndWarnings(t *testing.T) {
 		}))
 		defer server.Close()
 
-		conv := &agentkit.Conversation{Provider: New("key", WithBaseURL(server.URL), WithHTTPClient(server.Client())), Model: ModelSonnet46, Pricing: &agentkit.Pricing{}}
+		conv := &agentkit.Conversation{Provider: New(APIKey("key"), WithBaseURL(server.URL), WithHTTPClient(server.Client())), Model: "claude-sonnet-4-6", Pricing: &agentkit.Pricing{}}
 		drain(conv.Send(context.Background(), "hello"))
 		for _, key := range []string{"temperature", "top_p", "thinking", "output_config"} {
 			if _, ok := body[key]; ok {
@@ -476,22 +509,25 @@ func TestAnthropicRequestMapsGenerationSettingsAndWarnings(t *testing.T) {
 			assert    func(t *testing.T, body map[string]any)
 		}{
 			{
+				// R-CUBS-CPMC
+				// R-CVJO-QHD1
 				// R-T40A-VZQ7
 				// R-ELUQ-VJIQ
 				name:      "haiku budget",
-				model:     ModelHaiku45,
-				reasoning: agentkit.Budget(2048),
+				model:     "claude-haiku-4-5",
+				reasoning: agentkit.Budget(5000),
 				assert: func(t *testing.T, body map[string]any) {
 					thinking := body["thinking"].(map[string]any)
-					if thinking["type"] != "enabled" || thinking["budget_tokens"] != float64(2048) {
-						t.Fatalf("thinking = %#v, want budget 2048", thinking)
+					if thinking["type"] != "enabled" || thinking["budget_tokens"] != float64(5000) {
+						t.Fatalf("thinking = %#v, want exact budget 5000", thinking)
 					}
 				},
 			},
 			{
+				// R-CVJO-QHD1
 				// R-T40A-VZQ7
 				name:      "disable",
-				model:     ModelSonnet46,
+				model:     "claude-sonnet-4-6",
 				reasoning: agentkit.DisableReasoning(),
 				assert: func(t *testing.T, body map[string]any) {
 					thinking := body["thinking"].(map[string]any)
@@ -514,7 +550,7 @@ func TestAnthropicRequestMapsGenerationSettingsAndWarnings(t *testing.T) {
 				defer server.Close()
 
 				conv := &agentkit.Conversation{
-					Provider: New("key", WithBaseURL(server.URL), WithHTTPClient(server.Client())),
+					Provider: New(APIKey("key"), WithBaseURL(server.URL), WithHTTPClient(server.Client())),
 					Model:    tt.model,
 					Pricing:  &agentkit.Pricing{},
 					Gen:      agentkit.GenSettings{Reasoning: tt.reasoning},
@@ -532,8 +568,8 @@ func TestAnthropicRequestMapsGenerationSettingsAndWarnings(t *testing.T) {
 		}
 	})
 
-	t.Run("unsupported level defaults with warning", func(t *testing.T) {
-		// R-B7YX-J342
+	t.Run("native level is sent unchanged without warning", func(t *testing.T) {
+		// R-CUBS-CPMC
 		var body map[string]any
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			body = decodeRequest(t, r)
@@ -542,8 +578,8 @@ func TestAnthropicRequestMapsGenerationSettingsAndWarnings(t *testing.T) {
 		defer server.Close()
 
 		conv := &agentkit.Conversation{
-			Provider: New("key", WithBaseURL(server.URL), WithHTTPClient(server.Client())),
-			Model:    ModelSonnet46,
+			Provider: New(APIKey("key"), WithBaseURL(server.URL), WithHTTPClient(server.Client())),
+			Model:    "claude-sonnet-4-6",
 			Pricing:  &agentkit.Pricing{},
 			Gen:      agentkit.GenSettings{Reasoning: agentkit.Level("xhigh")},
 		}
@@ -552,21 +588,106 @@ func TestAnthropicRequestMapsGenerationSettingsAndWarnings(t *testing.T) {
 		if err := stream.Err(); err != nil {
 			t.Fatalf("Err() = %v, want nil", err)
 		}
-		warnings := stream.Warnings()
-		if len(warnings) != 1 || warnings[0].Setting != "reasoning" || warnings[0].Code != agentkit.WarnReasoningUnsupported {
-			t.Fatalf("Warnings() = %#v, want reasoning unsupported degradation", warnings)
+		if len(stream.Warnings()) != 0 {
+			t.Fatalf("Warnings() = %#v, want no reasoning warning", stream.Warnings())
 		}
 		output := body["output_config"].(map[string]any)
-		if output["effort"] != "high" {
-			t.Fatalf("degraded effort = %v, want high", output["effort"])
+		if output["effort"] != "xhigh" {
+			t.Fatalf("effort = %v, want exact native value xhigh", output["effort"])
 		}
 	})
+}
+
+func TestAnthropicReasoningVendorRejectionPreservesSentValue(t *testing.T) {
+	// R-CUBS-CPMC
+	const nativeLevel = "vendor-specific-ultra"
+	var gotEffort string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body := decodeRequest(t, r)
+		output, _ := body["output_config"].(map[string]any)
+		gotEffort, _ = output["effort"].(string)
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"type":"error","error":{"type":"invalid_request_error","message":"effort rejected"}}`))
+	}))
+	defer server.Close()
+
+	conv := &agentkit.Conversation{
+		Provider: New(APIKey("key"), WithBaseURL(server.URL), WithHTTPClient(server.Client())),
+		Model:    "any-model",
+		Gen:      agentkit.GenSettings{Reasoning: agentkit.Level(nativeLevel)},
+		Retry:    agentkit.RetryPolicy{MaxAttempts: 1},
+	}
+	stream := conv.Send(context.Background(), "hello")
+	drain(stream)
+	if gotEffort != nativeLevel {
+		t.Fatalf("wire effort = %q, want %q", gotEffort, nativeLevel)
+	}
+	if len(stream.Warnings()) != 0 {
+		t.Fatalf("Warnings() = %#v, want none", stream.Warnings())
+	}
+	var providerErr *agentkit.Error
+	if !errors.As(stream.Err(), &providerErr) || providerErr.Provider != "anthropic" || !errors.Is(providerErr, agentkit.ErrInvalidRequest) {
+		t.Fatalf("Err() = %#v, want typed anthropic invalid-request error", stream.Err())
+	}
+}
+
+func TestAnthropicProviderOptionsShallowMergeIntoWireBody(t *testing.T) {
+	// R-CXZH-I0UF
+	tests := []struct {
+		name    string
+		options json.RawMessage
+		assert  func(*testing.T, map[string]any)
+	}{
+		{
+			name:    "non-empty options override and add top-level keys",
+			options: json.RawMessage(`{"stream":false,"metadata":{"trace":"opaque"},"vendor_flag":"verbatim"}`),
+			assert: func(t *testing.T, body map[string]any) {
+				if body["stream"] != false || body["vendor_flag"] != "verbatim" {
+					t.Fatalf("merged body = %#v", body)
+				}
+				metadata, ok := body["metadata"].(map[string]any)
+				if !ok || metadata["trace"] != "opaque" {
+					t.Fatalf("metadata = %#v, want opaque nested value", body["metadata"])
+				}
+			},
+		},
+		{
+			name: "empty options merge nothing",
+			assert: func(t *testing.T, body map[string]any) {
+				if body["stream"] != true {
+					t.Fatalf("stream = %#v, want adapter default true", body["stream"])
+				}
+				if _, ok := body["vendor_flag"]; ok {
+					t.Fatalf("empty options added vendor_flag: %#v", body)
+				}
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var body map[string]any
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				body = decodeRequest(t, r)
+				writeSSEFile(t, w, "testdata/final_turn.sse")
+			}))
+			defer server.Close()
+			provider := New(APIKey("key"), WithBaseURL(server.URL), WithHTTPClient(server.Client()))
+			trip := provider.RoundTrip(context.Background(), &agentkit.Request{
+				Model:           "any-model",
+				ProviderOptions: tt.options,
+			})
+			if err := trip.Err(); err != nil {
+				t.Fatalf("Err() = %v, want nil", err)
+			}
+			tt.assert(t, body)
+		})
+	}
 }
 
 func TestAnthropicBuildRequestPanicsOnUnknownOutboundBlockType(t *testing.T) {
 	// R-4YSE-6YBS
 	req := &agentkit.Request{
-		Model: ModelSonnet46,
+		Model: "claude-sonnet-4-6",
 		Messages: []agentkit.Message{{
 			Role:   agentkit.RoleUser,
 			Blocks: []agentkit.Block{unknownBlock{}},
@@ -608,8 +729,8 @@ func TestAnthropicDefaultCacheBreakpointOnStablePrefix(t *testing.T) {
 	defer server.Close()
 
 	conv := &agentkit.Conversation{
-		Provider: New("key", WithBaseURL(server.URL), WithHTTPClient(server.Client())),
-		Model:    ModelSonnet46,
+		Provider: New(APIKey("key"), WithBaseURL(server.URL), WithHTTPClient(server.Client())),
+		Model:    "claude-sonnet-4-6",
 		System:   "stable system",
 		History: []agentkit.Message{{
 			Role:   agentkit.RoleAssistant,
@@ -670,8 +791,8 @@ func TestAnthropicErrorClassificationAndRawCapture(t *testing.T) {
 			defer server.Close()
 
 			conv := &agentkit.Conversation{
-				Provider: New("key", WithBaseURL(server.URL), WithHTTPClient(server.Client())),
-				Model:    ModelSonnet46,
+				Provider: New(APIKey("key"), WithBaseURL(server.URL), WithHTTPClient(server.Client())),
+				Model:    "claude-sonnet-4-6",
 				Retry:    agentkit.RetryPolicy{MaxAttempts: 1},
 			}
 			stream := conv.Send(context.Background(), "hello")
@@ -724,8 +845,8 @@ func TestAnthropicStreamErrorEventClassifiesFromEnvelopeType(t *testing.T) {
 			defer server.Close()
 
 			conv := &agentkit.Conversation{
-				Provider: New("key", WithBaseURL(server.URL), WithHTTPClient(server.Client())),
-				Model:    ModelSonnet46,
+				Provider: New(APIKey("key"), WithBaseURL(server.URL), WithHTTPClient(server.Client())),
+				Model:    "claude-sonnet-4-6",
 				Retry:    agentkit.RetryPolicy{MaxAttempts: 1},
 			}
 			stream := conv.Send(context.Background(), "hello")
@@ -750,35 +871,6 @@ func TestAnthropicStreamErrorEventClassifiesFromEnvelopeType(t *testing.T) {
 			}
 			if !bytes.Equal(akErr.Raw, raw) {
 				t.Fatalf("Raw = %s, want %s", akErr.Raw, raw)
-			}
-		})
-	}
-}
-
-func TestClaude5ReasoningSpecs(t *testing.T) {
-	// R-CIFM-BXFJ
-	want := map[string]agentkit.ReasoningSpec{
-		ModelFable5: {
-			Term: "effort", Kind: agentkit.ReasoningEnum,
-			Levels:     []string{"low", "medium", "high", "xhigh", "max"},
-			Default:    agentkit.Level("medium"),
-			CanDisable: false,
-		},
-		ModelSonnet5: {
-			Term: "effort", Kind: agentkit.ReasoningEnum,
-			Levels:     []string{"low", "medium", "high", "xhigh", "max"},
-			Default:    agentkit.Level("medium"),
-			CanDisable: true,
-		},
-	}
-	for model, wantSpec := range want {
-		t.Run(model, func(t *testing.T) {
-			got, ok := Reasoning.ReasoningSpec(model)
-			if !ok {
-				t.Fatalf("ReasoningSpec(%q) ok=false, want true", model)
-			}
-			if !reflect.DeepEqual(got, wantSpec) {
-				t.Fatalf("ReasoningSpec(%q) = %#v, want %#v", model, got, wantSpec)
 			}
 		})
 	}
