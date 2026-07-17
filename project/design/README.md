@@ -13,7 +13,7 @@
 
 - **Language/module.** Go 1.26; module `github.com/ikigenba/agentkit`; package `agentkit` at the module root. Public symbols are named so their purpose is clear from the name alone, with no package-name stutter (`agentkit.Conversation`, not `agentkit.AgentKitState`).
 - **Concurrency stance.** A `*Conversation` is one conversation owned by one goroutine; it is not safe for concurrent use and does no internal locking (cf. `sql.Rows`). Documented, not enforced.
-- **Credentials.** Always supplied explicitly by the consumer; AgentKit never reads environment variables, files, or any credential store on its own.
+- **Credentials.** Always supplied explicitly by the consumer; AgentKit never reads environment variables, files, or any credential store on its own. The one scoped exception is the opt-in `openai/subscription` helper (D25), which reads and maintains exactly the auth file the consumer names by path.
 
 ## Layout
 

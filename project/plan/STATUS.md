@@ -54,3 +54,15 @@ The manifest. One line per phase, in build order — the **only** place a phase'
 - Phase 50  ✅  realizes —                                — Release: patch version bump to `v0.2.1`
 - Phase 51  ✅  realizes D16                              — OpenAI gpt-5.6 models: sol, terra, luna (R-CDK0-SUGR, R-CERX-6M7G)
 - Phase 52  ✅  realizes D16                              — Anthropic Claude 5 models: fable-5, sonnet-5 (R-CH7P-Y5OU, R-CIFM-BXFJ)
+- Phase 53  ⬜  realizes D16,D01,D06,D09              — Root cost & options seam: resolution, reported cost, provider options (R-CZ7D-VSL4, R-D0FA-9KBT, R-D1N6-NC2I)
+- Phase 54  ⬜  realizes D05,D06,D09                  — anthropic adapter to the dumb layer (anthropic slices: R-CQO3-7EE9, R-CT3V-YXVN, R-CUBS-CPMC, R-CVJO-QHD1, R-CXZH-I0UF)
+- Phase 55  ⬜  realizes D05,D06,D09                  — google adapter to the dumb layer (google slices of the same ids)
+- Phase 56  ⬜  realizes D05,D06,D09                  — openai adapter to the dumb layer, API-key path (openai slices of the same ids)
+- Phase 57  ⬜  realizes D05,D06,D09                  — internal/openaicompat + zai to the dumb layer (zai/compat slices; R-CRVZ-L64Y zai half)
+- Phase 58  ⬜  realizes D24,D05,D06,D09              — the openrouter provider package (R-DA6H-BQ9D, R-DBED-PI02, R-DCMA-39QR; openrouter slices incl. R-CRVZ-L64Y)
+- Phase 59  ⬜  realizes D25                          — openai subscription auth + openai/subscription (R-DG9Z-8KYU, R-DHHV-MCPJ, R-DIPS-04G8, R-DL5K-RNXM)
+- Phase 60  ⬜  realizes D26                          — the advisory catalog package (R-DMDH-5FOB, R-DNLD-J7F0, R-DOT9-WZ5P, R-DQ16-AQWE, R-DR92-OIN3, R-DSGZ-2ADS)
+- Phase 61  ⬜  realizes D18,D20                      — embeddings root seam: free-flow, supplied pricing, dimension verification (R-D5AV-SNAL, R-D6IS-6F1A, R-D2V3-13T7, R-D42Z-EVJW, R-D8YK-XYIO)
+- Phase 62  ⬜  realizes D19                          — embedding adapters to the dumb layer (R-D7QO-K6RZ)
+- Phase 63  ⬜  realizes D24,D25                      — live integration: OpenRouter reported cost & subscription round trip (R-DF22-UT85, R-DJXO-DW6X)
+- Phase 64  ⬜  realizes —                            — Release: minor version bump to v0.3.0

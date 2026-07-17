@@ -693,3 +693,64 @@ The context cost of a large tool set is front-loaded: every registered tool's fu
 - **History references constrain removal, not addition.** Replayed `tool_use` blocks referencing a tool absent from the current `tools` array are rejected or degraded by some providers — so *unloading* is hazardous while *loading* is safe. Monotonic growth is the safe shape.
 - **Prompt-cache interaction (Anthropic explicit caching).** The cache matches byte-identical prefixes at breakpoints. Appending new tools at the **tail** of the tools array preserves the previously cached prefix (old prefix re-read from cache, fresh write for the tail only); inserting into the middle — e.g. by re-sorting the merged set alphabetically — invalidates everything after the insertion point on every subsequent round-trip. Gemini/OpenAI implicit caching is prefix-based too, but Gemini's dialect conversion re-sorts tool declarations anyway (adapter-owned), so the append guarantee is meaningful chiefly where the explicit breakpoint lives.
 - **Catalog placement.** The blurb+names index must be resident for the model to know what exists. Two candidate homes: the system prompt (requires the library to mutate consumer prose) or the *description of the search/load meta-tool itself* (rides the tools block, cache-eligible, owned by the tool surface). Harness practice varies; for a library the meta-tool description is the non-invasive spot.
+
+## 14. OpenRouter — the aggregator wire, cost reporting, and routing (design-informing)
+
+Verified against OpenRouter's live documentation 2026-07-17 (docs/use-cases/usage-accounting, docs/features/provider-routing, docs/use-cases/oauth-pkce).
+
+### 14.1 The wire
+
+- One API for every model it serves: **OpenAI Chat-Completions-compatible**, base `https://openrouter.ai/api/v1`, bearer auth (`Authorization: Bearer <key>`). SSE streaming as standard chat-completions. This is the same protocol family AgentKit's `internal/openaicompat` already speaks.
+- Model ids are **vendor-namespaced free-form slugs** (`anthropic/claude-opus-4-8`, `z-ai/glm-5.2`); new models are typically served day-one. There is no meaningful closed model set — hundreds of ids, changing weekly.
+- **Model-suffix routing shortcuts** ride the model string itself: `:nitro` (= sort by throughput), `:floor` (= sort by price). A free-form model string passthrough gets these for free.
+
+### 14.2 Cost reporting (the fact the cost seam leans on)
+
+- **Every response carries usage + cost automatically** — no request parameter needed. The former opt-ins (`usage: {include: true}`, `stream_options: {include_usage: true}`) are deprecated no-ops.
+- Response `usage` carries: `prompt_tokens`, `completion_tokens`, `total_tokens`, plus detail breakdowns (`cached_tokens`, `reasoning_tokens`, `cache_write_tokens`, …) and **`cost`** — the total charged, denominated in OpenRouter credits (USD-pegged) — plus `cost_details.upstream_inference_cost`.
+- **Streaming**: the usage/cost object arrives in the **final SSE frame** — the same place `openaicompat` already reads usage from.
+- **BYOK**: with a vendor key attached to the OpenRouter account, `cost` holds OpenRouter's fee and `cost_details.upstream_inference_cost` holds the vendor-side spend (populated only for BYOK; otherwise 0/null). Effective total = `cost + upstream_inference_cost` — correct on both payment paths with zero client configuration.
+- Pricing structure: no per-token markup on the credits path (5.5% credit-purchase fee); BYOK = direct vendor rates, ~1M requests/month free of routing fee, 5% beyond. At AgentKit-consumer volumes (thousands of calls/month) BYOK overhead ≈ $0. **BYOK vs credits requires nothing in client code** — it is account configuration.
+
+### 14.3 Provider routing controls
+
+A top-level request-body object `provider: {…}` steers routing: `order` (provider sequence), `allow_fallbacks` (default true), `only`/`ignore` (provider allow/deny lists), `sort` (`"price"`/`"throughput"`/`"latency"`), `max_price` (per-Mtok spend caps), `quantizations`, `require_parameters`, `data_collection: "deny"`, `zdr` (zero-data-retention only). These evolve frequently — a reason to pass them as an opaque body fragment rather than a typed core surface.
+
+### 14.4 Reasoning parameter
+
+OpenRouter normalizes reasoning across models via a top-level `reasoning` request object: `{"effort": "high"}` (effort-enum models), `{"max_tokens": N}` (budget models), `{"enabled": false}` (disable). This is a *different encoding* than Z.ai's `thinking`/`reasoning_effort` fields on the same chat-completions wire — the openrouter adapter needs its own reasoning lowering. (Exact accepted values are model-dependent; OpenRouter passes through and the upstream judges — re-verify the object shape before release.)
+
+### 14.5 Auth acquisition
+
+API keys are created in the dashboard, or minted programmatically via **OAuth PKCE** (`https://openrouter.ai/auth` → callback `code` → POST `https://openrouter.ai/api/v1/auth/keys` → an ordinary API key). The PKCE flow's end product is a static key — construction-time credential handling is unaffected by how the key was obtained. Usage bills to the authenticating user's account.
+
+## 15. OpenAI ChatGPT-subscription auth — the Codex-backend path (design-informing)
+
+Gathered from the working notes in `openai-auth.md` (2026-07) and verified locally against a real `~/.codex/auth.json` (structure only): OpenAI permits and endorses using a ChatGPT Plus/Pro subscription from third-party harnesses (OpenCode et al. do this in production). Not contractually guaranteed — Anthropic's and Google's equivalents were later restricted — a risk noted, not a blocker.
+
+### 15.1 The credential store
+
+The official `codex` CLI writes plaintext JSON at `~/.codex/auth.json` (mode `0600`; `$CODEX_HOME` overrides the dir):
+
+- `auth_mode`: `"chatgpt"` or `"apikey"`; `OPENAI_API_KEY`: null under subscription
+- `tokens.access_token` (short-lived JWT bearer, carries `exp`), `tokens.refresh_token` (opaque, long-lived), `tokens.id_token` (OIDC), `tokens.account_id` (UUID — stored as a **plain field**, so no JWT decoding is needed to obtain it)
+- `last_refresh` (RFC3339). Sessions go stale after ~8 days without a successful refresh.
+
+Local verification 2026-07-17: the file exists on the dev machine with exactly this key structure — live integration tests can be gated on its presence.
+
+### 15.2 The wire
+
+- Endpoint: `https://chatgpt.com/backend-api/codex/responses` — the **Responses API shape** (which AgentKit's `openai` adapter already speaks: `store:false`, `include:["reasoning.encrypted_content"]`, System→`instructions` are already fixed adapter behavior). OAuth tokens are **rejected** by `api.openai.com/v1/*`.
+- Required headers: `Authorization: Bearer <access_token>`, `chatgpt-account-id: <account_id>`, `originator: codex_cli_rs`, `OpenAI-Beta: responses=experimental`.
+- Body constraints enforced by the backend: `store:false`, mandatory `instructions`, `include:["reasoning.encrypted_content"]` — all already the adapter's fixed behavior.
+- Model set is gated by the backend (gpt-5.x-codex family); an unsupported model fails loudly with a backend error — consistent with free-flow model strings.
+
+### 15.3 Login & refresh (headless-capable)
+
+- Login is OAuth 2.0 **PKCE** against `auth.openai.com`, public client id `app_EMoamEEZ73f0CkXaXp7hrann`, registered redirect `http://localhost:1455/auth/callback`. Headless flow (no browser on the box): print the authorize URL; the user opens it on any machine; the localhost redirect fails to connect but the browser URL bar carries the `code`; the user pastes the full callback URL back; exchange `POST auth.openai.com/oauth/token` (`grant_type=authorization_code`, `code_verifier`) from the server. This is OpenCode's proven "manual URL paste" technique. Two items to pin at build time by capturing one real login: the exact `scope` string, and whether a device-code flow exists for this client id.
+- Refresh: `POST auth.openai.com/oauth/token` (`grant_type=refresh_token`, same client id); rotated tokens are written back atomically. Refresh proactively before `exp` and reactively on 401.
+- **Refresh-token lineages are per-login.** Copying one auth.json to two machines shares a lineage — rotation on one invalidates the other. Two independent logins coexist fine (like two signed-in devices), sharing only the account-level rate-limit pool. Consequence for testing: live tests against the operator's real codex-owned file must read/use only; refresh-and-rewrite is exercised only against files AgentKit's own login created.
+
+### 15.4 Cost
+
+The backend reports **no cost** and the subscription is flat-rate; the only computable per-call figure is API-rate-equivalent pricing. Decision: subscription-mode turns are costed exactly like API-key turns (catalog/consumer-supplied rates), documented as **notional API-rate-equivalent, not actual spend**. No flag distinguishes it — documentation only (operator decision, 2026-07-17).
