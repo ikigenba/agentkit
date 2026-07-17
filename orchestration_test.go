@@ -1,6 +1,7 @@
 package agentkit_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -34,7 +35,6 @@ var testPricing = agentkit.Pricing{Tiers: []agentkit.RateTier{{
 
 type fakeProvider struct {
 	name        string
-	models      map[string]agentkit.Pricing
 	roundTrips  []*agentkit.RoundTrip
 	roundTripFn func(context.Context, *agentkit.Request) *agentkit.RoundTrip
 	calls       []agentkit.Request
@@ -43,7 +43,6 @@ type fakeProvider struct {
 func newFakeProvider(roundTrips ...*agentkit.RoundTrip) *fakeProvider {
 	return &fakeProvider{
 		name:       "fake",
-		models:     map[string]agentkit.Pricing{testModel: testPricing},
 		roundTrips: roundTrips,
 	}
 }
@@ -63,11 +62,6 @@ func (p *fakeProvider) RoundTrip(ctx context.Context, req *agentkit.Request) *ag
 
 func (p *fakeProvider) Name() string {
 	return p.name
-}
-
-func (p *fakeProvider) Pricing(model string) (agentkit.Pricing, bool) {
-	pricing, ok := p.models[model]
-	return pricing, ok
 }
 
 func TestSendBoundaryValidation(t *testing.T) {
@@ -112,20 +106,19 @@ func TestSendBoundaryValidation(t *testing.T) {
 	})
 }
 
-func TestSendRejectsInvalidModelAndToolSetup(t *testing.T) {
+func TestSendAcceptsFreeFlowModelAndRejectsInvalidToolSetup(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("unknown model", func(t *testing.T) {
-		// R-7GGH-BPYN
 		provider := newFakeProvider()
 		conv := &agentkit.Conversation{Provider: provider, Model: "unknown-model"}
 		stream := conv.Send(ctx, "hello")
 		drain(stream)
-		if !errors.Is(stream.Err(), agentkit.ErrInvalidConfig) {
-			t.Fatalf("Err() = %v, want ErrInvalidConfig", stream.Err())
+		if stream.Err() != nil {
+			t.Fatalf("Err() = %v, want nil", stream.Err())
 		}
-		if len(provider.calls) != 0 {
-			t.Fatalf("provider calls = %d, want 0", len(provider.calls))
+		if len(provider.calls) != 1 || provider.calls[0].Model != "unknown-model" {
+			t.Fatalf("provider calls/model = %d/%q, want 1/unknown-model", len(provider.calls), provider.calls[0].Model)
 		}
 	})
 
@@ -236,12 +229,130 @@ func TestTextOnlyTurnStreamsAndCommitsHistory(t *testing.T) {
 	}
 }
 
+func TestReportedCostBeatsSuppliedPricingAndAccumulates(t *testing.T) {
+	// R-CZ7D-VSL4
+	usage := agentkit.Usage{InputUncached: 2, Output: 3, Total: 5}
+	provider := newFakeProvider(
+		agentkit.NewRoundTrip(assistant(agentkit.TextBlock{Text: "first"}), agentkit.FinishStop, usage, nil, nil, 17, true),
+		agentkit.NewRoundTrip(assistant(agentkit.TextBlock{Text: "second"}), agentkit.FinishStop, usage, nil, nil, 0, true),
+	)
+	pricing := agentkit.Pricing{Tiers: []agentkit.RateTier{{InputUncached: 100, Output: 200}}}
+	conv := &agentkit.Conversation{Provider: provider, Model: testModel, Pricing: &pricing}
+
+	first := conv.Send(context.Background(), "one")
+	drain(first)
+	if first.Err() != nil || first.Cost() != 17 {
+		t.Fatalf("first Err()/Cost() = %v/%d, want nil/17", first.Err(), first.Cost())
+	}
+	second := conv.Send(context.Background(), "two")
+	drain(second)
+	if second.Err() != nil || second.Cost() != 0 {
+		t.Fatalf("second Err()/Cost() = %v/%d, want nil/0 for present reported zero", second.Err(), second.Cost())
+	}
+	if got := conv.TotalCost(); got != 17 {
+		t.Fatalf("TotalCost() = %d, want 17", got)
+	}
+	if len(first.Warnings()) != 0 || len(second.Warnings()) != 0 {
+		t.Fatalf("reported costs produced warnings: first=%#v second=%#v", first.Warnings(), second.Warnings())
+	}
+}
+
+func TestSuppliedPricingRatesRoundTripUsageAtSelectedTier(t *testing.T) {
+	// R-D0FA-9KBT
+	usage := agentkit.Usage{
+		InputUncached:   61,
+		CacheReadInput:  20,
+		CacheWriteInput: 20,
+		CacheWrite5m:    7,
+		CacheWrite1h:    13,
+		Output:          3,
+		ReasoningOutput: 5,
+		Total:           109,
+	}
+	pricing := agentkit.Pricing{Tiers: []agentkit.RateTier{
+		{MinInputTokens: 0, InputUncached: 1, CacheReadInput: 2, CacheWrite5m: 3, CacheWrite1h: 4, Output: 5},
+		{MinInputTokens: 101, InputUncached: 11, CacheReadInput: 13, CacheWrite5m: 17, CacheWrite1h: 19, Output: 23},
+	}}
+	provider := newFakeProvider(agentkit.NewRoundTrip(
+		assistant(agentkit.TextBlock{Text: "priced"}), agentkit.FinishStop, usage, nil, nil, 0, false,
+	))
+	conv := &agentkit.Conversation{Provider: provider, Model: testModel, Pricing: &pricing}
+
+	stream := conv.Send(context.Background(), "hello")
+	drain(stream)
+	want := agentkit.Cost(61*11 + 20*13 + 7*17 + 13*19 + (3+5)*23)
+	if stream.Err() != nil || stream.Cost() != want {
+		t.Fatalf("Err()/Cost() = %v/%d, want nil/%d", stream.Err(), stream.Cost(), want)
+	}
+	if conv.TotalCost() != want {
+		t.Fatalf("TotalCost() = %d, want %d", conv.TotalCost(), want)
+	}
+	if len(stream.Warnings()) != 0 {
+		t.Fatalf("Warnings() = %#v, want none", stream.Warnings())
+	}
+}
+
+func TestUnknownCostWarnsEveryRoundTripUntilPricingSupplied(t *testing.T) {
+	// R-D1N6-NC2I
+	provider := newFakeProvider(textRoundTrip("one"), textRoundTrip("two"), textRoundTrip("three"))
+	var logs bytes.Buffer
+	conv := &agentkit.Conversation{Provider: provider, Model: testModel, Log: &logs}
+
+	for _, prompt := range []string{"one", "two"} {
+		stream := conv.Send(context.Background(), prompt)
+		drain(stream)
+		if stream.Err() != nil || stream.Cost() != 0 {
+			t.Fatalf("%s Err()/Cost() = %v/%d, want nil/0", prompt, stream.Err(), stream.Cost())
+		}
+		warnings := stream.Warnings()
+		if len(warnings) != 1 || warnings[0].Setting != "cost" || warnings[0].Code != agentkit.WarnCostUnknown {
+			t.Fatalf("%s Warnings() = %#v, want exactly one cost/WarnCostUnknown", prompt, warnings)
+		}
+	}
+	if got := countLoggedWarnings(t, logs.Bytes(), agentkit.WarnCostUnknown); got != 2 {
+		t.Fatalf("cost warning log records = %d, want one for each affected turn", got)
+	}
+
+	pricing := testPricing
+	conv.Pricing = &pricing
+	third := conv.Send(context.Background(), "three")
+	drain(third)
+	if third.Err() != nil || third.Cost() != testPricing.Cost(third.Usage()) {
+		t.Fatalf("priced Err()/Cost() = %v/%d, want nil/%d", third.Err(), third.Cost(), testPricing.Cost(third.Usage()))
+	}
+	if len(third.Warnings()) != 0 {
+		t.Fatalf("priced Warnings() = %#v, want none", third.Warnings())
+	}
+	if got := countLoggedWarnings(t, logs.Bytes(), agentkit.WarnCostUnknown); got != 2 {
+		t.Fatalf("cost warning log records after pricing = %d, want still 2", got)
+	}
+}
+
+func countLoggedWarnings(t *testing.T, raw []byte, code agentkit.WarningCode) int {
+	t.Helper()
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	count := 0
+	for {
+		var record struct {
+			Type    string            `json:"type"`
+			Warning *agentkit.Warning `json:"warning"`
+		}
+		if err := decoder.Decode(&record); err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			t.Fatalf("decode log record: %v", err)
+		}
+		if record.Type == "warning" && record.Warning != nil && record.Warning.Code == code {
+			count++
+		}
+	}
+	return count
+}
+
 func TestProviderSwitchPreservesHistoryAndUsesNewBackend(t *testing.T) {
 	first := newFakeProvider(textRoundTrip("first"))
 	second := newFakeProvider(textRoundTrip("second"))
-	first.models = map[string]agentkit.Pricing{testModel: testPricing}
-	second.models = map[string]agentkit.Pricing{secondModel: testPricing}
-
 	conv := &agentkit.Conversation{Provider: first, Model: testModel}
 	drain(conv.Send(context.Background(), "one"))
 	conv.Provider = second
@@ -997,7 +1108,7 @@ func drain(stream *agentkit.Stream) []agentkit.Event {
 }
 
 func newRoundTrip(message agentkit.Message, finish agentkit.FinishReason, usage agentkit.Usage, err error) *agentkit.RoundTrip {
-	return agentkit.NewRoundTrip(message, finish, usage, nil, err)
+	return agentkit.NewRoundTrip(message, finish, usage, nil, err, 0, false)
 }
 
 func textRoundTrip(text string) *agentkit.RoundTrip {
@@ -1288,7 +1399,7 @@ func cloneMessages(messages []agentkit.Message) []agentkit.Message {
 func TestNewRoundTripAccessorsDefensivelyCopy(t *testing.T) {
 	warnings := []agentkit.Warning{{Setting: "reasoning", Detail: "degraded"}}
 	raw := json.RawMessage(`{"q":"x"}`)
-	rt := agentkit.NewRoundTrip(assistant(agentkit.ToolUseBlock{ID: testToolUseID, Name: "lookup", Input: raw}), agentkit.FinishStop, agentkit.Usage{Total: 1}, warnings, nil)
+	rt := agentkit.NewRoundTrip(assistant(agentkit.ToolUseBlock{ID: testToolUseID, Name: "lookup", Input: raw}), agentkit.FinishStop, agentkit.Usage{Total: 1}, warnings, nil, 7, true)
 	warnings[0].Detail = "mutated"
 	raw[0] = ' '
 
@@ -1302,6 +1413,9 @@ func TestNewRoundTripAccessorsDefensivelyCopy(t *testing.T) {
 	}
 	if rt.Finish() != agentkit.FinishStop || rt.Usage().Total != 1 || rt.Err() != nil {
 		t.Fatalf("RoundTrip accessors returned inconsistent values")
+	}
+	if cost, ok := rt.ReportedCost(); cost != 7 || !ok {
+		t.Fatalf("ReportedCost() = %d/%v, want 7/true", cost, ok)
 	}
 }
 

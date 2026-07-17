@@ -323,7 +323,7 @@ func TestContextCancellationDuringBackoffStopsRetrying(t *testing.T) {
 }
 
 func retryRoundTrip(message Message, finish FinishReason, err error) *RoundTrip {
-	return NewRoundTrip(message, finish, Usage{InputUncached: 1, Output: 1, Total: 2}, nil, err)
+	return NewRoundTrip(message, finish, Usage{InputUncached: 1, Output: 1, Total: 2}, nil, err, 0, false)
 }
 
 func retryErrorRoundTrip(err error) *RoundTrip {

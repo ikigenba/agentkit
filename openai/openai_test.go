@@ -321,6 +321,7 @@ func TestProviderWarnsAndDefaultsNativeReasoningAtBuildTime(t *testing.T) {
 			conv := &agentkit.Conversation{
 				Provider: New("test-key", WithBaseURL(server.URL), WithHTTPClient(server.Client())),
 				Model:    tt.model,
+				Pricing:  &agentkit.Pricing{},
 				Gen:      agentkit.GenSettings{Reasoning: tt.reasoning},
 			}
 			stream := conv.Send(context.Background(), "hello")
@@ -382,6 +383,7 @@ func TestConversationWarnsWhenCarriedReasoningInvalidForNewModel(t *testing.T) {
 	conv := &agentkit.Conversation{
 		Provider: New("test-key", WithBaseURL(server.URL), WithHTTPClient(server.Client())),
 		Model:    ModelGPT55,
+		Pricing:  &agentkit.Pricing{},
 		Gen:      agentkit.GenSettings{Reasoning: agentkit.Level("low")},
 	}
 
@@ -636,67 +638,6 @@ func TestOpenAIErrorMappingPreservesRawAndRetryAfter(t *testing.T) {
 				t.Fatalf("retry-after = %s, want %s", providerErr.RetryAfter, tt.wantDelay)
 			}
 		})
-	}
-}
-
-func TestOpenAIModelRegistryPricingAndTierSelection(t *testing.T) {
-	p := New("test-key")
-	expected := map[string]agentkit.Pricing{
-		ModelGPT55Pro: {Tiers: []agentkit.RateTier{{MinInputTokens: 0, InputUncached: 30000, CacheReadInput: 30000, Output: 180000}}},
-		ModelGPT55: {Tiers: []agentkit.RateTier{
-			{MinInputTokens: 0, InputUncached: 5000, CacheReadInput: 500, Output: 30000},
-			{MinInputTokens: 272001, InputUncached: 10000, CacheReadInput: 1000, Output: 45000},
-		}},
-		ModelGPT54: {Tiers: []agentkit.RateTier{
-			{MinInputTokens: 0, InputUncached: 2500, CacheReadInput: 250, Output: 15000},
-			{MinInputTokens: 272001, InputUncached: 5000, CacheReadInput: 500, Output: 22500},
-		}},
-		ModelGPT54Mini: {Tiers: []agentkit.RateTier{{MinInputTokens: 0, InputUncached: 750, CacheReadInput: 75, Output: 4500}}},
-		ModelGPT54Nano: {Tiers: []agentkit.RateTier{{MinInputTokens: 0, InputUncached: 200, CacheReadInput: 20, Output: 1250}}},
-	}
-
-	// R-VDY4-AP7H, R-V1KQ-IKI6
-	for model, want := range expected {
-		got, ok := p.Pricing(model)
-		if !ok {
-			t.Fatalf("Pricing(%q) returned ok=false", model)
-		}
-		if !reflect.DeepEqual(got, want) {
-			t.Fatalf("Pricing(%q) = %#v, want %#v", model, got, want)
-		}
-	}
-
-	// R-V2SM-WC8V
-	for _, model := range []string{ModelGPT55, ModelGPT54} {
-		pricing, _ := p.Pricing(model)
-		base := pricing.Cost(agentkit.Usage{InputUncached: 272001, Output: 1})
-		high := pricing.Cost(agentkit.Usage{InputUncached: 272002, Output: 1})
-		if high <= base {
-			t.Fatalf("%s high-tier cost %d <= base-tier cost %d", model, high, base)
-		}
-	}
-}
-
-func TestGPT56ModelRegistryUsesSingleTierPricing(t *testing.T) {
-	p := New("test-key")
-	tests := map[string]agentkit.RateTier{
-		ModelGPT56Sol:   {MinInputTokens: 0, InputUncached: 5000, CacheReadInput: 500, Output: 30000},
-		ModelGPT56Terra: {MinInputTokens: 0, InputUncached: 2500, CacheReadInput: 250, Output: 15000},
-		ModelGPT56Luna:  {MinInputTokens: 0, InputUncached: 1000, CacheReadInput: 100, Output: 6000},
-	}
-
-	// R-CDK0-SUGR
-	for model, want := range tests {
-		pricing, ok := p.Pricing(model)
-		if !ok {
-			t.Fatalf("Pricing(%q) returned ok=false", model)
-		}
-		if len(pricing.Tiers) != 1 {
-			t.Fatalf("Pricing(%q) has %d tiers, want 1", model, len(pricing.Tiers))
-		}
-		if got := pricing.Tiers[0]; got != want {
-			t.Fatalf("Pricing(%q) tier = %#v, want %#v", model, got, want)
-		}
 	}
 }
 

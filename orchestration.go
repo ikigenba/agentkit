@@ -33,16 +33,16 @@ var (
 type Provider interface {
 	RoundTrip(ctx context.Context, req *Request) *RoundTrip
 	Name() string
-	Pricing(model string) (Pricing, bool)
 }
 
 // Request is one provider round-trip's input, built by the orchestrator.
 type Request struct {
-	Model    string
-	System   string
-	Messages []Message
-	Tools    []Tool
-	Gen      GenSettings
+	Model           string
+	System          string
+	Messages        []Message
+	Tools           []Tool
+	Gen             GenSettings
+	ProviderOptions json.RawMessage
 }
 
 // MCPServer is a remote MCP Streamable-HTTP tool server attached to a
@@ -67,21 +67,25 @@ const (
 
 // RoundTrip is one low-level provider call result.
 type RoundTrip struct {
-	message  Message
-	finish   FinishReason
-	usage    Usage
-	warnings []Warning
-	err      error
+	message        Message
+	finish         FinishReason
+	usage          Usage
+	warnings       []Warning
+	err            error
+	reportedCost   Cost
+	reportedCostOK bool
 }
 
 // NewRoundTrip builds a provider SPI result.
-func NewRoundTrip(message Message, finish FinishReason, usage Usage, warnings []Warning, err error) *RoundTrip {
+func NewRoundTrip(message Message, finish FinishReason, usage Usage, warnings []Warning, err error, reportedCost Cost, reportedCostOK bool) *RoundTrip {
 	return &RoundTrip{
-		message:  cloneMessage(message),
-		finish:   finish,
-		usage:    usage,
-		warnings: append([]Warning(nil), warnings...),
-		err:      err,
+		message:        cloneMessage(message),
+		finish:         finish,
+		usage:          usage,
+		warnings:       append([]Warning(nil), warnings...),
+		err:            err,
+		reportedCost:   reportedCost,
+		reportedCostOK: reportedCostOK,
 	}
 }
 
@@ -125,6 +129,14 @@ func (r *RoundTrip) Err() error {
 	return r.err
 }
 
+// ReportedCost returns the provider-stated charge for this call, when present.
+func (r *RoundTrip) ReportedCost() (Cost, bool) {
+	if r == nil {
+		return 0, false
+	}
+	return r.reportedCost, r.reportedCostOK
+}
+
 // Event is one observable item in a Conversation stream.
 type Event interface {
 	isEvent()
@@ -160,6 +172,7 @@ func (MessageDone) isEvent() {}
 type Conversation struct {
 	Provider          Provider
 	Model             string
+	Pricing           *Pricing
 	System            string
 	Log               io.Writer
 	Gen               GenSettings
@@ -200,10 +213,6 @@ func (c *Conversation) Send(ctx context.Context, userText string) *Stream {
 		return errorStream(ErrStreamPending)
 	}
 
-	pricing, ok := c.Provider.Pricing(c.Model)
-	if !ok {
-		return errorStream(ErrInvalidConfig)
-	}
 	tools, warnings, err := c.resolveTools(ctx)
 	if err != nil {
 		return errorStream(err)
@@ -218,7 +227,7 @@ func (c *Conversation) Send(ctx context.Context, userText string) *Stream {
 	s := &Stream{warnings: warnings}
 	s.run = func(yield func(Event) bool) (bool, error) {
 		s.log(c, LogRecord{Type: "turn_start", Provider: c.Provider.Name(), Model: c.Model})
-		success, err := c.runTurn(ctx, &history, tools, pricing, s, yield)
+		success, err := c.runTurn(ctx, &history, tools, s, yield)
 		if success {
 			usage := s.usage
 			cost := s.cost
@@ -288,7 +297,7 @@ func (c *Conversation) TotalCost() Cost {
 	return c.totalCost
 }
 
-func (c *Conversation) runTurn(ctx context.Context, history *[]Message, tools []Tool, pricing Pricing, s *Stream, yield func(Event) bool) (bool, error) {
+func (c *Conversation) runTurn(ctx context.Context, history *[]Message, tools []Tool, s *Stream, yield func(Event) bool) (bool, error) {
 	toolByName := make(map[string]Tool, len(tools))
 	for _, tool := range tools {
 		toolByName[tool.Name()] = tool
@@ -328,10 +337,22 @@ func (c *Conversation) runTurn(ctx context.Context, history *[]Message, tools []
 
 		message := rt.Message()
 		*history = append(*history, message)
-		s.usage = addUsage(s.usage, rt.Usage())
-		s.warnings = append(s.warnings, rt.Warnings()...)
-		s.cost = pricing.Cost(s.usage)
-		for _, warning := range rt.Warnings() {
+		usage := rt.Usage()
+		s.usage = addUsage(s.usage, usage)
+		warnings := rt.Warnings()
+		if reported, ok := rt.ReportedCost(); ok {
+			s.cost += reported
+		} else if c.Pricing != nil {
+			s.cost += c.Pricing.Cost(usage)
+		} else {
+			warnings = append(warnings, Warning{
+				Setting: "cost",
+				Code:    WarnCostUnknown,
+				Detail:  "no reported or consumer-supplied cost; applied 0",
+			})
+		}
+		s.warnings = append(s.warnings, warnings...)
+		for _, warning := range warnings {
 			warning := warning
 			s.log(c, LogRecord{Type: "warning", Warning: &warning})
 		}

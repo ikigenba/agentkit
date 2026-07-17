@@ -54,59 +54,47 @@ func (p *Provider) Name() string {
 	return p.cfg.Provider
 }
 
-// Pricing returns the provider-local model pricing.
-func (p *Provider) Pricing(model string) (agentkit.Pricing, bool) {
-	if p == nil {
-		return agentkit.Pricing{}, false
-	}
-	pricing, ok := p.cfg.Pricing[model]
-	return pricing, ok
-}
-
 // RoundTrip performs one Chat-Completions model call.
 func (p *Provider) RoundTrip(ctx context.Context, req *agentkit.Request) *agentkit.RoundTrip {
 	if p == nil || p.cfg.APIKey == "" || req == nil || p.cfg.BaseURL == "" {
-		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, nil, agentkit.ErrInvalidConfig)
-	}
-	if _, ok := p.Pricing(req.Model); !ok {
-		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, nil, agentkit.ErrInvalidConfig)
+		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, nil, agentkit.ErrInvalidConfig, 0, false)
 	}
 
 	body, warnings, err := p.buildRequest(req)
 	if err != nil {
-		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, err)
+		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, err, 0, false)
 	}
 
 	httpReq, err := httpx.JSONRequest(ctx, http.MethodPost, p.cfg.BaseURL+"/chat/completions", body)
 	if err != nil {
-		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, p.transportError(err))
+		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, p.transportError(err), 0, false)
 	}
 	httpReq.Header.Set("Authorization", "Bearer "+p.cfg.APIKey)
 	httpReq.Header.Set("Accept", "text/event-stream")
 
 	resp, err := httpx.Client(p.cfg.HTTPClient).Do(httpReq)
 	if err != nil {
-		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, p.transportError(err))
+		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, p.transportError(err), 0, false)
 	}
 	defer resp.Body.Close()
 
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, p.transportError(err))
+		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, p.transportError(err), 0, false)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, p.httpError(resp, raw))
+		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, p.httpError(resp, raw), 0, false)
 	}
 
 	frames, err := sse.ReadAll(strings.NewReader(string(raw)))
 	if err != nil {
-		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, p.transportError(err))
+		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, p.transportError(err), 0, false)
 	}
 	assembled, err := p.assemble(frames)
 	if err != nil {
-		return agentkit.NewRoundTrip(assembled.message, assembled.finish, assembled.usage, warnings, err)
+		return agentkit.NewRoundTrip(assembled.message, assembled.finish, assembled.usage, warnings, err, 0, false)
 	}
-	return agentkit.NewRoundTrip(assembled.message, assembled.finish, assembled.usage, warnings, nil)
+	return agentkit.NewRoundTrip(assembled.message, assembled.finish, assembled.usage, warnings, nil, 0, false)
 }
 
 type chatRequest struct {

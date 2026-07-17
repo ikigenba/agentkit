@@ -317,6 +317,7 @@ func TestGoogleReasoningOffDegradesWithWarningOnPro(t *testing.T) {
 	conv := &agentkit.Conversation{
 		Provider: New("key", WithBaseURL(server.URL), WithHTTPClient(server.Client())),
 		Model:    ModelPro25,
+		Pricing:  &agentkit.Pricing{},
 		Gen:      agentkit.GenSettings{Reasoning: agentkit.DisableReasoning()},
 	}
 	stream := conv.Send(context.Background(), "hello")
@@ -846,41 +847,6 @@ func TestGoogleDropsForeignReasoningFromWireRequest(t *testing.T) {
 	}
 }
 
-func TestGooglePricingRegistryAndTierSelection(t *testing.T) {
-	provider := New("key")
-	expected := map[string]agentkit.Pricing{
-		ModelFlash25: {Tiers: []agentkit.RateTier{{MinInputTokens: 0, InputUncached: 300, CacheReadInput: 30, Output: 2500}}},
-		ModelPro25: {Tiers: []agentkit.RateTier{{MinInputTokens: 0, InputUncached: 1250, CacheReadInput: 125, Output: 10000}, {
-			MinInputTokens: 200001, InputUncached: 2500, CacheReadInput: 250, Output: 15000,
-		}}},
-		ModelFlash35: {Tiers: []agentkit.RateTier{{MinInputTokens: 0, InputUncached: 1500, CacheReadInput: 150, Output: 9000}}},
-		ModelLite31:  {Tiers: []agentkit.RateTier{{MinInputTokens: 0, InputUncached: 250, CacheReadInput: 25, Output: 1500}}},
-		ModelPro31Preview: {Tiers: []agentkit.RateTier{{MinInputTokens: 0, InputUncached: 2000, CacheReadInput: 200, Output: 12000}, {
-			MinInputTokens: 200001, InputUncached: 4000, CacheReadInput: 400, Output: 18000,
-		}}},
-	}
-
-	for model, want := range expected {
-		got, ok := provider.Pricing(model)
-		// R-V1KQ-IKI6
-		if !ok {
-			t.Fatalf("exported model %s did not resolve to pricing", model)
-		}
-		// R-VDY4-AP7H
-		if !reflect.DeepEqual(got, want) {
-			t.Fatalf("pricing for %s = %#v, want %#v", model, got, want)
-		}
-	}
-
-	pro25, _ := provider.Pricing(ModelPro25)
-	low := pro25.Cost(agentkit.Usage{InputUncached: 200000, Output: 1})
-	high := pro25.Cost(agentkit.Usage{InputUncached: 200001, Output: 1})
-	// R-V2SM-WC8V
-	if low != agentkit.Cost(200000*1250+10000) || high != agentkit.Cost(200001*2500+15000) {
-		t.Fatalf("Gemini tier selection mismatch: low=%d high=%d", low, high)
-	}
-}
-
 func TestGoogleSerializesPortableHistoryAfterProviderSwitch(t *testing.T) {
 	first := &scriptedProvider{}
 	var sawPriorToolBlocks bool
@@ -938,10 +904,6 @@ type scriptedProvider struct {
 
 func (p *scriptedProvider) Name() string { return "scripted" }
 
-func (p *scriptedProvider) Pricing(model string) (agentkit.Pricing, bool) {
-	return agentkit.Pricing{Tiers: []agentkit.RateTier{{MinInputTokens: 0}}}, true
-}
-
 func (p *scriptedProvider) RoundTrip(ctx context.Context, req *agentkit.Request) *agentkit.RoundTrip {
 	p.calls++
 	switch p.calls {
@@ -950,10 +912,10 @@ func (p *scriptedProvider) RoundTrip(ctx context.Context, req *agentkit.Request)
 			agentkit.ReasoningBlock{Opaque: json.RawMessage(`{"encrypted_content":"foreign"}`), Summary: "foreign", BoundToID: "abc_123"},
 			agentkit.ToolUseBlock{ID: "abc_123", Name: "lookup", Input: json.RawMessage(`{"q":"x"}`)},
 		}}
-		return agentkit.NewRoundTrip(msg, agentkit.FinishToolUse, agentkit.Usage{}, nil, nil)
+		return agentkit.NewRoundTrip(msg, agentkit.FinishToolUse, agentkit.Usage{}, nil, nil, 0, false)
 	default:
 		msg := agentkit.Message{Role: agentkit.RoleAssistant, Blocks: []agentkit.Block{agentkit.TextBlock{Text: "first done"}}}
-		return agentkit.NewRoundTrip(msg, agentkit.FinishStop, agentkit.Usage{}, nil, nil)
+		return agentkit.NewRoundTrip(msg, agentkit.FinishStop, agentkit.Usage{}, nil, nil, 0, false)
 	}
 }
 

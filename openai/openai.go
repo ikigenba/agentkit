@@ -93,57 +93,48 @@ func (p *Provider) Name() string {
 	return "openai"
 }
 
-// Pricing returns the model's baked-in pricing, if the model is supported.
-func (p *Provider) Pricing(model string) (agentkit.Pricing, bool) {
-	entry, ok := registry[model]
-	return entry.Pricing, ok
-}
-
 // RoundTrip performs one OpenAI Responses API model call.
 func (p *Provider) RoundTrip(ctx context.Context, req *agentkit.Request) *agentkit.RoundTrip {
 	if p == nil || p.apiKey == "" || req == nil {
-		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, nil, agentkit.ErrInvalidConfig)
-	}
-	if _, ok := p.Pricing(req.Model); !ok {
-		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, nil, agentkit.ErrInvalidConfig)
+		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, nil, agentkit.ErrInvalidConfig, 0, false)
 	}
 
 	body, warnings, err := p.buildRequest(req)
 	if err != nil {
-		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, err)
+		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, err, 0, false)
 	}
 
 	httpReq, err := httpx.JSONRequest(ctx, http.MethodPost, p.baseURL+"/v1/responses", body)
 	if err != nil {
-		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, providerTransportError(err))
+		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, providerTransportError(err), 0, false)
 	}
 	httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
 	httpReq.Header.Set("Accept", "text/event-stream")
 
 	resp, err := httpx.Client(p.client).Do(httpReq)
 	if err != nil {
-		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, providerTransportError(err))
+		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, providerTransportError(err), 0, false)
 	}
 	defer resp.Body.Close()
 
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, providerTransportError(err))
+		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, providerTransportError(err), 0, false)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, p.providerHTTPError(resp, raw))
+		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, p.providerHTTPError(resp, raw), 0, false)
 	}
 
 	frames, err := sse.ReadAll(strings.NewReader(string(raw)))
 	if err != nil {
-		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, providerTransportError(err))
+		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, providerTransportError(err), 0, false)
 	}
 	assembled, err := assemble(frames)
 	if err != nil {
-		return agentkit.NewRoundTrip(assembled.message, assembled.finish, assembled.usage, warnings, err)
+		return agentkit.NewRoundTrip(assembled.message, assembled.finish, assembled.usage, warnings, err, 0, false)
 	}
 	warnings = append(warnings, assembled.warnings...)
-	return agentkit.NewRoundTrip(assembled.message, assembled.finish, assembled.usage, warnings, nil)
+	return agentkit.NewRoundTrip(assembled.message, assembled.finish, assembled.usage, warnings, nil, 0, false)
 }
 
 // Reasoning exposes OpenAI's static native reasoning vocabulary.

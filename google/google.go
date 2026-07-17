@@ -205,18 +205,13 @@ func (p *Provider) Name() string {
 	return "google"
 }
 
-func (p *Provider) Pricing(model string) (agentkit.Pricing, bool) {
-	entry, ok := modelRegistry[model]
-	return entry.Pricing, ok
-}
-
 func (p *Provider) UntranslatableSchemaConstructs(schema json.RawMessage) []string {
 	return untranslatableSchemaConstructs(schema)
 }
 
 func (p *Provider) RoundTrip(ctx context.Context, req *agentkit.Request) *agentkit.RoundTrip {
 	if req == nil {
-		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, nil, agentkit.ErrInvalidConfig)
+		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, nil, agentkit.ErrInvalidConfig, 0, false)
 	}
 
 	body, warnings := p.requestBody(req)
@@ -245,7 +240,7 @@ func (p *Provider) RoundTrip(ctx context.Context, req *agentkit.Request) *agentk
 	if err != nil {
 		return roundTripError(providerError(resp.StatusCode, raw, "", err.Error(), requestID(resp.Header), nil, 0))
 	}
-	return agentkit.NewRoundTrip(message, finish, usage, warnings, nil)
+	return agentkit.NewRoundTrip(message, finish, usage, warnings, nil, 0, false)
 }
 
 func (p *Provider) url(model string) string {
@@ -1059,7 +1054,7 @@ func embeddingRetryAfter(err error) time.Duration {
 }
 
 func roundTripError(err error) *agentkit.RoundTrip {
-	return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, nil, err)
+	return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, nil, err, 0, false)
 }
 
 type googleErrorBody struct {

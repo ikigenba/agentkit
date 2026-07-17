@@ -420,6 +420,7 @@ func TestAnthropicRequestMapsGenerationSettingsAndWarnings(t *testing.T) {
 		conv := &agentkit.Conversation{
 			Provider: New("key", WithBaseURL(server.URL), WithHTTPClient(server.Client())),
 			Model:    ModelSonnet46,
+			Pricing:  &agentkit.Pricing{},
 			Gen: agentkit.GenSettings{
 				Temperature: &temp,
 				TopP:        &topP,
@@ -458,7 +459,7 @@ func TestAnthropicRequestMapsGenerationSettingsAndWarnings(t *testing.T) {
 		}))
 		defer server.Close()
 
-		conv := &agentkit.Conversation{Provider: New("key", WithBaseURL(server.URL), WithHTTPClient(server.Client())), Model: ModelSonnet46}
+		conv := &agentkit.Conversation{Provider: New("key", WithBaseURL(server.URL), WithHTTPClient(server.Client())), Model: ModelSonnet46, Pricing: &agentkit.Pricing{}}
 		drain(conv.Send(context.Background(), "hello"))
 		for _, key := range []string{"temperature", "top_p", "thinking", "output_config"} {
 			if _, ok := body[key]; ok {
@@ -515,6 +516,7 @@ func TestAnthropicRequestMapsGenerationSettingsAndWarnings(t *testing.T) {
 				conv := &agentkit.Conversation{
 					Provider: New("key", WithBaseURL(server.URL), WithHTTPClient(server.Client())),
 					Model:    tt.model,
+					Pricing:  &agentkit.Pricing{},
 					Gen:      agentkit.GenSettings{Reasoning: tt.reasoning},
 				}
 				stream := conv.Send(context.Background(), "hello")
@@ -542,6 +544,7 @@ func TestAnthropicRequestMapsGenerationSettingsAndWarnings(t *testing.T) {
 		conv := &agentkit.Conversation{
 			Provider: New("key", WithBaseURL(server.URL), WithHTTPClient(server.Client())),
 			Model:    ModelSonnet46,
+			Pricing:  &agentkit.Pricing{},
 			Gen:      agentkit.GenSettings{Reasoning: agentkit.Level("xhigh")},
 		}
 		stream := conv.Send(context.Background(), "hello")
@@ -747,52 +750,6 @@ func TestAnthropicStreamErrorEventClassifiesFromEnvelopeType(t *testing.T) {
 			}
 			if !bytes.Equal(akErr.Raw, raw) {
 				t.Fatalf("Raw = %s, want %s", akErr.Raw, raw)
-			}
-		})
-	}
-}
-
-func TestAnthropicRegistryAndPricingTable(t *testing.T) {
-	provider := New("key")
-	models := []string{ModelOpus48, ModelSonnet46, ModelHaiku45, ModelFable5, ModelSonnet5}
-	for _, model := range models {
-		t.Run(model, func(t *testing.T) {
-			// R-V1KQ-IKI6
-			if _, ok := provider.Pricing(model); !ok {
-				t.Fatalf("Pricing(%q) ok=false, want true", model)
-			}
-		})
-	}
-
-	// R-VDY4-AP7H
-	want := map[string]agentkit.RateTier{
-		ModelOpus48:   {MinInputTokens: 0, InputUncached: 5000, CacheReadInput: 500, CacheWrite5m: 6250, CacheWrite1h: 10000, Output: 25000},
-		ModelSonnet46: {MinInputTokens: 0, InputUncached: 3000, CacheReadInput: 300, CacheWrite5m: 3750, CacheWrite1h: 6000, Output: 15000},
-		ModelHaiku45:  {MinInputTokens: 0, InputUncached: 1000, CacheReadInput: 100, CacheWrite5m: 1250, CacheWrite1h: 2000, Output: 5000},
-	}
-	for model, wantTier := range want {
-		pricing, _ := provider.Pricing(model)
-		if len(pricing.Tiers) != 1 || pricing.Tiers[0] != wantTier {
-			t.Fatalf("Pricing(%q) = %#v, want one tier %#v", model, pricing, wantTier)
-		}
-	}
-}
-
-func TestClaude5Pricing(t *testing.T) {
-	// R-CH7P-Y5OU
-	provider := New("key")
-	want := map[string]agentkit.RateTier{
-		ModelFable5:  {MinInputTokens: 0, InputUncached: 10000, CacheReadInput: 1000, CacheWrite5m: 12500, CacheWrite1h: 20000, Output: 50000},
-		ModelSonnet5: {MinInputTokens: 0, InputUncached: 3000, CacheReadInput: 300, CacheWrite5m: 3750, CacheWrite1h: 6000, Output: 15000},
-	}
-	for model, wantTier := range want {
-		t.Run(model, func(t *testing.T) {
-			pricing, ok := provider.Pricing(model)
-			if !ok {
-				t.Fatalf("Pricing(%q) ok=false, want true", model)
-			}
-			if len(pricing.Tiers) != 1 || pricing.Tiers[0] != wantTier {
-				t.Fatalf("Pricing(%q) = %#v, want one tier %#v", model, pricing, wantTier)
 			}
 		})
 	}

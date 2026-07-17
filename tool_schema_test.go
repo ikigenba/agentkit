@@ -17,7 +17,6 @@ type schemaTranslatorProvider struct {
 func newSchemaTranslatorProvider() *schemaTranslatorProvider {
 	provider := &schemaTranslatorProvider{}
 	provider.name = "schema-translator"
-	provider.models = map[string]agentkit.Pricing{testModel: testPricing}
 	return provider
 }
 
@@ -35,7 +34,7 @@ func TestCustomToolSchemaWarningAtSendBoundary(t *testing.T) {
 		"type":"object",
 		"additionalProperties":false
 	}`), func(context.Context, json.RawMessage) (string, error) { return "ok", nil })
-	conv := &agentkit.Conversation{Provider: provider, Model: testModel, Tools: []agentkit.Tool{tool}}
+	conv := &agentkit.Conversation{Provider: provider, Model: testModel, Pricing: &agentkit.Pricing{}, Tools: []agentkit.Tool{tool}}
 
 	stream := conv.Send(context.Background(), "hello")
 	drain(stream)

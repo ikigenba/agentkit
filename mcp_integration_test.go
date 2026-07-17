@@ -560,6 +560,7 @@ func TestMCPToolsJoinDeterministicOrderAndSchemaWarnings(t *testing.T) {
 	conv := &Conversation{
 		Provider: provider,
 		Model:    "mcp-model",
+		Pricing:  &Pricing{},
 		Tools:    []Tool{custom},
 		MCPServers: []MCPServer{
 			{Name: "srvZ", URL: serverA.URL},
@@ -636,7 +637,7 @@ func TestMCPToolsJoinDeterministicOrderAndSchemaWarnings(t *testing.T) {
 
 	for _, name := range []string{"google", "anthropic", "openai"} {
 		nonLimiter := &mcpTestProvider{name: name}
-		conv = &Conversation{Provider: nonLimiter, Model: "mcp-model", MCPServers: []MCPServer{{Name: "srvA", URL: serverB.URL}}}
+		conv = &Conversation{Provider: nonLimiter, Model: "mcp-model", Pricing: &Pricing{}, MCPServers: []MCPServer{{Name: "srvA", URL: serverB.URL}}}
 		stream = conv.Send(context.Background(), name)
 		drainMCP(stream)
 		// R-SNBB-LCH4
@@ -785,7 +786,7 @@ func (c *fakeMCPClock) Jitter(cap time.Duration) time.Duration {
 }
 
 func mcpRoundTrip(message Message, finish FinishReason, err error) *RoundTrip {
-	return NewRoundTrip(message, finish, Usage{InputUncached: 1, Output: 1, Total: 2}, nil, err)
+	return NewRoundTrip(message, finish, Usage{InputUncached: 1, Output: 1, Total: 2}, nil, err, 0, false)
 }
 
 func mcpTextRoundTrip(text string) *RoundTrip {

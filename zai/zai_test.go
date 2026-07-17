@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -253,6 +252,7 @@ func TestZaiNativeReasoningToggleLoweringAndDefaultWarning(t *testing.T) {
 			conv := &agentkit.Conversation{
 				Provider: New("test-key", WithBaseURL(server.URL), WithHTTPClient(server.Client())),
 				Model:    ModelGLM47,
+				Pricing:  &agentkit.Pricing{},
 				Gen:      agentkit.GenSettings{Reasoning: tt.reasoning},
 			}
 			stream := conv.Send(context.Background(), "hello")
@@ -408,27 +408,6 @@ func TestZaiErrorMappingPreservesRawRetryAfterAndCodes(t *testing.T) {
 				t.Fatalf("retry-after = %s, want %s", providerErr.RetryAfter, tt.wantDelay)
 			}
 		})
-	}
-}
-
-func TestZaiModelRegistryPricing(t *testing.T) {
-	p := New("test-key")
-	expected := map[string]agentkit.Pricing{
-		ModelGLM52: {Tiers: []agentkit.RateTier{{MinInputTokens: 0, InputUncached: 1400, CacheReadInput: 260, Output: 4400}}},
-		ModelGLM51: {Tiers: []agentkit.RateTier{{MinInputTokens: 0, InputUncached: 1400, CacheReadInput: 260, Output: 4400}}},
-		ModelGLM47: {Tiers: []agentkit.RateTier{{MinInputTokens: 0, InputUncached: 600, CacheReadInput: 110, Output: 2200}}},
-		ModelGLM46: {Tiers: []agentkit.RateTier{{MinInputTokens: 0, InputUncached: 600, CacheReadInput: 110, Output: 2200}}},
-	}
-
-	// R-VDY4-AP7H, R-V1KQ-IKI6
-	for model, want := range expected {
-		got, ok := p.Pricing(model)
-		if !ok {
-			t.Fatalf("Pricing(%q) returned ok=false", model)
-		}
-		if !reflect.DeepEqual(got, want) {
-			t.Fatalf("Pricing(%q) = %#v, want %#v", model, got, want)
-		}
 	}
 }
 

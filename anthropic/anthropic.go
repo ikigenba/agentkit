@@ -159,27 +159,22 @@ func (p *Provider) Name() string {
 	return "anthropic"
 }
 
-func (p *Provider) Pricing(model string) (agentkit.Pricing, bool) {
-	entry, ok := registry[model]
-	return entry.Pricing, ok
-}
-
 func (p *Provider) RoundTrip(ctx context.Context, req *agentkit.Request) *agentkit.RoundTrip {
-	if _, ok := registry[req.Model]; !ok {
-		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, nil, agentkit.ErrInvalidConfig)
+	if req == nil {
+		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, nil, agentkit.ErrInvalidConfig, 0, false)
 	}
 	body, warnings, err := buildRequest(req)
 	if err != nil {
-		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, err)
+		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, err, 0, false)
 	}
 
 	endpoint, err := url.JoinPath(p.baseURL, "/v1/messages")
 	if err != nil {
-		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, err)
+		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, err, 0, false)
 	}
 	httpReq, err := httpx.JSONRequest(ctx, http.MethodPost, endpoint, body)
 	if err != nil {
-		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, err)
+		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, err, 0, false)
 	}
 	httpReq.Header.Set("Accept", "text/event-stream")
 	httpReq.Header.Set("Anthropic-Version", apiVersion)
@@ -187,21 +182,21 @@ func (p *Provider) RoundTrip(ctx context.Context, req *agentkit.Request) *agentk
 
 	resp, err := httpx.Client(p.client).Do(httpReq)
 	if err != nil {
-		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, classifyTransport(err))
+		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, classifyTransport(err), 0, false)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		raw, _ := io.ReadAll(resp.Body)
-		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, classifyHTTP(resp, raw))
+		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, classifyHTTP(resp, raw), 0, false)
 	}
 
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, classifyTransport(err))
+		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, classifyTransport(err), 0, false)
 	}
 	message, finish, usage, parseErr := parseStream(raw)
-	return agentkit.NewRoundTrip(message, finish, usage, warnings, parseErr)
+	return agentkit.NewRoundTrip(message, finish, usage, warnings, parseErr, 0, false)
 }
 
 type messageRequest struct {

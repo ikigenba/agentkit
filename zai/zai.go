@@ -71,11 +71,6 @@ func (p *Provider) Name() string {
 	return p.compat.Name()
 }
 
-// Pricing returns the model's baked-in pricing, if the model is supported.
-func (p *Provider) Pricing(model string) (agentkit.Pricing, bool) {
-	return p.compat.Pricing(model)
-}
-
 // RoundTrip performs one Z.ai Chat-Completions model call.
 func (p *Provider) RoundTrip(ctx context.Context, req *agentkit.Request) *agentkit.RoundTrip {
 	return p.compat.RoundTrip(ctx, req)
