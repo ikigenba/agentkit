@@ -22,7 +22,7 @@ one writer:
 | `product/` | `README.md` — the *why*: problem, users, scope, promises, success criteria | `$seal-spec` (rewritten in place) |
 | `research/` | `research.md` — collected external ground truth that design references | `$seal-spec` (rewritten in place; optional) |
 | `design/` | `README.md` (spine) + `INDEX.md` (manifest) + `DNN.md` (one per Decision) | `$seal-spec` (rewritten in place) |
-| `plan/` | `README.md` (rules) + `STATUS.md` (manifest + `⬜`/`✅` markers) + `phase-NN.md` (one per phase) | `$seal-spec` (append-only) |
+| `plan/` | `README.md` (rules) + `STATUS.md` (manifest: `Next phase` counter + `⬜` lines) + `phase-NN.md` (one per **pending** phase) | `$seal-spec` (appends); the build loop deletes completed phases |
 | `loops/` | the generated build-loop prompts + `README.md` describing the installed loop | a prompt-generator workflow |
 | `README.md` | the workspace map: this folder table and pointers — thin and static | `$seal-spec` |
 
@@ -41,8 +41,9 @@ fact lives in exactly one place:
 - **Research owns *external evidence*** — non-contractual facts design cites.
 - **Design owns *shape + its checkable proof*** — seams, interfaces, types, the
   test strategy, and the minted `R-XXXX-XXXX` requirement-id denominator.
-- **Plan owns *construction order + history*** — dependency-ordered phases,
-  append-only.
+- **Plan owns *construction order*** — a work queue of dependency-ordered
+  **pending** phases only; completed phases are deleted. Construction history
+  lives in git, never in the spec.
 
 Where product and design could overlap (behavior), product states the
 *promise*; design states the *exact, checkable proof of that promise*. This
@@ -79,14 +80,18 @@ boundary is load-bearing — it is what keeps the three from overlapping.
   rewritten in place to match the goal as it stands now: a changed detail is
   *replaced*, not stacked beside its old self; a dropped one is *removed*. None
   of the three may contain a fact that is no longer true — no history, no
-  "previously", no superseded paragraphs. History lives only in the plan.
-- **The plan is APPEND-ONLY history.** The plan only grows: append new
-  `phase-NN.md` files + new `STATUS.md` lines. Completed phases are the record
-  of work already done — never rewrite, reword, or delete a finished
-  `phase-NN.md`, never delete a `STATUS.md` line, even if the design it
-  realized has since changed. The sole mutation to an existing phase is
-  flipping its one `⬜ → ✅` in `STATUS.md`. A design that moved on is captured
-  by a *new* appended phase.
+  "previously", no superseded paragraphs. Construction history lives only in
+  git, never in the spec.
+- **The plan is a work QUEUE, never a history.** It holds only pending work:
+  one `phase-NN.md` + one `STATUS.md` line per phase not yet built. When a
+  phase completes, the build loop **deletes** its `STATUS.md` line and its
+  `phase-NN.md` in the completion commit — finished phases never linger to
+  contradict a design that has since moved on. There is no `✅` state on disk;
+  done is deleted. The record of what was built is git's (the completion
+  commits, and the deleted files recoverable there). Phase numbers are
+  **never reused**: `STATUS.md` carries a `Next phase: NN` counter line; new
+  phases take their numbers from it and bump it, so a number names one phase
+  forever even after its files are gone.
 - **Deterministic exit conditions.** Every phase carries a
   mechanically-checkable, reproducible, *reachable* "Done when" (green suite,
   exit code, exact match count) — never a prose judgment, never a
@@ -94,30 +99,27 @@ boundary is load-bearing — it is what keeps the three from overlapping.
   phase's own `project/` docs also contain, so it can never return empty).
   Structural/docs-only phases too: a green build plus a `project/`-excluded
   grep or a named smoke, never a prose claim.
-- **Total coverage of the denominator.** The phases collectively realize
-  **every** *current* design Verification id in **exactly one** phase — no
-  current id unassigned, none split, none duplicated. Coverage is
-  **one-directional**: design (rewritten in place, the current statement) is the
-  denominator; the plan (append-only history) must cover all of it. Verify
-  mechanically that no current design id is missing from the plan — the
-  design-only difference must be empty:
+- **Total coverage of the denominator.** Every *current* design Verification
+  id is either already **realized** — its id appearing verbatim as a tag in a
+  test file that runs under the suite — or assigned to **exactly one** pending
+  phase: no current id unassigned, none split, none duplicated across pending
+  phases. Design (rewritten in place, the current statement) is the
+  denominator; realized-ness is read from the **code itself** (the tagged
+  tests), never from a ledger or a history. Verify mechanically that no
+  current design id is missing — the design-only difference must be empty:
 
   ```
-  comm -23 <(grep -hoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/design/*.md   | sort -u) \
-           <(grep -hoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/plan/phase-*.md | sort -u)
+  comm -23 <(grep -hoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/design/*.md | sort -u) \
+           <(cat <(grep -rhoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' --include='*_test.go' --exclude-dir=project .) \
+                 <(grep -hoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/plan/phase-*.md 2>/dev/null) | sort -u)
   ```
 
-  This prints the ids in design not yet covered by any phase; **empty output is
-  the pass condition.** The reverse direction is deliberately **not** checked:
-  the plan may — and over a long-lived project will — contain ids that are no
-  longer in design. Those are **retired requirements** — a behavior that was
-  built when its id was current, then dropped from design when it stopped
-  applying. Its `phase-NN.md` is frozen and keeps the id forever as the record
-  of that work; **never delete a retired id from the plan to chase parity** —
-  doing so would violate the append-only invariant. An id present in the plan
-  but absent from design is expected, not a defect. Because finished phases are
-  frozen, a current id minted later can only be covered by a newly appended
-  phase — coverage of the current denominator must be right at authoring time.
+  (substitute the project's real test-file glob from design's Conventions;
+  the `--exclude-dir=project` matters — an id quoted in the spec is not a
+  test). **Empty output is the pass condition.** No reverse bookkeeping is
+  needed: when a behavior leaves design its id and tagged test are deleted
+  with it (the minted-ids rule), and a *pending* phase carrying an id design
+  no longer mints is stale and must be fixed at authoring time.
 
 ## `project/product/README.md` — the product shape
 
@@ -201,8 +203,8 @@ realizes, never the whole architecture:
   `**Authority: shape and its proof.**` stating what design owns (how + proof),
   that product owns the why and the promises, and that design uses the
   product's contractual constants by value but does not own them. Note this is
-  the single current statement, rewritten in place, with history living in the
-  plan.
+  the single current statement, rewritten in place, with construction history
+  living in git.
 - **## Requirement ids** — states plainly that: each Decision ends with a
   **Verification** list (the concrete behaviors that decision requires); every
   item carries a minted `R-XXXX-XXXX` id — a stable, unique handle for that one
@@ -212,8 +214,9 @@ realizes, never the whole architecture:
   downstream's concern and must not be specified here.
 - **## Conventions** — shared facts every Decision leans on. **Required, and
   must state the project's toolchain so downstream phases need not guess it:
-  the exact build/typecheck command, the exact test command, and what "the
-  suite is green" concretely means.** Also any other cross-cutting facts
+  the exact build/typecheck command, the exact test command, what "the
+  suite is green" concretely means, and the test-file glob (e.g. `*_test.go`)
+  where requirement-id tags live.** Also any other cross-cutting facts
   (language/version, module path, exit-code taxonomy, formatting rules, a
   shared time/IO source). State the commands, not the coverage rule.
 - **## Layout** — describes the split: `INDEX.md` is the manifest; `DNN.md` is
@@ -281,10 +284,11 @@ with it (its test goes too).
 
 ## `project/plan/` — the plan shape
 
-Owns **construction order and history**. Unlike product and design, the plan is
-**append-only**: phases are added at the end and marked done as they land;
-completed phases are never rewritten or deleted, so the plan doubles as the
-construction history. To extend the project: update product and design in place
+Owns **construction order** — a work queue of **pending** phases only. Phases
+are appended at the end, numbered from the `STATUS.md` counter, and **deleted
+on completion** by the build loop; the plan never holds finished work, so it
+can never contradict a design that has moved on. Construction history lives in
+git, not here. To extend the project: update product and design in place
 first, then **append** a new phase.
 
 **One phase = one package = one build-turn context.** Each phase is a single
@@ -299,21 +303,21 @@ one context it is split across phases, and each affected phase names the
 **slice** of that Decision's Verification ids it carries.
 
 Split for addressability — the loop greps a manifest for the next unit of work
-and reads exactly one phase file, never the whole history:
+and reads exactly one phase file, never the whole queue:
 
 ### `project/plan/README.md` — the invariant rules (static; never grows)
 
 - **Title** — `# <name> — Plan`.
 - **Authority header** — a paragraph beginning
-  `**Authority: construction order and history.**` stating that this document
-  and the `project/plan/` directory own the build order and the record of
-  what's built, that the plan is append-only, and how to extend it (update
-  product and design in place, then append a new `phase-NN.md` + `STATUS.md`
-  line — never edit a finished phase except to flip its marker). State the
-  **coverage invariant** here too (every *current* design id realized in exactly
-  one phase; coverage is one-directional, so the plan may also carry retired ids
-  from frozen phases whose behavior has since left design; later current ids
-  need a newly appended phase).
+  `**Authority: construction order.**` stating that this document and the
+  `project/plan/` directory own the build order of **pending** work only,
+  that completion is deletion (the build loop removes the finished phase's
+  `STATUS.md` line and its `phase-NN.md` in the completion commit; history
+  lives in git), and how to extend it (update product and design in place,
+  then append a new `phase-NN.md` + `STATUS.md` line, numbered from the
+  counter — never renumber, never reuse a number). State the **coverage
+  invariant** here too (every *current* design id either already realized by
+  a tagged test in the codebase or assigned to exactly one pending phase).
 - **One phase = one package = one build-turn context** — the sizing paragraph
   above.
 - **Done bar** — a phase is **done** when every Verification id it realizes (or
@@ -321,33 +325,42 @@ and reads exactly one phase file, never the whole history:
   green; point at design's Conventions for what "green" concretely means; state
   that every phase's acceptance bar is deterministic exit conditions, never a
   subjective judgment, never a self-referential/unsatisfiable check.
-- **## Layout** — `STATUS.md` is the manifest and the **only** home of status
-  markers; `phase-NN.md` is one body file per phase (zero-padded; sub-phases
-  keep their suffix, e.g. `phase-07a.md`); this README is the static rules.
-  Restate append-only for the layout: never rewrite or delete a `phase-NN.md`,
-  never delete a `STATUS.md` line; the only build-time mutation is flipping one
-  phase's `⬜ → ✅` in `STATUS.md`.
+- **## Layout** — `STATUS.md` is the manifest: the `Next phase` counter plus
+  the **only** home of the pending markers; `phase-NN.md` is one body file per
+  pending phase (zero-padded; sub-phases keep their suffix, e.g.
+  `phase-07a.md`); this README is the static rules. Restate
+  completion-is-deletion for the layout: the build loop's only mutations are
+  removing a finished phase's `STATUS.md` line together with its
+  `phase-NN.md`; the counter is never decremented and never touched by the
+  loop.
 
 ### `project/plan/STATUS.md` — the manifest (the only home of status markers)
 
 - **Title** — `# <name> — Plan Status`.
-- **Contract paragraph** — one line per phase in build order, the only place a
-  phase's marker lives; each phase line is a Markdown bullet beginning with
-  `- Phase` carrying `✅` (done) or `⬜` (not started); the build loop finds its
+- **Contract paragraph** — one line per **pending** phase in build order, the
+  only place a phase's marker lives; each phase line is a Markdown bullet
+  beginning with `- Phase` carrying `⬜` (pending); the build loop finds its
   next work with `grep -nE '^- Phase .* ⬜' project/plan/STATUS.md | head -1`
-  and reads only that phase's body file. Note it deliberately carries **no bare
-  status glyph** outside phase lines, so the anchored grep matches only phase
-  lines.
-- **The phase lines** — `- Phase NN <marker> realizes <Decision ids>` (or
+  and reads only that phase's body file. On completion the build loop deletes
+  the phase's line and body file — there is no done marker; done is gone.
+  Note it deliberately carries **no bare status glyph** outside phase lines,
+  so the anchored grep matches only phase lines.
+- **The counter line** — `Next phase: NN`, a non-bullet line between the
+  contract paragraph and the phase lines: the number the next appended phase
+  takes. `$seal-spec` bumps it on every append; it is never decremented and a
+  number is never reused, so a phase number names one phase forever even
+  after its files are deleted.
+- **The phase lines** — `- Phase NN ⬜ realizes <Decision ids>` (or
   `realizes —` for a pure structural phase) `— <one cohesive objective>`.
   Aligned and grep-able. A phase body file carries **no** marker of its own.
 
 ### `project/plan/phase-NN.md` — one body file per phase
 
 - A header `# Phase N — <one cohesive objective>` — **no status token**.
-- A `*Realizes design Decision <n> (<short label>)[ and <m> (...)]. Depends on
-  Phase <k>.*` line — exactly which Decisions this phase builds and which
-  earlier phase(s) it needs.
+- A `*Realizes design Decision <n> (<short label>)[ and <m> (...)][. Depends
+  on Phase <k>].*` line — exactly which Decisions this phase builds, and which
+  earlier **pending** phase(s) it needs, if any (a completed dependency is
+  simply the existing codebase and is not named).
 - A short body: what gets built (the package/seam and its paths), stated as the
   observable end state, not an implementation recipe.
 - **Done when:** the acceptance bar as deterministic exit conditions — its

@@ -1,7 +1,0 @@
-# Phase 51 — OpenAI gpt-5.6 models: sol, terra, luna
-
-*Realizes design Decision 16 (the openai gpt-5.6 slice). Depends on Phase 9 (the `openai` sub-package and its registry/pricing/reasoning-spec seam).*
-
-The `openai` sub-package's model registry gains three new entries — `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna` — each co-located with an exported constant (`openai.ModelGPT56Sol`, `openai.ModelGPT56Terra`, `openai.ModelGPT56Luna`) and carrying both its `Pricing` and its `ReasoningSpec` verbatim from the D16 tables. Pricing is a single base `RateTier` per model (no >272K high tier for the 5.6 line, unlike gpt-5.5/gpt-5.4): sol 5000/500/30000, terra 2500/250/15000, luna 1000/100/6000, all with `MinInputTokens==0` and both cache-write buckets 0. Each reasoning spec is an effort enum `[none, low, medium, high, xhigh]`, `Default=Level("medium")`, `CanDisable=true`. The additions are purely additive — the existing gpt-5.5/gpt-5.4 family is untouched — and are picked up by the registry-wide golden and completeness tests (supported ⇒ priced ⇒ reasoning-describable) with no new adapter wiring.
-
-**Done when:** R-CDK0-SUGR (the three constants are exported and each prices at the D16 single-tier rates — exactly one `RateTier`, `MinInputTokens==0`, cache-write buckets 0) and R-CERX-6M7G (each of the three reasoning specs is the effort enum `[none,low,medium,high,xhigh]` with `Default=Level("medium")` and `CanDisable=true`) are each covered by a clearly-named test, and the suite is green per D16 Conventions.

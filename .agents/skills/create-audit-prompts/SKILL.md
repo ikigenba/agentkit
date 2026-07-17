@@ -32,7 +32,7 @@ Each is a grep-and-set-compare with a defined pass criterion — no judgment inv
 
 1. **Orphan tags** — ids tagged in tests that design never minted: the sorted test-tag set minus the sorted design set must be empty. Any remainder is listed per id with its file:line.
 2. **Duplicate assignment** — an id appearing in more than one Decision's Verification list, or tagged in more than one test (one id, one behavior, one place). Zero expected.
-3. **Plan coverage drift** — the existing invariant: the sorted id set over `project/design/D*.md` must equal the sorted set over `project/plan/phase-*.md`. Differences listed by direction.
+3. **Coverage drift** — the coverage invariant: the sorted design id set minus the union of the test-tag set and the sorted set over the pending `project/plan/phase-*.md` (if any) must be empty — every current id is realized in tests or queued in exactly one pending phase. Also flag the reverse on the plan side: a pending phase carrying an id design no longer mints is stale. Differences listed by direction.
 4. **INDEX staleness** — the id set in the `DNN.md` files must equal the id set in `INDEX.md`, and every Decision file must have an index entry (and vice versa).
 
 Bake the concrete commands into the prompt (the design set via `grep -hoE 'R-[A-Z0-9]{4}-[A-Z0-9]{4}' project/design/D*.md | sort -u`, the test set via the same pattern over the project's real test-file glob **excluding `project/`**, etc.). Sweep failures do not abort the audit — they are findings, recorded in the preamble so the per-Decision turns that follow aren't silently distorted by them.

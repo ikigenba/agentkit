@@ -34,5 +34,5 @@ architecture to find the one Decision a phase realizes:
   does not carry per-Decision detail.
 
 Design is **rewritten in place**, not append-only (the construction history lives
-in the plan): when a Decision changes, its `DNN.md` is rewritten to stay true and
+in git): when a Decision changes, its `DNN.md` is rewritten to stay true and
 `INDEX.md` is regenerated. A new Decision adds a `DNN.md` and an INDEX entry.

@@ -21,15 +21,17 @@ phase appended), then the loop implements it.
 | `product/` | `README.md` — the *why*: problem, users, scope, user-facing promises, success criteria | `$author-ikispec` (rewritten in place) |
 | `research/` | `research.md` — the design-informing background; non-contractual, nothing downstream reads it | `$author-ikispec` (rewritten in place) |
 | `design/` | `README.md` (spine) + `INDEX.md` (manifest + sorted `R-id → Decision` map) + `DNN.md` (one per Decision) | `$author-ikispec` (rewritten in place) |
-| `plan/` | `README.md` (rules) + `STATUS.md` (the manifest — the only home of each phase's `⬜`/`✅` marker) + `phase-NN.md` (one per phase) | `$author-ikispec` (append-only) |
+| `plan/` | `README.md` (rules) + `STATUS.md` (the manifest: `Next phase` counter + the only home of each pending phase's `⬜` marker) + `phase-NN.md` (one per **pending** phase) | `$author-ikispec` (appends); the build loop deletes completed phases |
 | `loops/` | the installed `ralph` build-loop prompts `gather.md`, `build.md`, `verify.md` (+ the ephemeral `brief.md`), and `README.md` describing the loop | the prompt-generator workflow (`create-gather-build-verify-prompts`) |
 
 The four **spine documents** (`product/README.md`, `research/research.md`,
 `design/README.md`, `plan/README.md`) are each singular and authored by
 `$author-ikispec` — that is the sanctioned way to change them. Product, research,
 and design are the single *current* statement, rewritten in place; the plan is
-*append-only* history. Don't add ad-hoc documents to the spine folders; fold
-corrections and follow-ons into the existing spine docs and append a plan phase.
+a work **queue** of pending phases only — completed phases are deleted, and
+construction history lives in git. Don't add ad-hoc documents to the spine
+folders; fold corrections and follow-ons into the existing spine docs and append
+a plan phase.
 
 The `loops/` prompts and `loops/README.md` are **not** spec artifacts — they are
 generated from the finished spec and describe whichever loop topology is

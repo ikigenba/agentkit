@@ -23,12 +23,13 @@ without a human** (see the last section). Absent that, finish the run.
 Sealing trades interaction for speed, never correctness for speed: every shape
 and hard invariant in `ikispec` holds exactly — the authority boundaries,
 the scope boundary, real minted ids, rewrite-in-place for product/research/
-design, the append-only plan, deterministic exit conditions, and total coverage
-of the id denominator.
+design, the queue-only plan (pending phases only, numbered from the counter),
+deterministic exit conditions, and total coverage of the id denominator.
 
 **Greenfield is the same run.** When `project/` is empty or absent, "current
 state" is simply nothing, "align" means "write from scratch", and the appended
-phases start at 01 — create the full structure from the shapes in `ikispec`,
+phases start at 01 with `STATUS.md`'s `Next phase` counter set just past
+them — create the full structure from the shapes in `ikispec`,
 including the thin `project/README.md` workspace map. (`project/loops/` is not
 yours: a prompt-generator workflow writes it, as a separate,
 operator-invoked step after the spec exists.)
@@ -37,7 +38,8 @@ operator-invoked step after the spec exists.)
 
 1. **Read the current state.** The existing `project/product/README.md`,
    `project/research/research.md` if present, the design spine + `INDEX.md` +
-   the `DNN.md` files it lists, and `project/plan/STATUS.md` + the phase files.
+   the `DNN.md` files it lists, and `project/plan/STATUS.md` + the pending
+   phase files (the plan is a queue — it holds only unbuilt work).
    Know what already exists before changing it. Settled Decisions are settled —
    don't reopen them. (Greenfield: note there is nothing, and build the
    structure from scratch as you go.)
@@ -62,21 +64,25 @@ operator-invoked step after the spec exists.)
 4. **Design — decide, mint, record.** For each new/changed behavior make the
    architectural call yourself (seams, interfaces, types, naming, test
    strategy). **Mint ids with `idgen -n <count> -p R` before writing them.**
+   (`idgen` is this repository's own id-minting CLI, built from its source:
+   `-n` is how many ids to mint, `-p R` sets the `R-` prefix design ids use.)
    Write/rewrite the affected `DNN.md` (new Decision → new file; changed
    Decision → rewrite in place) and **regenerate `INDEX.md`** (Decisions list +
    sorted id→Decision map). Every verifiable element states how it's tested; a
    claim that hinges on a real external contract gets a distinct id whose test
    drives the real dependency, not a stub.
 5. **Plan — APPEND the new phases.** For the newly-designed work, append
-   dependency-ordered `phase-NN.md` files (header, `*Realizes … Depends on …*`
+   dependency-ordered `phase-NN.md` files (header, `*Realizes … [Depends on …]*`
    line, observable end-state body, deterministic **Done when**), each sized to
-   a single fresh build-turn context, and add one
+   a single fresh build-turn context. **Take each number from `STATUS.md`'s
+   `Next phase` counter and bump the counter past the batch** — never renumber
+   a pending phase, never reuse a number. Add one
    `- Phase NN ⬜ realizes <ids> — <objective>` line per phase to `STATUS.md`.
-   Never touch finished phases. Before finishing, run the coverage check from
-   `ikispec`: every *current* design id realized in exactly one phase (the
-   design-only `comm -23` difference is empty). Coverage is one-directional —
-   the plan may hold retired ids from frozen phases; never delete one to chase
-   parity.
+   Before finishing, run the coverage check from `ikispec`: every *current*
+   design id is either already realized (tagged verbatim in a test file that
+   runs under the suite) or assigned to exactly one pending phase (the
+   design-only `comm -23` difference is empty). A pending phase carrying an id
+   design no longer mints is stale — fix it now, in this pass.
 6. **Workspace map.** If the structure changed (greenfield, or a folder
    added/removed), write/update the thin `project/README.md` to match.
 7. **Report.** List every path written, the Decisions added/changed with their
@@ -90,8 +96,18 @@ operator-invoked step after the spec exists.)
 - **Do NOT write, regenerate, or edit `project/loops/`.** The loop prompts and
   `loops/README.md` belong to the prompt-generator workflows. There
   is no step in a seal-spec run that touches a loop file.
+- **Do NOT recommend regenerating `project/loops/` after an append/extension.**
+  The installed loop prompts are **reusable across phases** — they resolve the
+  next phase through `STATUS.md` on every run, so appending a phase (or changing
+  spec content) does not stale them. Regeneration is warranted **only** when the
+  loop *topology or conventions* change: a new prompt sequence, a changed
+  done-bar, model front-matter, or a restructured `project/` layout the prompts
+  reference. When the loop is already installed and this run was a plain
+  extension, the next step is simply to **run the existing loop** — never to
+  regenerate it. (Mirrors ralph's rule: generate "once per project, or when the
+  loop design changes.")
 - Everything else is `ikispec`' law: scope boundary, authority boundaries,
-  minted ids, current-statement rewrites, append-only plan, deterministic exit
+  minted ids, current-statement rewrites, queue-only plan, deterministic exit
   conditions, total id coverage.
 
 ## The only reason to stop before finishing
