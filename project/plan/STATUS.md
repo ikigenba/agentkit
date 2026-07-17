@@ -4,7 +4,6 @@ The manifest, and a work **queue**: one line per **pending** phase, in build ord
 
 Next phase: 65
 
-- Phase 54  ⬜  realizes D05,D06,D09                  — anthropic adapter to the dumb layer (anthropic slices: R-CQO3-7EE9, R-CT3V-YXVN, R-CUBS-CPMC, R-CVJO-QHD1, R-CXZH-I0UF)
 - Phase 55  ⬜  realizes D05,D06,D09                  — google adapter to the dumb layer (google slices of the same ids)
 - Phase 56  ⬜  realizes D05,D06,D09                  — openai adapter to the dumb layer, API-key path (openai slices of the same ids)
 - Phase 57  ⬜  realizes D05,D06,D09                  — internal/openaicompat + zai to the dumb layer (zai/compat slices; R-CRVZ-L64Y zai half)
