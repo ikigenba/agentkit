@@ -20,18 +20,18 @@ Read this whole file, then act.
    grep -nE '^- Phase .* ⬜' project/plan/STATUS.md | head -1
    ```
 
-   - If this prints **nothing**, every phase is `✅` — there is no work left. Do not write or touch a brief. Your status is **`DONE`** (this is the **only** place the loop ever ends).
-   - Otherwise note the zero-padded phase number (e.g. `08`) and the Decision(s) it realizes (the `realizes D…` field on that line).
+   - If this prints **nothing**, every pending phase has been completed and deleted — the plan queue is empty and there is no work left. Do not write or touch a brief. Your status is **`DONE`** (this is the **only** place the loop ever ends).
+   - Otherwise note the zero-padded phase number (e.g. `54`) and the Decision(s) it realizes (the `realizes D…` field on that line).
 
 2. **Check for an in-flight brief — preserve it if it belongs to this phase.** If `project/loops/brief.md` exists, read only its first line, the `# Brief — Phase NN` header.
    - **If it names this same phase**, the phase is mid-flight: its contract and any `verify` feedback from prior cycles are still live and must be preserved. **Leave the file exactly as it is** — do not open any big doc, do not rewrite the contract, do not touch the `## Verify feedback` region. Your status is **`NEXT`**. Stop here.
-   - **If it names a different (now-`✅`) phase, or there is no brief at all**, the contract is stale or missing — author a fresh one. Continue to step 3.
+   - **If it names a different phase (one with no `⬜` line left in `STATUS.md` — completed, hence deleted), or there is no brief at all**, the contract is stale or missing — author a fresh one. Continue to step 3.
 
-3. **Read only that phase's body** — `project/plan/phase-NN.md` (zero-padded, e.g. `phase-08.md`). Read its objective, its `*Realizes … Depends on …*` line, and its `**Done when:**` id list. **Do not read any other phase file.**
+3. **Read only that phase's body** — `project/plan/phase-NN.md` (zero-padded, e.g. `phase-54.md`). Read its objective, its `*Realizes … Depends on …*` line, and its `**Done when:**` id list. **Do not read any other phase file.**
 
 4. **Resolve the Decision(s) to files** via `project/design/INDEX.md`, then read **only** the `project/design/DNN.md` file(s) this phase realizes. Do not read other Decision files. To resolve an individual id to its Decision/file, grep the index: `grep -n R-XXXX-XXXX project/design/INDEX.md`.
 
-5. **Determine the ids to cover.** They are the Verification ids of the realized Decision(s) — or, when the phase's `**Done when:**` line assigns it a specific **slice** of those ids, **exactly that slice and no more**. Several ids are **shared across phases** (the error matrix, usage mapping, the model/pricing/reasoning-spec registries, generation-settings mapping, `R-C8UE-…`, etc.): copy in **only** the ids this phase's own body/`**Done when:**` lists — never another phase's slice, and never an out-of-scope id from the same Decision. A purely structural/seam phase carries **no ids** (record `(none — structural phase)`).
+5. **Determine the ids to cover.** They are the Verification ids of the realized Decision(s) — or, when the phase's `**Done when:**` line assigns it a specific **slice** of those ids, **exactly that slice and no more**. Several ids are **shared across phases** (the error matrix, usage mapping, the model/pricing/reasoning-spec registries, generation-settings mapping, `R-CRVZ-L64Y`, etc.): copy in **only** the ids this phase's own body/`**Done when:**` lists — never another phase's slice, and never an out-of-scope id from the same Decision. A purely structural/seam phase carries **no ids** (record `(none — structural phase)`).
 
 6. **Copy each realized Decision's design prose verbatim** — its **Decision** statement, its shape/signatures, and its **Rejected** alternatives — copied straight from the `DNN.md`, **but omitting that Decision's `Verification` list entirely** (build must never see the ids the phase does not own). This is what lets `build` know *what* to build and *why* without opening a design file.
 
@@ -81,7 +81,8 @@ R-XXXX-XXXX — <full requirement text copied verbatim from the Decision's Verif
 - <pkg>/<file>.go
 - <pkg>/<file>_test.go
 [... the package + test files build will create or modify. Root-package files sit
-at the module root; provider adapters under anthropic/ openai/ zai/ google/;
+at the module root; provider adapters under anthropic/ openai/ zai/ google/
+openrouter/ openai/subscription/; the advisory model catalog under catalog/;
 shared internals under internal/httpx, internal/sse, internal/openaicompat,
 internal/mcp, internal/retry. Unit tests are co-located with the code they
 exercise (package-local *_test.go, named for the behavior); never a per-phase or
@@ -102,8 +103,10 @@ runs under the suite's real invocation, AND the suite green (go build ./... = 0,
 go vet ./... = 0, go test ./... = 0, gofmt -l . empty). Name the exact suite
 invocation each id is proven under — the default offline `go test ./...`, or, for
 a live/integration id, `go test -tags integration ./...` with the provider
-credentials present. A structural phase: the build green plus the named
-integration smoke.>
+credentials present. A structural phase carries no ids: state its deterministic
+bar instead — the build green plus the exact named checks from the phase's
+`**Done when:**` (e.g. a git tag present, a changelog entry, a `--include='*.go'`
+grep that returns no matches).>
 
 ## Verify feedback — attempt 0
 - Build commit observed: none
@@ -131,6 +134,6 @@ Report this run's result as a `status` and a one-sentence `message`:
 - `CONTINUE` — **non-terminal**: any progress message you stream *before* the turn's final message. You are still working; this never advances the loop.
 - `NEXT` — **terminal**: this turn's work is done; hand off to the next prompt.
 - `DONE` — **terminal**: the whole job is complete; the loop stops.
-- `message` — one short, plain sentence describing what happened, e.g. `Wrote a fresh brief for Phase 08; ready for build.` or `Preserved the in-flight Phase 08 brief.`
+- `message` — one short, plain sentence describing what happened, e.g. `Wrote a fresh brief for Phase 54; ready for build.` or `Preserved the in-flight Phase 54 brief.`
 
-End the turn on `DONE` **only** when the step-1 grep found no `⬜` phase (every phase is `✅`) — this is the single place the loop ends. In every other case end on `NEXT`: after writing a fresh brief, or after preserving an in-flight one. Keep `message` a single plain sentence — not a JSON object or code block.
+End the turn on `DONE` **only** when the step-1 grep found no `⬜` phase (the pending queue is empty — every phase has been completed and deleted) — this is the single place the loop ends. In every other case end on `NEXT`: after writing a fresh brief, or after preserving an in-flight one. Keep `message` a single plain sentence — not a JSON object or code block.

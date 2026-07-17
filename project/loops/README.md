@@ -37,7 +37,8 @@ message of each turn carries a `status`:
 
 - `NEXT` — **terminal**: advance to the next prompt, wrapping `verify → gather`.
 - `DONE` — **terminal**: stop the loop. **Only `gather`** ever reports it, and
-  only when no `⬜` phase remains. `build` and `verify` **never** report `DONE`:
+  only when no `⬜` phase remains (the pending queue is empty — every phase has
+  been completed and deleted). `build` and `verify` **never** report `DONE`:
   even closing a phase's last gap with a green suite is still `NEXT` for them.
 - `CONTINUE` — **non-terminal**: the status a streaming model (e.g. gpt-5.5
   under codex, which coerces *every* streamed message into the schema) tags the
@@ -52,35 +53,38 @@ prompts describe only the contract, never a transport. State lives entirely in
 the workspace (the git tree, `project/plan/STATUS.md`, and the ephemeral
 `project/loops/brief.md`), never in the agent's memory between turns.
 
-## Per-step reads / writes / commits / flips
+## Per-step reads / writes / commits / deletions
 
-| step | reads | writes | commits | flips marker | returns |
+| step | reads | writes | commits | retires phase | returns |
 |---|---|---|---|---|---|
 | **gather** | the big docs (STATUS, one phase, its Decisions) — only when authoring a fresh brief | the brief's **contract region** (or nothing, if a brief for this phase is already in flight) | no | no | `NEXT`, or `DONE` if no `⬜` |
 | **build** | `project/loops/brief.md` only (contract + feedback) | code + co-located tests | the increment | no | `NEXT` |
-| **verify** | the brief + the suite | the brief's **feedback region** (on a gap), or deletes the brief (on pass/stall) | only a marker flip (on pass) | yes (pass only) | `NEXT` |
+| **verify** | the brief + the suite | the brief's **feedback region** (on a gap), or deletes the brief (on pass/stall) | the phase-retirement deletion (on pass) | yes (deletes STATUS line + phase file, on pass only) | `NEXT` |
 
 - **gather** — the only step that opens `project/plan/` or `project/design/`. It
-  greps `STATUS.md` for the first `⬜` phase; if there is none it returns `DONE`
-  (the sole end of the loop). **If a brief for that same phase already exists it
-  leaves it untouched** (the phase is mid-flight — its contract and any `verify`
-  feedback are preserved) and returns `NEXT` without opening a big doc. Only when
-  no brief exists, or the existing one is for a different (now-`✅`) phase, does it
-  read that one `phase-NN.md`, resolve its Decision(s) via `INDEX.md`, read only
-  those `DNN.md`, and write a fresh self-contained brief.
+  greps `STATUS.md` for the first `⬜` phase; if there is none the queue is empty
+  and it returns `DONE` (the sole end of the loop). **If a brief for that same
+  phase already exists it leaves it untouched** (the phase is mid-flight — its
+  contract and any `verify` feedback are preserved) and returns `NEXT` without
+  opening a big doc. Only when no brief exists, or the existing one names a phase
+  no longer in `STATUS.md` (completed, hence deleted), does it read that one
+  `phase-NN.md`, resolve its Decision(s) via `INDEX.md`, read only those
+  `DNN.md`, and write a fresh self-contained brief.
 - **build** — never opens the big docs. It consumes only the brief — including
   the design prose and dependency interface signatures copied into it, and the
   `## Verify feedback` region (open gaps first). It does a bounded, idempotent
   turn of the remaining work — ideally the whole phase — writes id-tagged tests
-  co-located with the code, commits, and leaves the marker `⬜`.
-- **verify** — the independent gate and only step that flips a marker. It
+  co-located with the code, commits, and leaves the phase `⬜`.
+- **verify** — the independent gate and only step that retires a phase. It
   re-derives current truth from scratch, re-runs the suite, and checks that every
-  id is covered by a genuinely-asserting, actually-reachable test. **Pass** → flip
-  that one `⬜ → ✅`, commit the flip, and delete the brief. **Gap** → leave `⬜`,
-  change no source, and overwrite the brief's feedback region with only the
-  currently-open gaps (so the brief persists for the next `build`). **Stall** →
-  after 3 consecutive no-progress attempts on the same gaps, log it and discard
-  the brief so `gather` rebuilds it fresh.
+  id is covered by a genuinely-asserting, actually-reachable test. **Pass** →
+  delete that phase's `- Phase NN …` line from `STATUS.md` (never the `Next
+  phase` counter line) and `git rm` its `phase-NN.md`, commit the deletion, and
+  delete the brief. **Gap** → leave `⬜`, change no source, and overwrite the
+  brief's feedback region with only the currently-open gaps (so the brief
+  persists for the next `build`). **Stall** → after 3 consecutive no-progress
+  attempts on the same gaps, log it and discard the brief so `gather` rebuilds it
+  fresh.
 
 ## The brief lifecycle
 
@@ -93,8 +97,9 @@ plan. It is **phase-scoped, not per-cycle**:
   cycle while that phase stays `⬜`.
 - **build** consumes it every cycle, addressing any feedback gaps first, and
   never writes it.
-- **verify** either **passes** (flip `⬜ → ✅`, delete the brief) or records
-  **gaps** (overwrite the feedback region, keep the brief). The brief therefore
+- **verify** either **passes** (retire the phase — delete its `STATUS.md` line +
+  `git rm` its `phase-NN.md`, then delete the brief) or records **gaps**
+  (overwrite the feedback region, keep the brief). The brief therefore
   **persists across cycles** until the phase passes or a stall reset discards it.
 
 It is **never committed** — `project/loops/brief.md` is in `.gitignore` — and
@@ -103,19 +108,21 @@ It is **never committed** — `project/loops/brief.md` is in `.gitignore` — an
 ## Why the loop converges
 
 `verify` can neither halt the loop nor advance a phase on a gap — its only powers
-are "flip this phase green" (on full, reachable proof) or "leave it `⬜`, with the
-open gaps recorded." So an incomplete phase simply stays `⬜`, and the next cycle
-re-attacks it — now with `verify`'s grounded feedback in front of `build`, and
-without `gather` re-reading the big docs (it no-ops on the in-flight brief). The
-persisted feedback also gives `verify` cross-cycle memory: it distinguishes *slow
-convergence* (the open-gap id set shrinking or changing) from a *true stall* (the
-**same** gap ids unsatisfied for ≥3 consecutive attempts with **no new build
-commit**). On a true stall it does a **trajectory reset** — discards the brief so
-`gather` rebuilds the contract fresh — which stays inside the "verify never halts,
-never advances on a gap" invariant. The only exit is still `gather → DONE`, which
-requires zero `⬜` markers — so the run ends only when every phase is verified
-green, or a ralph budget rail (`--max-iterations/-time/-spend/-tokens`) trips. The
-marker is the sole completion signal, and only `verify`, only on proof, ever moves
+are "retire this phase" (on full, reachable proof — delete its `STATUS.md` line
+and phase file) or "leave it `⬜`, with the open gaps recorded." So an incomplete
+phase simply stays `⬜`, and the next cycle re-attacks it — now with `verify`'s
+grounded feedback in front of `build`, and without `gather` re-reading the big
+docs (it no-ops on the in-flight brief). The persisted feedback also gives
+`verify` cross-cycle memory: it distinguishes *slow convergence* (the open-gap id
+set shrinking or changing) from a *true stall* (the **same** gap ids unsatisfied
+for ≥3 consecutive attempts with **no new build commit**). On a true stall it
+does a **trajectory reset** — discards the brief so `gather` rebuilds the
+contract fresh — which stays inside the "verify never halts, never advances on a
+gap" invariant. The only exit is still `gather → DONE`, which requires zero `⬜`
+markers — so the run ends only when every phase is verified green and retired, or
+a ralph budget rail (`--max-iterations/-time/-spend/-tokens`) trips. Deleting the
+phase's `STATUS.md` line is the sole completion signal (there is no `✅` state on
+disk — **completion is deletion**), and only `verify`, only on proof, ever does
 it.
 
 ## The `project/loops/brief.md` schema
@@ -168,7 +175,9 @@ root-level test file]
 <every id above tagged in a genuinely-asserting, actually-reachable *_test.go test
 AND the suite green; each id's proving suite invocation named (default offline
 `go test ./...`, or `go test -tags integration ./...` with credentials for a
-live id); a structural phase → green build + the named integration smoke>
+live id); a structural phase → green build + the exact deterministic checks its
+`**Done when:**` names (a git tag, a changelog entry, a `--include='*.go'` grep
+returning no matches)>
 
 ## Verify feedback — attempt <N>
 - Build commit observed: <sha or none>
@@ -188,15 +197,18 @@ Useful greps:
 
 ## Project conventions the prompts inline
 
-These originate in design's *Conventions* (`project/design/README.md`) and this
-project's layout — the prompts copy them verbatim so each turn is self-contained.
+These originate in design's *Conventions* (`project/design/README.md`), the
+testing strategy (`project/design/D13.md`), and this project's layout — the
+prompts copy them verbatim so each turn is self-contained.
 
 - **Toolchain.** Go 1.26, module `github.com/ikigenba/agentkit`. The `agentkit`
   package lives at the module **root**, built across several phases. Leaf provider
-  sub-packages: `anthropic/`, `openai/`, `zai/`, `google/`. Non-importable shared
-  internals under `internal/`: `internal/httpx`, `internal/sse`,
-  `internal/openaicompat`, `internal/mcp`, `internal/retry`. Public symbols carry
-  no package-name stutter (`agentkit.Conversation`, not `agentkit.AgentKitState`).
+  sub-packages: `anthropic/`, `openai/`, `zai/`, `google/`, `openrouter/`,
+  `openai/subscription/`; the advisory model catalog under `catalog/`.
+  Non-importable shared internals under `internal/`: `internal/httpx`,
+  `internal/sse`, `internal/openaicompat`, `internal/mcp`, `internal/retry`.
+  Public symbols carry no package-name stutter (`agentkit.Conversation`, not
+  `agentkit.AgentKitState`).
 - **"The suite is green" means all four hold:** `go build ./...` exits 0,
   `go vet ./...` exits 0, `go test ./...` exits 0, and `gofmt -l .` prints
   **nothing**. The default `go test ./...` is offline and deterministic and spends
@@ -213,9 +225,10 @@ project's layout — the prompts copy them verbatim so each turn is self-contain
   or root-level test file; the few cross-package integration tests live only in
   their designated `//go:build integration` home. Some ids are **shared across
   phases** (the error matrix, usage mapping, the model/pricing/reasoning-spec
-  registries, generation-settings mapping); a phase covers only its own slice,
-  named in its `**Done when:**` line. A structural phase carries no ids and is
-  proven by the green build plus any integration smoke it names.
+  registries, generation-settings mapping, `R-CRVZ-L64Y`); a phase covers only its
+  own slice, named in its `**Done when:**` line. A structural phase carries no ids
+  and is proven by the green build plus the exact deterministic checks its
+  `**Done when:**` names.
 - **Determinism seams (honor, do not bypass).** The single adapter test seam is
   the injected `*http.Client` + base URL via `WithBaseURL(string)` /
   `WithHTTPClient(*http.Client)`, with unit tests pointing the adapter at an
@@ -224,11 +237,14 @@ project's layout — the prompts copy them verbatim so each turn is self-contain
   assembled turn and `Usage` against golden JSON regenerated with a `-update` flag;
   an **injected unexported clock** makes retry backoff and JSONL timestamps
   deterministic; orchestration stays pure above the provider SPI
-  (`Provider` / `Request` / `RoundTrip`); dependent packages are consumed only
-  through their public interfaces; `internal/*` carries no consumer-facing surface;
-  tool-call IDs stay in the strict charset.
+  (`Provider` / `Request` / `RoundTrip`), with cost resolved through the
+  consumer-owned seam (`ReportedCost()` → `Conversation.Pricing` → `Cost(0)` +
+  `WarnCostUnknown`); dependent packages are consumed only through their public
+  interfaces; `internal/*` carries no consumer-facing surface; tool-call IDs stay
+  in the strict charset.
 - **Commits.** Build commits each increment (`Phase NN — …`); verify commits only
-  the one-line marker flip on a pass (`Phase NN — verified`). Both end the message
+  the phase-retirement deletion on a pass (the removed `STATUS.md` line + the
+  `git rm`ed `phase-NN.md`, message `Phase NN — verified`). Both end the message
   with the `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`
   trailer. `gather` commits nothing.
 

@@ -27,7 +27,7 @@ One line per Decision, in number order — file, label, and the Verification ids
 - **D12** `project/design/D12.md` — Raw HTTP, not wrapped SDKs
   - ids: (none — structural)
 - **D13** `project/design/D13.md` — Testing strategy
-  - ids: R-WJLM-7QRP, R-WKTI-LIIE, R-WM1E-ZA93, R-711P-17EO
+  - ids: R-WJLM-7QRP, R-WKTI-LIIE, R-WM1E-ZA93, R-711P-17EO, R-CL9K-41F1, R-CMHG-HT5Q, R-CNPC-VKWF, R-COX9-9CN4, R-CQ55-N4DT, R-CRD2-0W4I, R-CSKY-ENV7, R-CTSU-SFLW
 - **D15** `project/design/D15.md` — Structured JSONL event log & conversation lifecycle
   - ids: R-PH7W-BVH0, R-PIFS-PN7P, R-PJNP-3EYE, R-PKVL-H6P3, R-PM3H-UYFS, R-PNBE-8Q6H, R-POJA-MHX6, R-PPR7-09NV
 - **D16** `project/design/D16.md` — Dollar-cost accounting: the resolution seam
@@ -97,9 +97,17 @@ R-C8UE-VJ67  D2  project/design/D02.md
 R-CBA7-N2NL  D2  project/design/D02.md
 R-CCI4-0UEA  D2  project/design/D02.md
 R-CDQ0-EM4Z  D2  project/design/D02.md
+R-CL9K-41F1  D13  project/design/D13.md
+R-CMHG-HT5Q  D13  project/design/D13.md
+R-CNPC-VKWF  D13  project/design/D13.md
+R-COX9-9CN4  D13  project/design/D13.md
+R-CQ55-N4DT  D13  project/design/D13.md
 R-CQO3-7EE9  D5  project/design/D05.md
+R-CRD2-0W4I  D13  project/design/D13.md
 R-CRVZ-L64Y  D5  project/design/D05.md
+R-CSKY-ENV7  D13  project/design/D13.md
 R-CT3V-YXVN  D5  project/design/D05.md
+R-CTSU-SFLW  D13  project/design/D13.md
 R-CUBS-CPMC  D6  project/design/D06.md
 R-CVJO-QHD1  D9  project/design/D09.md
 R-CXZH-I0UF  D9  project/design/D09.md

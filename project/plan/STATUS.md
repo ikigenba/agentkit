@@ -14,5 +14,5 @@ Next phase: 65
 - Phase 60  ⬜  realizes D26                          — the advisory catalog package (R-DMDH-5FOB, R-DNLD-J7F0, R-DOT9-WZ5P, R-DQ16-AQWE, R-DR92-OIN3, R-DSGZ-2ADS)
 - Phase 61  ⬜  realizes D18,D20                      — embeddings root seam: free-flow, supplied pricing, dimension verification (R-D5AV-SNAL, R-D6IS-6F1A, R-D2V3-13T7, R-D42Z-EVJW, R-D8YK-XYIO)
 - Phase 62  ⬜  realizes D19                          — embedding adapters to the dumb layer (R-D7QO-K6RZ)
-- Phase 63  ⬜  realizes D24,D25                      — live integration: OpenRouter reported cost & subscription round trip (R-DF22-UT85, R-DJXO-DW6X)
+- Phase 63  ⬜  realizes D13,D24,D25                  — live integration: uniform happy-path suite + OpenRouter reported cost + subscription round trip (D13 slice: R-CL9K-41F1, R-CMHG-HT5Q, R-CNPC-VKWF, R-COX9-9CN4, R-CQ55-N4DT, R-CRD2-0W4I, R-CSKY-ENV7, R-CTSU-SFLW; R-DF22-UT85, R-DJXO-DW6X)
 - Phase 64  ⬜  realizes —                            — Release: minor version bump to v0.3.0
