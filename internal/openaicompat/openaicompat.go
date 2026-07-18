@@ -22,6 +22,14 @@ import (
 // AgentKit sentinel category.
 type ErrorClassifier func(status int, code, message string) error
 
+// ReasoningEncoder lowers a provider-neutral reasoning value to top-level
+// Chat-Completions request fields. The returned JSON must be an object.
+type ReasoningEncoder func(agentkit.ReasoningValue) (json.RawMessage, error)
+
+// CostExtractor extracts a provider-reported nano-USD cost from a raw usage
+// object. ok is false when the provider did not report a cost.
+type CostExtractor func(json.RawMessage) (cost agentkit.Cost, ok bool)
+
 // Config describes one first-class OpenAI-compatible provider.
 type Config struct {
 	Provider                 string
@@ -31,6 +39,8 @@ type Config struct {
 	Now                      func() time.Time
 	Classify                 ErrorClassifier
 	WarnForcedToolChoiceAuto bool
+	ReasoningEncoder         ReasoningEncoder
+	CostExtractor            CostExtractor
 }
 
 // Provider implements agentkit.Provider for an OpenAI Chat-Completions wire.
@@ -90,9 +100,9 @@ func (p *Provider) RoundTrip(ctx context.Context, req *agentkit.Request) *agentk
 	}
 	assembled, err := p.assemble(frames)
 	if err != nil {
-		return agentkit.NewRoundTrip(assembled.message, assembled.finish, assembled.usage, warnings, err, 0, false)
+		return agentkit.NewRoundTrip(assembled.message, assembled.finish, assembled.usage, warnings, err, assembled.reportedCost, assembled.reportedCostOK)
 	}
-	return agentkit.NewRoundTrip(assembled.message, assembled.finish, assembled.usage, warnings, nil, 0, false)
+	return agentkit.NewRoundTrip(assembled.message, assembled.finish, assembled.usage, warnings, nil, assembled.reportedCost, assembled.reportedCostOK)
 }
 
 type chatRequest struct {
@@ -107,6 +117,7 @@ type chatRequest struct {
 	MaxTokens       int                        `json:"max_tokens,omitempty"`
 	Thinking        *thinkingConf              `json:"thinking,omitempty"`
 	Reasoning       string                     `json:"reasoning_effort,omitempty"`
+	ReasoningFields map[string]json.RawMessage `json:"-"`
 	ProviderOptions map[string]json.RawMessage `json:"-"`
 }
 
@@ -116,12 +127,15 @@ func (r chatRequest) MarshalJSON() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if len(r.ProviderOptions) == 0 {
+	if len(r.ReasoningFields) == 0 && len(r.ProviderOptions) == 0 {
 		return raw, nil
 	}
 	var body map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &body); err != nil {
 		return nil, err
+	}
+	for key, value := range r.ReasoningFields {
+		body[key] = value
 	}
 	for key, value := range r.ProviderOptions {
 		body[key] = value
@@ -180,7 +194,7 @@ func (p *Provider) buildRequest(req *agentkit.Request) (chatRequest, []agentkit.
 		out.MaxTokens = req.Gen.MaxTokens
 	}
 	var warnings []agentkit.Warning
-	if err := applyReasoning(req.Gen.Reasoning, &out); err != nil {
+	if err := p.applyReasoning(req.Gen.Reasoning, &out); err != nil {
 		return chatRequest{}, warnings, err
 	}
 	if len(req.ProviderOptions) != 0 {
@@ -221,7 +235,20 @@ func (p *Provider) buildRequest(req *agentkit.Request) (chatRequest, []agentkit.
 	return out, warnings, nil
 }
 
-func applyReasoning(value agentkit.ReasoningValue, out *chatRequest) error {
+func (p *Provider) applyReasoning(value agentkit.ReasoningValue, out *chatRequest) error {
+	if p.cfg.ReasoningEncoder != nil {
+		raw, err := p.cfg.ReasoningEncoder(value)
+		if err != nil {
+			return err
+		}
+		if len(raw) == 0 {
+			return nil
+		}
+		if err := json.Unmarshal(raw, &out.ReasoningFields); err != nil || out.ReasoningFields == nil {
+			return fmt.Errorf("OpenAI-compatible reasoning encoder must return a JSON object: %w", agentkit.ErrInvalidConfig)
+		}
+		return nil
+	}
 	if value.IsUnset() {
 		return nil
 	}
@@ -319,15 +346,17 @@ func reasoningContent(raw json.RawMessage) (string, bool) {
 }
 
 type assembledRoundTrip struct {
-	message agentkit.Message
-	finish  agentkit.FinishReason
-	usage   agentkit.Usage
+	message        agentkit.Message
+	finish         agentkit.FinishReason
+	usage          agentkit.Usage
+	reportedCost   agentkit.Cost
+	reportedCostOK bool
 }
 
 type streamChunk struct {
-	Choices []choice     `json:"choices"`
-	Usage   usagePayload `json:"usage"`
-	Error   errorPayload `json:"error"`
+	Choices []choice        `json:"choices"`
+	Usage   json.RawMessage `json:"usage"`
+	Error   errorPayload    `json:"error"`
 }
 
 type choice struct {
@@ -396,12 +425,19 @@ func (p *Provider) assemble(frames []sse.Event) (assembledRoundTrip, error) {
 			raw := cloneRaw(frame.Data)
 			return out, p.errorFromPayload(0, raw, chunk.Error, "", "")
 		}
-		if chunk.Usage.TotalTokens != 0 {
-			usage, err := p.mapUsage(chunk.Usage)
+		if len(chunk.Usage) != 0 && string(chunk.Usage) != "null" {
+			var native usagePayload
+			if err := json.Unmarshal(chunk.Usage, &native); err != nil {
+				return out, p.transportError(err)
+			}
+			usage, err := p.mapUsage(native)
 			if err != nil {
 				return out, err
 			}
 			out.usage = usage
+			if p.cfg.CostExtractor != nil {
+				out.reportedCost, out.reportedCostOK = p.cfg.CostExtractor(chunk.Usage)
+			}
 		}
 		for _, choice := range chunk.Choices {
 			if choice.Delta.Content != "" {
