@@ -3,6 +3,7 @@ package subscription
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
@@ -112,11 +113,13 @@ func TestStoreRefreshesExpiredTokenOnceAndAtomicallyRewrites(t *testing.T) {
 	}
 }
 
-func TestLoginUsesPKCEVerifiesStateAndWritesCompatibleAuth(t *testing.T) {
+func TestFlowUsesPKCEVerifiesStateAndWritesCompatibleAuth(t *testing.T) {
 	fixedNow := time.Date(2026, 7, 17, 13, 0, 0, 0, time.UTC)
 	random := append(bytes.Repeat([]byte{1}, 32), bytes.Repeat([]byte{2}, 64)...)
 	state := base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{1}, 32))
 	verifier := base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{2}, 64))
+	challengeDigest := sha256.Sum256([]byte(verifier))
+	challenge := base64.RawURLEncoding.EncodeToString(challengeDigest[:])
 	var exchanges atomic.Int64
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		exchanges.Add(1)
@@ -135,22 +138,25 @@ func TestLoginUsesPKCEVerifiesStateAndWritesCompatibleAuth(t *testing.T) {
 	}))
 	defer server.Close()
 
-	restore := setLoginGlobals(server.URL+"/authorize", server.URL, server.Client(), bytes.NewReader(random), fixedNow)
+	restore := setLoginGlobals(server.URL+"/authorize", server.URL, server.Client(), random, fixedNow)
 	defer restore()
-	callback := "http://localhost:1455/auth/callback?code=manual-code&state=" + url.QueryEscape(state) + "\n"
-	var output bytes.Buffer
+	flow, err := BeginLogin()
+	if err != nil {
+		t.Fatalf("BeginLogin: %v", err)
+	}
+	callback := "http://localhost:1455/auth/callback?code=manual-code&state=" + url.QueryEscape(state)
 	path := filepath.Join(t.TempDir(), "auth.json")
 
-	// R-DIPS-04G8
-	if err := Login(context.Background(), path, LoginIO{In: strings.NewReader(callback), Out: &output}); err != nil {
-		t.Fatalf("Login: %v", err)
+	// R-I8OP-9XZ7
+	if err := flow.Complete(context.Background(), path, callback); err != nil {
+		t.Fatalf("Complete: %v", err)
 	}
-	printed, err := url.Parse(strings.TrimSpace(output.String()))
+	printed, err := url.Parse(flow.AuthorizeURL())
 	if err != nil {
 		t.Fatalf("parse printed authorize URL: %v", err)
 	}
 	query := printed.Query()
-	if printed.Path != "/authorize" || query.Get("state") != state || query.Get("code_challenge_method") != "S256" || query.Get("code_challenge") == "" {
+	if printed.Path != "/authorize" || query.Get("state") != state || query.Get("code_challenge_method") != "S256" || query.Get("code_challenge") != challenge {
 		t.Fatalf("authorize URL = %s", printed)
 	}
 	if exchanges.Load() != 1 {
@@ -180,13 +186,14 @@ func TestLoginUsesPKCEVerifiesStateAndWritesCompatibleAuth(t *testing.T) {
 	}
 
 	badRandom := append(bytes.Repeat([]byte{1}, 32), bytes.Repeat([]byte{2}, 64)...)
-	restoreBad := setLoginGlobals(server.URL+"/authorize", server.URL, server.Client(), bytes.NewReader(badRandom), fixedNow)
+	restoreBad := setLoginGlobals(server.URL+"/authorize", server.URL, server.Client(), badRandom, fixedNow)
 	defer restoreBad()
+	badFlow, err := BeginLogin()
+	if err != nil {
+		t.Fatalf("BeginLogin for wrong state: %v", err)
+	}
 	badPath := filepath.Join(t.TempDir(), "auth.json")
-	err = Login(context.Background(), badPath, LoginIO{
-		In:  strings.NewReader("http://localhost:1455/auth/callback?code=manual-code&state=wrong\n"),
-		Out: &bytes.Buffer{},
-	})
+	err = badFlow.Complete(context.Background(), badPath, "http://localhost:1455/auth/callback?code=manual-code&state=wrong")
 	if err == nil || !strings.Contains(err.Error(), "state") {
 		t.Fatalf("wrong-state error = %v", err)
 	}
@@ -195,6 +202,37 @@ func TestLoginUsesPKCEVerifiesStateAndWritesCompatibleAuth(t *testing.T) {
 	}
 	if _, err := os.Stat(badPath); !os.IsNotExist(err) {
 		t.Fatalf("wrong state wrote auth file: %v", err)
+	}
+}
+
+func TestFlowRejectsMissingOrMalformedRedirectWithoutExchange(t *testing.T) {
+	var exchanges atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		exchanges.Add(1)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	random := append(bytes.Repeat([]byte{1}, 32), bytes.Repeat([]byte{2}, 64)...)
+	restore := setLoginGlobals(server.URL+"/authorize", server.URL, server.Client(), random, time.Now())
+	defer restore()
+	flow, err := BeginLogin()
+	if err != nil {
+		t.Fatalf("BeginLogin: %v", err)
+	}
+
+	// R-I9WL-NPPW
+	for _, pasted := range []string{"", ":not-a-url", "/auth/callback?code=x&state=y"} {
+		err := flow.Complete(context.Background(), filepath.Join(t.TempDir(), "auth.json"), pasted)
+		if err == nil || !strings.Contains(err.Error(), "full redirect URL expected") {
+			t.Errorf("Complete(%q) error = %v, want full redirect URL error", pasted, err)
+		}
+		if err != nil && strings.Contains(err.Error(), "state") {
+			t.Errorf("Complete(%q) error = %v, want distinct from state mismatch", pasted, err)
+		}
+	}
+	if got := exchanges.Load(); got != 0 {
+		t.Fatalf("invalid redirects performed %d token exchanges, want 0", got)
 	}
 }
 
@@ -214,13 +252,18 @@ func writeTestAuth(t *testing.T, path string, auth authFile, mode os.FileMode) {
 	}
 }
 
-func setLoginGlobals(auth, token string, client *http.Client, randomReader *bytes.Reader, fixed time.Time) func() {
+func setLoginGlobals(auth, token string, client *http.Client, random []byte, fixed time.Time) func() {
 	oldAuthorizeURL, oldTokenURL := authorizeURL, tokenURL
-	oldHTTPClient, oldRandReader, oldNow := httpClient, randReader, now
+	oldHTTPClient, oldRandomBytes, oldNow := httpClient, randomBytes, now
 	authorizeURL, tokenURL = auth, token
-	httpClient, randReader, now = client, randomReader, func() time.Time { return fixed }
+	offset := 0
+	httpClient, randomBytes, now = client, func(dst []byte) (int, error) {
+		n := copy(dst, random[offset:])
+		offset += n
+		return n, nil
+	}, func() time.Time { return fixed }
 	return func() {
 		authorizeURL, tokenURL = oldAuthorizeURL, oldTokenURL
-		httpClient, randReader, now = oldHTTPClient, oldRandReader, oldNow
+		httpClient, randomBytes, now = oldHTTPClient, oldRandomBytes, oldNow
 	}
 }

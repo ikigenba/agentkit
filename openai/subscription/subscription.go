@@ -3,7 +3,6 @@
 package subscription
 
 import (
-	"bufio"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -31,11 +30,11 @@ const (
 )
 
 var (
-	authorizeURL           = defaultAuthURL
-	tokenURL               = defaultTokenURL
-	httpClient             = http.DefaultClient
-	randReader   io.Reader = rand.Reader
-	now                    = time.Now
+	authorizeURL = defaultAuthURL
+	tokenURL     = defaultTokenURL
+	httpClient   = http.DefaultClient
+	randomBytes  = rand.Read
+	now          = time.Now
 )
 
 type authFile struct {
@@ -170,25 +169,26 @@ func tokenExpiresBy(token string, cutoff time.Time) bool {
 	return !time.Unix(claims.ExpiresAt, 0).After(cutoff)
 }
 
-// LoginIO is the input/output pair used by the headless manual-paste login.
-type LoginIO struct {
-	In  io.Reader
-	Out io.Writer
+// Flow holds the values needed to complete a manual-paste PKCE login.
+type Flow struct {
+	authorizeURL string
+	state        string
+	verifier     string
+	client       *http.Client
+	tokenURL     string
+	now          func() time.Time
 }
 
-// Login performs a manual-paste OAuth authorization-code PKCE flow and writes
-// a fresh auth file at path.
-func Login(ctx context.Context, path string, streams LoginIO) error {
-	if streams.In == nil || streams.Out == nil {
-		return errors.New("subscription login requires input and output")
-	}
+// BeginLogin starts a manual-paste PKCE flow without performing network or
+// terminal I/O.
+func BeginLogin() (*Flow, error) {
 	state, err := randomURLString(32)
 	if err != nil {
-		return fmt.Errorf("generate OAuth state: %w", err)
+		return nil, fmt.Errorf("generate OAuth state: %w", err)
 	}
 	verifier, err := randomURLString(64)
 	if err != nil {
-		return fmt.Errorf("generate PKCE verifier: %w", err)
+		return nil, fmt.Errorf("generate PKCE verifier: %w", err)
 	}
 	digest := sha256.Sum256([]byte(verifier))
 	challenge := base64.RawURLEncoding.EncodeToString(digest[:])
@@ -201,18 +201,36 @@ func Login(ctx context.Context, path string, streams LoginIO) error {
 		"code_challenge":        {challenge},
 		"code_challenge_method": {"S256"},
 	}
-	if _, err := fmt.Fprintln(streams.Out, authorizeURL+"?"+query.Encode()); err != nil {
-		return fmt.Errorf("print authorization URL: %w", err)
+	return &Flow{
+		authorizeURL: authorizeURL + "?" + query.Encode(),
+		state:        state,
+		verifier:     verifier,
+		client:       httpClient,
+		tokenURL:     tokenURL,
+		now:          now,
+	}, nil
+}
+
+// AuthorizeURL returns the URL the consumer presents to the user.
+func (f *Flow) AuthorizeURL() string {
+	if f == nil {
+		return ""
 	}
-	callbackText, err := bufio.NewReader(streams.In).ReadString('\n')
-	if err != nil && !errors.Is(err, io.EOF) {
-		return fmt.Errorf("read callback URL: %w", err)
+	return f.authorizeURL
+}
+
+// Complete verifies a pasted redirect URL, exchanges its authorization code,
+// and writes a fresh Codex-CLI-compatible auth file at path.
+func (f *Flow) Complete(ctx context.Context, path, pastedRedirectURL string) error {
+	if f == nil {
+		return errors.New("complete subscription login: nil flow")
 	}
-	callback, err := url.Parse(strings.TrimSpace(callbackText))
-	if err != nil {
-		return fmt.Errorf("parse callback URL: %w", err)
+	callbackText := strings.TrimSpace(pastedRedirectURL)
+	callback, err := url.ParseRequestURI(callbackText)
+	if err != nil || callbackText == "" || callback.Scheme == "" || callback.Host == "" {
+		return errors.New("complete subscription login: full redirect URL expected")
 	}
-	if callback.Query().Get("state") != state {
+	if callback.Query().Get("state") != f.state {
 		return errors.New("OAuth callback state does not match")
 	}
 	code := callback.Query().Get("code")
@@ -225,14 +243,14 @@ func Login(ctx context.Context, path string, streams LoginIO) error {
 		"client_id":     {clientID},
 		"code":          {code},
 		"redirect_uri":  {redirectURI},
-		"code_verifier": {verifier},
+		"code_verifier": {f.verifier},
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenURL, strings.NewReader(form.Encode()))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, f.tokenURL, strings.NewReader(form.Encode()))
 	if err != nil {
 		return fmt.Errorf("create OAuth token request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := httpClient.Do(req)
+	resp, err := f.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("exchange OAuth code: %w", err)
 	}
@@ -259,7 +277,7 @@ func Login(ctx context.Context, path string, streams LoginIO) error {
 			RefreshToken: result.RefreshToken,
 			AccountID:    result.AccountID,
 		},
-		LastRefresh: now().UTC().Format(time.RFC3339),
+		LastRefresh: f.now().UTC().Format(time.RFC3339),
 	}
 	if err := writeAuthFile(path, auth); err != nil {
 		return fmt.Errorf("write subscription auth: %w", err)
@@ -269,8 +287,12 @@ func Login(ctx context.Context, path string, streams LoginIO) error {
 
 func randomURLString(size int) (string, error) {
 	raw := make([]byte, size)
-	if _, err := io.ReadFull(randReader, raw); err != nil {
+	n, err := randomBytes(raw)
+	if err != nil {
 		return "", err
+	}
+	if n != len(raw) {
+		return "", io.ErrUnexpectedEOF
 	}
 	return base64.RawURLEncoding.EncodeToString(raw), nil
 }
