@@ -27,7 +27,7 @@ const (
 	EmbedModel3Large = "text-embedding-3-large"
 )
 
-// Credential is the closed set of credentials accepted by New.
+// Credential is the closed set of credentials accepted by New and NewEmbedder.
 type Credential interface {
 	isCredential()
 }
@@ -100,16 +100,18 @@ func New(cred Credential, opts ...Option) *Provider {
 }
 
 // NewEmbedder constructs an OpenAI embeddings provider.
-func NewEmbedder(apiKey string, opts ...Option) agentkit.EmbeddingProvider {
-	p := New(APIKey(apiKey), opts...)
+func NewEmbedder(cred Credential, opts ...Option) agentkit.EmbeddingProvider {
+	apiKey, ok := cred.(APIKey)
+	if !ok {
+		panic("openai: embeddings require an APIKey credential")
+	}
+	p := New(apiKey, opts...)
 	return &embeddingProvider{cfg: openaicompat.EmbeddingConfig{
 		Provider:   "openai",
 		BaseURL:    p.baseURL,
 		APIKey:     p.apiKey,
 		HTTPClient: p.client,
 		Now:        p.now,
-		Pricing:    openAIEmbeddingPricing,
-		Specs:      openAIEmbeddingSpecs,
 		Classify:   classifyEmbedding,
 	}}
 }
@@ -185,9 +187,6 @@ func (p *Provider) RoundTrip(ctx context.Context, req *agentkit.Request) *agentk
 	return agentkit.NewRoundTrip(assembled.message, assembled.finish, assembled.usage, warnings, nil, 0, false)
 }
 
-// Embeddings exposes OpenAI's static embedding model metadata.
-var Embeddings agentkit.EmbeddingInspector = embeddingInspector{}
-
 type embeddingProvider struct {
 	cfg openaicompat.EmbeddingConfig
 }
@@ -199,44 +198,11 @@ func (p *embeddingProvider) Name() string {
 	return p.cfg.Provider
 }
 
-func (p *embeddingProvider) Pricing(model string) (agentkit.EmbeddingPricing, bool) {
-	if p == nil {
-		return agentkit.EmbeddingPricing{}, false
-	}
-	pricing, ok := p.cfg.Pricing[model]
-	return pricing, ok
-}
-
 func (p *embeddingProvider) Embed(ctx context.Context, req *agentkit.EmbedRequest) *agentkit.EmbedRoundTrip {
 	if p == nil {
 		return agentkit.NewEmbedRoundTrip(nil, agentkit.EmbeddingUsage{}, nil, agentkit.ErrInvalidConfig)
 	}
 	return openaicompat.NewEmbeddingProvider(p.cfg).Embed(ctx, req)
-}
-
-type embeddingInspector struct{}
-
-func (embeddingInspector) EmbeddingSpec(model string) (agentkit.EmbeddingSpec, bool) {
-	spec, ok := openAIEmbeddingSpecs[model]
-	return spec, ok
-}
-
-func (embeddingInspector) SupportedEmbeddings() map[string]agentkit.EmbeddingSpec {
-	out := make(map[string]agentkit.EmbeddingSpec, len(openAIEmbeddingSpecs))
-	for model, spec := range openAIEmbeddingSpecs {
-		out[model] = spec
-	}
-	return out
-}
-
-var openAIEmbeddingPricing = map[string]agentkit.EmbeddingPricing{
-	EmbedModel3Small: {InputToken: 20},
-	EmbedModel3Large: {InputToken: 130},
-}
-
-var openAIEmbeddingSpecs = map[string]agentkit.EmbeddingSpec{
-	EmbedModel3Small: {NativeDimension: 1536, MinDimension: 1, MaxDimension: 1536, MaxInputTokens: 8192},
-	EmbedModel3Large: {NativeDimension: 3072, MinDimension: 1, MaxDimension: 3072, MaxInputTokens: 8192},
 }
 
 func classifyEmbedding(status int, code, message string) error {

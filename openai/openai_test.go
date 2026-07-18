@@ -10,7 +10,6 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -790,7 +789,7 @@ func TestOpenAIEmbedderBatchesUsageOrderAndNormalizes(t *testing.T) {
 	}))
 	defer server.Close()
 
-	provider = NewEmbedder("test-key", WithBaseURL(server.URL), WithHTTPClient(server.Client()))
+	provider = NewEmbedder(APIKey("test-key"), WithBaseURL(server.URL), WithHTTPClient(server.Client()))
 	inputs := make([]string, 2050)
 	for i := range inputs {
 		inputs[i] = fmt.Sprintf("input-%04d", i)
@@ -798,7 +797,7 @@ func TestOpenAIEmbedderBatchesUsageOrderAndNormalizes(t *testing.T) {
 	embedder := &agentkit.Embedder{Provider: provider, Model: EmbedModel3Small, Dimensions: 2}
 
 	result, err := embedder.Embed(context.Background(), inputs, agentkit.InputQuery)
-	// R-YGQZ-C8S2, R-YJ6S-3S9G, R-YPAA-0MYX, R-Y5RV-WB3T, R-YHYV-Q0IR
+	// R-D7QO-K6RZ, R-YGQZ-C8S2, R-YJ6S-3S9G, R-YPAA-0MYX, R-Y5RV-WB3T, R-YHYV-Q0IR
 	if err != nil {
 		t.Fatalf("Embed() error = %v, want nil", err)
 	}
@@ -830,6 +829,20 @@ func TestOpenAIEmbedderBatchesUsageOrderAndNormalizes(t *testing.T) {
 	}
 }
 
+func TestOpenAIEmbedderRejectsSubscriptionCredentialAtConstruction(t *testing.T) {
+	// R-D7QO-K6RZ
+	defer func() {
+		got := recover()
+		if got == nil {
+			t.Fatal("NewEmbedder(Subscription(...)) did not panic")
+		}
+		if !strings.Contains(fmt.Sprint(got), "APIKey") {
+			t.Fatalf("panic = %q, want APIKey requirement", got)
+		}
+	}()
+	_ = NewEmbedder(Subscription(staticTokenSource{bearer: "token", account: "account"}))
+}
+
 func TestOpenAIEmbeddingsIgnoreInputTypeOnWire(t *testing.T) {
 	var mu sync.Mutex
 	var requests []map[string]any
@@ -846,7 +859,7 @@ func TestOpenAIEmbeddingsIgnoreInputTypeOnWire(t *testing.T) {
 	defer server.Close()
 
 	embedder := &agentkit.Embedder{
-		Provider:   NewEmbedder("test-key", WithBaseURL(server.URL), WithHTTPClient(server.Client())),
+		Provider:   NewEmbedder(APIKey("test-key"), WithBaseURL(server.URL), WithHTTPClient(server.Client())),
 		Model:      EmbedModel3Small,
 		Dimensions: 2,
 	}
@@ -871,7 +884,7 @@ func TestOpenAIEmbeddingsIgnoreInputTypeOnWire(t *testing.T) {
 	}
 }
 
-func TestOpenAIEmbeddingErrorsAndConfigValidationAvoidHTTP(t *testing.T) {
+func TestOpenAIEmbeddingContextLengthError(t *testing.T) {
 	var calls int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
@@ -880,35 +893,8 @@ func TestOpenAIEmbeddingErrorsAndConfigValidationAvoidHTTP(t *testing.T) {
 	}))
 	defer server.Close()
 
-	unknown := &agentkit.Embedder{
-		Provider: NewEmbedder("test-key", WithBaseURL(server.URL), WithHTTPClient(server.Client())),
-		Model:    "unknown-openai-embedding",
-	}
-	_, err := unknown.Embed(context.Background(), []string{"hello"}, agentkit.InputQuery)
-	// R-YMUH-93HJ
-	if !errors.Is(err, agentkit.ErrInvalidConfig) {
-		t.Fatalf("unknown model error = %v, want ErrInvalidConfig", err)
-	}
-	if calls != 0 {
-		t.Fatalf("calls after unknown model = %d, want 0", calls)
-	}
-
-	badDimensions := &agentkit.Embedder{
-		Provider:   NewEmbedder("test-key", WithBaseURL(server.URL), WithHTTPClient(server.Client())),
-		Model:      EmbedModel3Small,
-		Dimensions: 1537,
-	}
-	_, err = badDimensions.Embed(context.Background(), []string{"hello"}, agentkit.InputQuery)
-	// R-YD3A-6XJZ
-	if !errors.Is(err, agentkit.ErrInvalidConfig) {
-		t.Fatalf("bad dimensions error = %v, want ErrInvalidConfig", err)
-	}
-	if calls != 0 {
-		t.Fatalf("calls after bad dimensions = %d, want 0", calls)
-	}
-
 	tooLong := &agentkit.Embedder{
-		Provider: NewEmbedder("test-key", WithBaseURL(server.URL), WithHTTPClient(server.Client())),
+		Provider: NewEmbedder(APIKey("test-key"), WithBaseURL(server.URL), WithHTTPClient(server.Client())),
 		Model:    EmbedModel3Small,
 	}
 	result, err := tooLong.Embed(context.Background(), []string{"hello"}, agentkit.InputQuery)
@@ -954,7 +940,7 @@ func TestOpenAIEmbeddingDimensionsAndModelSwitching(t *testing.T) {
 	defer server.Close()
 
 	embedder := &agentkit.Embedder{
-		Provider: NewEmbedder("test-key", WithBaseURL(server.URL), WithHTTPClient(server.Client())),
+		Provider: NewEmbedder(APIKey("test-key"), WithBaseURL(server.URL), WithHTTPClient(server.Client())),
 		Model:    EmbedModel3Small,
 	}
 	native, err := embedder.Embed(context.Background(), []string{"native"}, agentkit.InputUnspecified)
@@ -1004,7 +990,7 @@ func TestOpenAIEmbeddingRetryPolicy(t *testing.T) {
 		defer server.Close()
 
 		clock := &fakeEmbeddingClock{now: time.Date(2026, 6, 20, 1, 0, 0, 0, time.UTC)}
-		provider := NewEmbedder("test-key", WithBaseURL(server.URL), WithHTTPClient(server.Client())).(*embeddingProvider)
+		provider := NewEmbedder(APIKey("test-key"), WithBaseURL(server.URL), WithHTTPClient(server.Client())).(*embeddingProvider)
 		provider.cfg.Clock = clock
 		embedder := &agentkit.Embedder{
 			Provider: provider,
@@ -1032,7 +1018,7 @@ func TestOpenAIEmbeddingRetryPolicy(t *testing.T) {
 		defer server.Close()
 
 		clock := &fakeEmbeddingClock{now: time.Date(2026, 6, 20, 1, 0, 0, 0, time.UTC)}
-		provider := NewEmbedder("test-key", WithBaseURL(server.URL), WithHTTPClient(server.Client())).(*embeddingProvider)
+		provider := NewEmbedder(APIKey("test-key"), WithBaseURL(server.URL), WithHTTPClient(server.Client())).(*embeddingProvider)
 		provider.cfg.Clock = clock
 		embedder := &agentkit.Embedder{
 			Provider: provider,
@@ -1049,52 +1035,6 @@ func TestOpenAIEmbeddingRetryPolicy(t *testing.T) {
 			t.Fatalf("calls/sleeps = %d/%v, want 1/[]", calls, clock.sleeps)
 		}
 	})
-}
-
-func TestOpenAIEmbeddingRegistryGoldens(t *testing.T) {
-	supported := Embeddings.SupportedEmbeddings()
-	wantKeys := []string{EmbedModel3Large, EmbedModel3Small}
-	gotKeys := make([]string, 0, len(supported))
-	for model := range supported {
-		gotKeys = append(gotKeys, model)
-	}
-	sort.Strings(gotKeys)
-	sort.Strings(wantKeys)
-	// R-YRQ2-S6GB, R-YSXZ-5Y70
-	if !reflect.DeepEqual(gotKeys, wantKeys) {
-		t.Fatalf("SupportedEmbeddings keys = %#v, want %#v", gotKeys, wantKeys)
-	}
-	if _, ok := Embeddings.EmbeddingSpec("unknown"); ok {
-		t.Fatal("EmbeddingSpec(unknown) ok = true, want false")
-	}
-
-	wantSpecs := map[string]agentkit.EmbeddingSpec{
-		EmbedModel3Small: {NativeDimension: 1536, MinDimension: 1, MaxDimension: 1536, MaxInputTokens: 8192},
-		EmbedModel3Large: {NativeDimension: 3072, MinDimension: 1, MaxDimension: 3072, MaxInputTokens: 8192},
-	}
-	wantPricing := map[string]agentkit.EmbeddingPricing{
-		EmbedModel3Small: {InputToken: 20},
-		EmbedModel3Large: {InputToken: 130},
-	}
-	provider := NewEmbedder("")
-	for _, model := range wantKeys {
-		spec, ok := Embeddings.EmbeddingSpec(model)
-		// R-YVDR-XHOE
-		if !ok || spec != wantSpecs[model] {
-			t.Fatalf("EmbeddingSpec(%q) = %#v/%v, want %#v/true", model, spec, ok, wantSpecs[model])
-		}
-		pricingProvider, ok := provider.(interface {
-			Pricing(string) (agentkit.EmbeddingPricing, bool)
-		})
-		if !ok {
-			t.Fatal("NewEmbedder() concrete provider has no transitional Pricing method")
-		}
-		pricing, ok := pricingProvider.Pricing(model)
-		// R-YU5V-JPXP, R-YWLO-B9F3
-		if !ok || pricing != wantPricing[model] {
-			t.Fatalf("Pricing(%q) = %#v/%v, want %#v/true", model, pricing, ok, wantPricing[model])
-		}
-	}
 }
 
 func embeddingInputNumber(input string) int {

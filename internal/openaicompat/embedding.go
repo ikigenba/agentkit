@@ -24,8 +24,6 @@ type EmbeddingConfig struct {
 	HTTPClient *http.Client
 	Now        func() time.Time
 	Clock      retry.Clock
-	Pricing    map[string]agentkit.EmbeddingPricing
-	Specs      map[string]agentkit.EmbeddingSpec
 	Classify   ErrorClassifier
 }
 
@@ -48,25 +46,9 @@ func (p *EmbeddingProvider) Name() string {
 	return p.cfg.Provider
 }
 
-// Pricing returns the provider-local embedding pricing.
-func (p *EmbeddingProvider) Pricing(model string) (agentkit.EmbeddingPricing, bool) {
-	if p == nil {
-		return agentkit.EmbeddingPricing{}, false
-	}
-	pricing, ok := p.cfg.Pricing[model]
-	return pricing, ok
-}
-
 // Embed performs one logical embedding call, splitting large batches as needed.
 func (p *EmbeddingProvider) Embed(ctx context.Context, req *agentkit.EmbedRequest) *agentkit.EmbedRoundTrip {
 	if p == nil || p.cfg.APIKey == "" || p.cfg.BaseURL == "" || req == nil {
-		return agentkit.NewEmbedRoundTrip(nil, agentkit.EmbeddingUsage{}, nil, agentkit.ErrInvalidConfig)
-	}
-	spec, ok := p.cfg.Specs[req.Model]
-	if !ok {
-		return agentkit.NewEmbedRoundTrip(nil, agentkit.EmbeddingUsage{}, nil, agentkit.ErrInvalidConfig)
-	}
-	if req.Dimensions != 0 && (req.Dimensions < spec.MinDimension || req.Dimensions > spec.MaxDimension) {
 		return agentkit.NewEmbedRoundTrip(nil, agentkit.EmbeddingUsage{}, nil, agentkit.ErrInvalidConfig)
 	}
 	if len(req.Inputs) == 0 {

@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
-	"sort"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -695,7 +694,7 @@ func TestGoogleEmbedderBatchesUsageOrderAndRequestShape(t *testing.T) {
 	}))
 	defer server.Close()
 
-	provider = NewEmbedder("test-key", WithBaseURL(server.URL), WithHTTPClient(server.Client()))
+	provider = NewEmbedder(APIKey("test-key"), WithBaseURL(server.URL), WithHTTPClient(server.Client()))
 	inputs := make([]string, 101)
 	for i := range inputs {
 		inputs[i] = fmt.Sprintf("input-%03d", i)
@@ -703,7 +702,7 @@ func TestGoogleEmbedderBatchesUsageOrderAndRequestShape(t *testing.T) {
 	embedder := &agentkit.Embedder{Provider: provider, Model: EmbedModelGemini001, Dimensions: 128}
 
 	result, err := embedder.Embed(context.Background(), inputs, agentkit.InputQuery)
-	// R-YGQZ-C8S2, R-YJ6S-3S9G, R-YPAA-0MYX
+	// R-D7QO-K6RZ, R-YGQZ-C8S2, R-YJ6S-3S9G, R-YPAA-0MYX
 	if err != nil {
 		t.Fatalf("Embed() error = %v, want nil", err)
 	}
@@ -743,7 +742,7 @@ func TestGoogleEmbeddingInputTypes(t *testing.T) {
 	defer server.Close()
 
 	embedder := &agentkit.Embedder{
-		Provider:   NewEmbedder("test-key", WithBaseURL(server.URL), WithHTTPClient(server.Client())),
+		Provider:   NewEmbedder(APIKey("test-key"), WithBaseURL(server.URL), WithHTTPClient(server.Client())),
 		Model:      EmbedModelGemini001,
 		Dimensions: 128,
 	}
@@ -759,7 +758,7 @@ func TestGoogleEmbeddingInputTypes(t *testing.T) {
 	}
 }
 
-func TestGoogleEmbeddingErrorsAndConfigValidationAvoidHTTP(t *testing.T) {
+func TestGoogleEmbeddingContextLengthError(t *testing.T) {
 	var calls int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
@@ -774,35 +773,8 @@ func TestGoogleEmbeddingErrorsAndConfigValidationAvoidHTTP(t *testing.T) {
 	}))
 	defer server.Close()
 
-	unknown := &agentkit.Embedder{
-		Provider: NewEmbedder("test-key", WithBaseURL(server.URL), WithHTTPClient(server.Client())),
-		Model:    "unknown-google-embedding",
-	}
-	_, err := unknown.Embed(context.Background(), []string{"hello"}, agentkit.InputQuery)
-	// R-YMUH-93HJ
-	if !errors.Is(err, agentkit.ErrInvalidConfig) {
-		t.Fatalf("unknown model error = %v, want ErrInvalidConfig", err)
-	}
-	if calls != 0 {
-		t.Fatalf("calls after unknown model = %d, want 0", calls)
-	}
-
-	badDimensions := &agentkit.Embedder{
-		Provider:   NewEmbedder("test-key", WithBaseURL(server.URL), WithHTTPClient(server.Client())),
-		Model:      EmbedModelGemini001,
-		Dimensions: 127,
-	}
-	_, err = badDimensions.Embed(context.Background(), []string{"hello"}, agentkit.InputQuery)
-	// R-YD3A-6XJZ
-	if !errors.Is(err, agentkit.ErrInvalidConfig) {
-		t.Fatalf("bad dimensions error = %v, want ErrInvalidConfig", err)
-	}
-	if calls != 0 {
-		t.Fatalf("calls after bad dimensions = %d, want 0", calls)
-	}
-
 	tooLong := &agentkit.Embedder{
-		Provider: NewEmbedder("test-key", WithBaseURL(server.URL), WithHTTPClient(server.Client())),
+		Provider: NewEmbedder(APIKey("test-key"), WithBaseURL(server.URL), WithHTTPClient(server.Client())),
 		Model:    EmbedModelGemini001,
 	}
 	result, err := tooLong.Embed(context.Background(), []string{"hello"}, agentkit.InputQuery)
@@ -838,7 +810,7 @@ func TestGoogleEmbeddingDimensionsAndRetryPolicy(t *testing.T) {
 		defer server.Close()
 
 		embedder := &agentkit.Embedder{
-			Provider: NewEmbedder("test-key", WithBaseURL(server.URL), WithHTTPClient(server.Client())),
+			Provider: NewEmbedder(APIKey("test-key"), WithBaseURL(server.URL), WithHTTPClient(server.Client())),
 			Model:    EmbedModelGemini001,
 		}
 		native, err := embedder.Embed(context.Background(), []string{"native"}, agentkit.InputUnspecified)
@@ -887,7 +859,7 @@ func TestGoogleEmbeddingDimensionsAndRetryPolicy(t *testing.T) {
 		defer server.Close()
 
 		clock := &fakeGoogleEmbeddingClock{now: time.Date(2026, 6, 20, 1, 0, 0, 0, time.UTC)}
-		provider := NewEmbedder("test-key", WithBaseURL(server.URL), WithHTTPClient(server.Client())).(*embeddingProvider)
+		provider := NewEmbedder(APIKey("test-key"), WithBaseURL(server.URL), WithHTTPClient(server.Client())).(*embeddingProvider)
 		provider.clock = clock
 		embedder := &agentkit.Embedder{
 			Provider: provider,
@@ -913,41 +885,6 @@ func TestGoogleEmbeddingDimensionsAndRetryPolicy(t *testing.T) {
 			t.Fatalf("calls/sleeps after non-retryable = %d/%v, want 3/[1ms]", calls, clock.sleeps)
 		}
 	})
-}
-
-func TestGoogleEmbeddingRegistryGoldens(t *testing.T) {
-	supported := Embeddings.SupportedEmbeddings()
-	wantKeys := []string{EmbedModelGemini001}
-	gotKeys := make([]string, 0, len(supported))
-	for model := range supported {
-		gotKeys = append(gotKeys, model)
-	}
-	sort.Strings(gotKeys)
-	// R-YRQ2-S6GB, R-YSXZ-5Y70
-	if !reflect.DeepEqual(gotKeys, wantKeys) {
-		t.Fatalf("SupportedEmbeddings keys = %#v, want %#v", gotKeys, wantKeys)
-	}
-	if _, ok := Embeddings.EmbeddingSpec("unknown"); ok {
-		t.Fatal("EmbeddingSpec(unknown) ok = true, want false")
-	}
-
-	provider := NewEmbedder("")
-	spec, ok := Embeddings.EmbeddingSpec(EmbedModelGemini001)
-	// R-YVDR-XHOE
-	if !ok || spec != (agentkit.EmbeddingSpec{NativeDimension: 3072, MinDimension: 128, MaxDimension: 3072, MaxInputTokens: 2048}) {
-		t.Fatalf("EmbeddingSpec(%q) = %#v/%v, want D20 spec", EmbedModelGemini001, spec, ok)
-	}
-	pricingProvider, ok := provider.(interface {
-		Pricing(string) (agentkit.EmbeddingPricing, bool)
-	})
-	if !ok {
-		t.Fatal("NewEmbedder() concrete provider has no transitional Pricing method")
-	}
-	pricing, ok := pricingProvider.Pricing(EmbedModelGemini001)
-	// R-YU5V-JPXP, R-YWLO-B9F3
-	if !ok || pricing != (agentkit.EmbeddingPricing{InputToken: 150}) {
-		t.Fatalf("Pricing(%q) = %#v/%v, want InputToken=150", EmbedModelGemini001, pricing, ok)
-	}
 }
 
 func TestGoogleDropsForeignReasoningFromWireRequest(t *testing.T) {

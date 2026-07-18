@@ -25,38 +25,7 @@ const EmbedModelGemini001 = "gemini-embedding-001"
 
 const defaultBaseURL = "https://generativelanguage.googleapis.com"
 
-// Embeddings exposes Gemini's static embedding model vocabulary.
-var Embeddings agentkit.EmbeddingInspector = embeddingInspector{}
-
-var googleEmbeddingPricing = map[string]agentkit.EmbeddingPricing{
-	EmbedModelGemini001: {InputToken: 150},
-}
-
-var googleEmbeddingSpecs = map[string]agentkit.EmbeddingSpec{
-	EmbedModelGemini001: {
-		NativeDimension: 3072,
-		MinDimension:    128,
-		MaxDimension:    3072,
-		MaxInputTokens:  2048,
-	},
-}
-
-type embeddingInspector struct{}
-
-func (embeddingInspector) EmbeddingSpec(model string) (agentkit.EmbeddingSpec, bool) {
-	spec, ok := googleEmbeddingSpecs[model]
-	return spec, ok
-}
-
-func (embeddingInspector) SupportedEmbeddings() map[string]agentkit.EmbeddingSpec {
-	out := make(map[string]agentkit.EmbeddingSpec, len(googleEmbeddingSpecs))
-	for model, spec := range googleEmbeddingSpecs {
-		out[model] = spec
-	}
-	return out
-}
-
-// Credential is the closed set of credentials accepted by New.
+// Credential is the closed set of credentials accepted by New and NewEmbedder.
 type Credential interface {
 	googleCredential()
 }
@@ -107,8 +76,8 @@ func New(cred Credential, opts ...Option) *Provider {
 }
 
 // NewEmbedder constructs a Google embeddings provider.
-func NewEmbedder(apiKey string, opts ...Option) agentkit.EmbeddingProvider {
-	p := New(APIKey(apiKey), opts...)
+func NewEmbedder(cred Credential, opts ...Option) agentkit.EmbeddingProvider {
+	p := New(cred, opts...)
 	return &embeddingProvider{
 		apiKey:  p.apiKey,
 		baseURL: p.baseURL,
@@ -742,23 +711,8 @@ func (p *embeddingProvider) Name() string {
 	return "google"
 }
 
-func (p *embeddingProvider) Pricing(model string) (agentkit.EmbeddingPricing, bool) {
-	if p == nil {
-		return agentkit.EmbeddingPricing{}, false
-	}
-	pricing, ok := googleEmbeddingPricing[model]
-	return pricing, ok
-}
-
 func (p *embeddingProvider) Embed(ctx context.Context, req *agentkit.EmbedRequest) *agentkit.EmbedRoundTrip {
 	if p == nil || p.apiKey == "" || p.baseURL == "" || req == nil {
-		return agentkit.NewEmbedRoundTrip(nil, agentkit.EmbeddingUsage{}, nil, agentkit.ErrInvalidConfig)
-	}
-	spec, ok := googleEmbeddingSpecs[req.Model]
-	if !ok {
-		return agentkit.NewEmbedRoundTrip(nil, agentkit.EmbeddingUsage{}, nil, agentkit.ErrInvalidConfig)
-	}
-	if req.Dimensions != 0 && (req.Dimensions < spec.MinDimension || req.Dimensions > spec.MaxDimension) {
 		return agentkit.NewEmbedRoundTrip(nil, agentkit.EmbeddingUsage{}, nil, agentkit.ErrInvalidConfig)
 	}
 	if len(req.Inputs) == 0 {

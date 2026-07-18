@@ -33,11 +33,9 @@ func TestEmbeddingProviderPostsEmbeddingsAndOrdersVectors(t *testing.T) {
 		BaseURL:    server.URL,
 		APIKey:     "key",
 		HTTPClient: server.Client(),
-		Pricing:    map[string]agentkit.EmbeddingPricing{"model": {InputToken: 1}},
-		Specs:      map[string]agentkit.EmbeddingSpec{"model": {NativeDimension: 2, MinDimension: 1, MaxDimension: 2}},
 	})
 	rt := provider.Embed(context.Background(), &agentkit.EmbedRequest{
-		Model:      "model",
+		Model:      "vendor-new-model",
 		Inputs:     []string{"first", "second"},
 		Role:       agentkit.InputDocument,
 		Dimensions: 2,
@@ -52,6 +50,9 @@ func TestEmbeddingProviderPostsEmbeddingsAndOrdersVectors(t *testing.T) {
 	}
 	if got, want := rt.Usage(), (agentkit.EmbeddingUsage{InputTokens: 7, Total: 7}); got != want {
 		t.Fatalf("usage = %#v, want %#v", got, want)
+	}
+	if request["model"] != "vendor-new-model" || request["dimensions"] != float64(2) {
+		t.Fatalf("model/dimensions = %#v/%#v, want verbatim vendor-new-model/2", request["model"], request["dimensions"])
 	}
 	for _, key := range []string{"role", "task", "input_type"} {
 		if _, ok := request[key]; ok {

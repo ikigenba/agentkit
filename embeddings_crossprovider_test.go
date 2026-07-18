@@ -36,8 +36,8 @@ func TestCrossProviderEmbeddingsIdenticalCallingCode(t *testing.T) {
 		return result
 	}
 
-	openAIResult := run(openai.NewEmbedder("openai-key", openai.WithBaseURL(openAIServer.URL), openai.WithHTTPClient(openAIServer.Client())), openai.EmbedModel3Small)
-	googleResult := run(google.NewEmbedder("google-key", google.WithBaseURL(googleServer.URL), google.WithHTTPClient(googleServer.Client())), google.EmbedModelGemini001)
+	openAIResult := run(openai.NewEmbedder(openai.APIKey("openai-key"), openai.WithBaseURL(openAIServer.URL), openai.WithHTTPClient(openAIServer.Client())), openai.EmbedModel3Small)
+	googleResult := run(google.NewEmbedder(google.APIKey("google-key"), google.WithBaseURL(googleServer.URL), google.WithHTTPClient(googleServer.Client())), google.EmbedModelGemini001)
 
 	// R-Y5RV-WB3T, R-YHYV-Q0IR
 	for name, result := range map[string]*agentkit.EmbedResult{"openai": openAIResult, "google": googleResult} {
@@ -63,7 +63,7 @@ func TestCrossProviderEmbeddingSwitchingAndRoles(t *testing.T) {
 	defer googleServer.Close()
 
 	embedder := &agentkit.Embedder{
-		Provider:   openai.NewEmbedder("openai-key", openai.WithBaseURL(openAIServer.URL), openai.WithHTTPClient(openAIServer.Client())),
+		Provider:   openai.NewEmbedder(openai.APIKey("openai-key"), openai.WithBaseURL(openAIServer.URL), openai.WithHTTPClient(openAIServer.Client())),
 		Model:      openai.EmbedModel3Small,
 		Dimensions: 128,
 	}
@@ -71,7 +71,7 @@ func TestCrossProviderEmbeddingSwitchingAndRoles(t *testing.T) {
 		t.Fatalf("OpenAI Embed() error = %v", err)
 	}
 
-	embedder.Provider = google.NewEmbedder("google-key", google.WithBaseURL(googleServer.URL), google.WithHTTPClient(googleServer.Client()))
+	embedder.Provider = google.NewEmbedder(google.APIKey("google-key"), google.WithBaseURL(googleServer.URL), google.WithHTTPClient(googleServer.Client()))
 	embedder.Model = google.EmbedModelGemini001
 	embedder.Dimensions = 256
 	if _, err := embedder.Embed(context.Background(), []string{"input-001"}, agentkit.InputDocument); err != nil {
@@ -91,14 +91,14 @@ func TestCrossProviderEmbeddingSwitchingAndRoles(t *testing.T) {
 
 	for _, role := range []agentkit.InputType{agentkit.InputUnspecified, agentkit.InputQuery, agentkit.InputDocument} {
 		if _, err := (&agentkit.Embedder{
-			Provider:   openai.NewEmbedder("openai-key", openai.WithBaseURL(openAIServer.URL), openai.WithHTTPClient(openAIServer.Client())),
+			Provider:   openai.NewEmbedder(openai.APIKey("openai-key"), openai.WithBaseURL(openAIServer.URL), openai.WithHTTPClient(openAIServer.Client())),
 			Model:      openai.EmbedModel3Small,
 			Dimensions: 128,
 		}).Embed(context.Background(), []string{"input-002"}, role); err != nil {
 			t.Fatalf("OpenAI role %v error = %v", role, err)
 		}
 		if _, err := (&agentkit.Embedder{
-			Provider:   google.NewEmbedder("google-key", google.WithBaseURL(googleServer.URL), google.WithHTTPClient(googleServer.Client())),
+			Provider:   google.NewEmbedder(google.APIKey("google-key"), google.WithBaseURL(googleServer.URL), google.WithHTTPClient(googleServer.Client())),
 			Model:      google.EmbedModelGemini001,
 			Dimensions: 128,
 		}).Embed(context.Background(), []string{"input-002"}, role); err != nil {
