@@ -54,21 +54,21 @@ func TestOpenRouterIntegrationReportedCost(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
-	stream := (&agentkit.Conversation{Provider: New(APIKey(key)), Model: "openai/gpt-5.4-mini"}).Send(ctx, "Reply with one short sentence.")
-	var text strings.Builder
-	for event := range stream.Events() {
-		if done, ok := event.(agentkit.MessageDone); ok {
-			text.WriteString(openRouterMessageText(done.Message))
-		}
+	roundTrip := New(APIKey(key)).RoundTrip(ctx, &agentkit.Request{
+		Model: "openai/gpt-5.4-mini",
+		Messages: []agentkit.Message{{
+			Role:   agentkit.RoleUser,
+			Blocks: []agentkit.Block{agentkit.TextBlock{Text: "Reply with one short sentence."}},
+		}},
+	})
+	if err := roundTrip.Err(); err != nil {
+		t.Fatalf("RoundTrip() error = %v", err)
 	}
-	if err := stream.Err(); err != nil {
-		t.Fatalf("Err() = %v", err)
+	if text := strings.TrimSpace(openRouterMessageText(roundTrip.Message())); text == "" {
+		t.Fatal("assembled message has no assistant text")
 	}
-	if strings.TrimSpace(text.String()) == "" {
-		t.Fatal("completed stream has no assistant text")
-	}
-	if cost := stream.Cost(); cost <= 0 {
-		t.Fatalf("Cost() = %d, want provider-reported cost greater than zero", cost)
+	if cost, ok := roundTrip.ReportedCost(); !ok || cost <= 0 {
+		t.Fatalf("ReportedCost() = %d/%v, want a present cost greater than zero", cost, ok)
 	}
 }
 
