@@ -4,7 +4,6 @@ The manifest, and a work **queue**: one line per **pending** phase, in build ord
 
 Next phase: 65
 
-- Phase 56  ⬜  realizes D05,D06,D09                  — openai adapter to the dumb layer, API-key path (openai slices of the same ids)
 - Phase 57  ⬜  realizes D05,D06,D09                  — internal/openaicompat + zai to the dumb layer (zai/compat slices; R-CRVZ-L64Y zai half)
 - Phase 58  ⬜  realizes D24,D05,D06,D09              — the openrouter provider package (R-DA6H-BQ9D, R-DBED-PI02, R-DCMA-39QR; openrouter slices incl. R-CRVZ-L64Y)
 - Phase 59  ⬜  realizes D25                          — openai subscription auth + openai/subscription (R-DG9Z-8KYU, R-DHHV-MCPJ, R-DIPS-04G8, R-DL5K-RNXM)
