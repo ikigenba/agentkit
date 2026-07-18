@@ -1,5 +1,6 @@
 // Package openai implements the AgentKit provider SPI for OpenAI's Responses
-// API.
+// API. Costs resolved for subscription-authenticated turns are notional
+// API-rate equivalents rather than subscription spend.
 package openai
 
 import (
@@ -19,7 +20,8 @@ import (
 )
 
 const (
-	defaultBaseURL = "https://api.openai.com"
+	defaultBaseURL      = "https://api.openai.com"
+	subscriptionBaseURL = "https://chatgpt.com"
 
 	EmbedModel3Small = "text-embedding-3-small"
 	EmbedModel3Large = "text-embedding-3-large"
@@ -27,18 +29,29 @@ const (
 
 // Credential is the closed set of credentials accepted by New.
 type Credential interface {
-	openAICredential() credential
-}
-
-type credential struct {
-	apiKey string
+	isCredential()
 }
 
 // APIKey authenticates requests with an OpenAI API key.
 type APIKey string
 
-func (key APIKey) openAICredential() credential {
-	return credential{apiKey: string(key)}
+func (APIKey) isCredential() {}
+
+// TokenSource supplies the current bearer token and ChatGPT account ID for
+// subscription authentication.
+type TokenSource interface {
+	Token(ctx context.Context) (bearer, accountID string, err error)
+}
+
+type subscriptionCredential struct {
+	tokenSource TokenSource
+}
+
+func (subscriptionCredential) isCredential() {}
+
+// Subscription authenticates Responses requests with a ChatGPT subscription.
+func Subscription(ts TokenSource) Credential {
+	return subscriptionCredential{tokenSource: ts}
 }
 
 // Option configures an OpenAI provider handle.
@@ -61,22 +74,24 @@ func WithHTTPClient(client *http.Client) Option {
 
 // Provider is an OpenAI Responses API provider.
 type Provider struct {
-	apiKey  string
-	baseURL string
-	client  *http.Client
-	now     func() time.Time
+	apiKey       string
+	tokenSource  TokenSource
+	subscription bool
+	baseURL      string
+	client       *http.Client
+	now          func() time.Time
 }
 
 // New constructs an OpenAI provider using cred.
 func New(cred Credential, opts ...Option) *Provider {
-	var cfg credential
-	if cred != nil {
-		cfg = cred.openAICredential()
-	}
-	p := &Provider{
-		apiKey:  cfg.apiKey,
-		baseURL: defaultBaseURL,
-		now:     time.Now,
+	p := &Provider{baseURL: defaultBaseURL, now: time.Now}
+	switch cred := cred.(type) {
+	case APIKey:
+		p.apiKey = string(cred)
+	case subscriptionCredential:
+		p.tokenSource = cred.tokenSource
+		p.subscription = true
+		p.baseURL = subscriptionBaseURL
 	}
 	for _, opt := range opts {
 		opt(p)
@@ -101,13 +116,30 @@ func NewEmbedder(apiKey string, opts ...Option) agentkit.EmbeddingProvider {
 
 // Name labels OpenAI provider errors.
 func (p *Provider) Name() string {
-	return "openai"
+	if p != nil && p.subscription {
+		return "openai.subscription"
+	}
+	return "openai.apikey"
 }
 
 // RoundTrip performs one OpenAI Responses API model call.
 func (p *Provider) RoundTrip(ctx context.Context, req *agentkit.Request) *agentkit.RoundTrip {
-	if p == nil || p.apiKey == "" || req == nil {
+	if p == nil || (p.apiKey == "" && (!p.subscription || p.tokenSource == nil)) || req == nil {
 		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, nil, agentkit.ErrInvalidConfig, 0, false)
+	}
+	bearer := p.apiKey
+	accountID := ""
+	path := "/v1/responses"
+	if p.subscription {
+		var err error
+		bearer, accountID, err = p.tokenSource.Token(ctx)
+		if err != nil {
+			return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, nil, p.providerTransportError(err), 0, false)
+		}
+		if bearer == "" || accountID == "" {
+			return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, nil, agentkit.ErrInvalidConfig, 0, false)
+		}
+		path = "/backend-api/codex/responses"
 	}
 
 	body, warnings, err := p.buildRequest(req)
@@ -115,22 +147,27 @@ func (p *Provider) RoundTrip(ctx context.Context, req *agentkit.Request) *agentk
 		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, err, 0, false)
 	}
 
-	httpReq, err := httpx.JSONRequest(ctx, http.MethodPost, p.baseURL+"/v1/responses", body)
+	httpReq, err := httpx.JSONRequest(ctx, http.MethodPost, p.baseURL+path, body)
 	if err != nil {
-		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, providerTransportError(err), 0, false)
+		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, p.providerTransportError(err), 0, false)
 	}
-	httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
+	httpReq.Header.Set("Authorization", "Bearer "+bearer)
 	httpReq.Header.Set("Accept", "text/event-stream")
+	if p.subscription {
+		httpReq.Header.Set("chatgpt-account-id", accountID)
+		httpReq.Header.Set("originator", "codex_cli_rs")
+		httpReq.Header.Set("OpenAI-Beta", "responses=experimental")
+	}
 
 	resp, err := httpx.Client(p.client).Do(httpReq)
 	if err != nil {
-		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, providerTransportError(err), 0, false)
+		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, p.providerTransportError(err), 0, false)
 	}
 	defer resp.Body.Close()
 
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, providerTransportError(err), 0, false)
+		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, p.providerTransportError(err), 0, false)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, p.providerHTTPError(resp, raw), 0, false)
@@ -138,11 +175,11 @@ func (p *Provider) RoundTrip(ctx context.Context, req *agentkit.Request) *agentk
 
 	frames, err := sse.ReadAll(strings.NewReader(string(raw)))
 	if err != nil {
-		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, providerTransportError(err), 0, false)
+		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, p.providerTransportError(err), 0, false)
 	}
 	assembled, err := assemble(frames)
 	if err != nil {
-		return agentkit.NewRoundTrip(assembled.message, assembled.finish, assembled.usage, warnings, err, 0, false)
+		return agentkit.NewRoundTrip(assembled.message, assembled.finish, assembled.usage, warnings, p.labelError(err), 0, false)
 	}
 	warnings = append(warnings, assembled.warnings...)
 	return agentkit.NewRoundTrip(assembled.message, assembled.finish, assembled.usage, warnings, nil, 0, false)
@@ -713,6 +750,20 @@ func providerTransportError(err error) error {
 	}
 }
 
+func (p *Provider) providerTransportError(err error) error {
+	return p.labelError(providerTransportError(err))
+}
+
+func (p *Provider) labelError(err error) error {
+	var providerErr *agentkit.Error
+	if !errors.As(err, &providerErr) {
+		return err
+	}
+	copy := *providerErr
+	copy.Provider = p.Name()
+	return &copy
+}
+
 func (p *Provider) providerHTTPError(resp *http.Response, raw []byte) error {
 	var envelope struct {
 		Error struct {
@@ -737,7 +788,7 @@ func (p *Provider) providerHTTPError(resp *http.Response, raw []byte) error {
 	category := classify(resp.StatusCode, envelope.Error.Type, code)
 	return &agentkit.Error{
 		Category:   category,
-		Provider:   "openai",
+		Provider:   p.Name(),
 		StatusCode: resp.StatusCode,
 		Type:       typ,
 		Message:    message,

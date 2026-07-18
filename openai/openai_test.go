@@ -24,6 +24,109 @@ type unknownBlock struct {
 	agentkit.TextBlock
 }
 
+type staticTokenSource struct {
+	bearer  string
+	account string
+	err     error
+}
+
+func (s staticTokenSource) Token(context.Context) (string, string, error) {
+	return s.bearer, s.account, s.err
+}
+
+func TestSubscriptionAndAPIKeyCredentialsSelectTransport(t *testing.T) {
+	tests := []struct {
+		name         string
+		credential   Credential
+		wantPath     string
+		wantBearer   string
+		subscription bool
+	}{
+		{name: "subscription", credential: Subscription(staticTokenSource{bearer: "living-token", account: "acct-123"}), wantPath: "/backend-api/codex/responses", wantBearer: "living-token", subscription: true},
+		{name: "api key", credential: APIKey("platform-key"), wantPath: "/v1/responses", wantBearer: "platform-key"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != tt.wantPath {
+					t.Errorf("path = %q, want %q", r.URL.Path, tt.wantPath)
+				}
+				if got := r.Header.Get("Authorization"); got != "Bearer "+tt.wantBearer {
+					t.Errorf("Authorization = %q", got)
+				}
+				wantHeaders := map[string]string{
+					"chatgpt-account-id": "acct-123",
+					"originator":         "codex_cli_rs",
+					"OpenAI-Beta":        "responses=experimental",
+				}
+				for name, want := range wantHeaders {
+					got := r.Header.Get(name)
+					if tt.subscription && got != want {
+						t.Errorf("%s = %q, want %q", name, got, want)
+					}
+					if !tt.subscription && got != "" {
+						t.Errorf("API key request unexpectedly carried %s = %q", name, got)
+					}
+				}
+				var body map[string]any
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Fatalf("decode request: %v", err)
+				}
+				if body["store"] != false || body["instructions"] != "follow system" || fmt.Sprint(body["include"]) != "[reasoning.encrypted_content]" {
+					t.Errorf("fixed Responses body fields = %#v", body)
+				}
+				w.Header().Set("Content-Type", "text/event-stream")
+				fmt.Fprint(w, textOnlySSE("ok", 1, 0, 1, 0))
+			}))
+			defer server.Close()
+
+			conversation := &agentkit.Conversation{
+				Provider: New(tt.credential, WithBaseURL(server.URL), WithHTTPClient(server.Client())),
+				Model:    "gpt-test",
+				System:   "follow system",
+				Pricing:  &agentkit.Pricing{},
+			}
+			// R-DG9Z-8KYU
+			stream := conversation.Send(context.Background(), "hello")
+			for range stream.Events() {
+			}
+			if err := stream.Err(); err != nil {
+				t.Fatalf("Send: %v", err)
+			}
+		})
+	}
+}
+
+func TestCredentialModeLabelsNameAndProviderErrors(t *testing.T) {
+	tests := []struct {
+		name       string
+		credential Credential
+		want       string
+	}{
+		{name: "api key", credential: APIKey("key"), want: "openai.apikey"},
+		{name: "subscription", credential: Subscription(staticTokenSource{bearer: "token", account: "account"}), want: "openai.subscription"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusBadRequest)
+				fmt.Fprint(w, `{"error":{"message":"bad request","type":"invalid_request_error"}}`)
+			}))
+			defer server.Close()
+			provider := New(tt.credential, WithBaseURL(server.URL), WithHTTPClient(server.Client()))
+			// R-DL5K-RNXM
+			if got := provider.Name(); got != tt.want {
+				t.Fatalf("Name() = %q, want %q", got, tt.want)
+			}
+			rt := provider.RoundTrip(context.Background(), &agentkit.Request{Model: "gpt-test"})
+			var providerErr *agentkit.Error
+			if !errors.As(rt.Err(), &providerErr) || providerErr.Provider != tt.want {
+				t.Fatalf("provider error = %#v, want label %q", rt.Err(), tt.want)
+			}
+		})
+	}
+}
+
 func TestProviderSendBuildsResponsesRequestsAndReplaysReasoning(t *testing.T) {
 	var mu sync.Mutex
 	var requests []map[string]any
@@ -313,7 +416,7 @@ func TestUncatalogedModelFlowsToWireAndVendorErrorIsTyped(t *testing.T) {
 	// R-CT3V-YXVN
 	rt := p.RoundTrip(context.Background(), &agentkit.Request{Model: model})
 	var providerErr *agentkit.Error
-	if !errors.As(rt.Err(), &providerErr) || providerErr.Provider != "openai" || providerErr.StatusCode != http.StatusBadRequest {
+	if !errors.As(rt.Err(), &providerErr) || providerErr.Provider != "openai.apikey" || providerErr.StatusCode != http.StatusBadRequest {
 		t.Fatalf("error = %#v, want typed OpenAI 400", rt.Err())
 	}
 }
@@ -392,7 +495,7 @@ func TestVendorRejectedReasoningValueReturnsTypedErrorUnchanged(t *testing.T) {
 		t.Fatalf("warnings = %#v, want none", rt.Warnings())
 	}
 	var providerErr *agentkit.Error
-	if !errors.As(rt.Err(), &providerErr) || providerErr.Provider != "openai" {
+	if !errors.As(rt.Err(), &providerErr) || providerErr.Provider != "openai.apikey" {
 		t.Fatalf("error = %#v, want typed OpenAI error", rt.Err())
 	}
 }
@@ -636,7 +739,7 @@ func TestOpenAIErrorMappingPreservesRawAndRetryAfter(t *testing.T) {
 			if !errors.As(err, &providerErr) {
 				t.Fatalf("errors.As(*agentkit.Error) failed for %v", err)
 			}
-			if providerErr.Provider != "openai" || providerErr.StatusCode != tt.status || providerErr.RequestID != "req_123" {
+			if providerErr.Provider != "openai.apikey" || providerErr.StatusCode != tt.status || providerErr.RequestID != "req_123" {
 				t.Fatalf("provider error details = %#v", providerErr)
 			}
 			if string(providerErr.Raw) != tt.body {
