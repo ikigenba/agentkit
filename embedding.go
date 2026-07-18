@@ -103,12 +103,6 @@ type EmbeddingSpec struct {
 	MaxInputTokens  int
 }
 
-// EmbeddingInspector exposes a provider package's supported embedding models.
-type EmbeddingInspector interface {
-	EmbeddingSpec(model string) (EmbeddingSpec, bool)
-	SupportedEmbeddings() map[string]EmbeddingSpec
-}
-
 func addEmbeddingUsage(a, b EmbeddingUsage) EmbeddingUsage {
 	return EmbeddingUsage{
 		InputTokens: a.InputTokens + b.InputTokens,

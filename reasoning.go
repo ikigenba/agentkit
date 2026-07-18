@@ -114,9 +114,3 @@ func (s ReasoningSpec) Accepts(v ReasoningValue) bool {
 	}
 	return budget >= s.Min && budget <= s.Max
 }
-
-// ReasoningInspector reads a provider's credential-blind reasoning vocabulary.
-type ReasoningInspector interface {
-	ReasoningSpec(model string) (ReasoningSpec, bool)
-	SupportedReasoning() map[string]ReasoningSpec
-}
