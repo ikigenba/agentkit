@@ -1,11 +1,10 @@
-// Package subscription maintains opt-in, Codex-CLI-compatible OAuth
-// credentials for OpenAI subscription authentication.
+// Package subscription maintains opt-in OAuth credentials for OpenAI
+// subscription authentication. Credential files are raw token-endpoint
+// responses produced by a consumer-owned login flow.
 package subscription
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -21,66 +20,71 @@ import (
 )
 
 const (
-	clientID        = "app_EMoamEEZ73f0CkXaXp7hrann"
-	defaultAuthURL  = "https://auth.openai.com/oauth/authorize"
-	defaultTokenURL = "https://auth.openai.com/oauth/token"
-	redirectURI     = "http://localhost:1455/auth/callback"
-	oauthScope      = "openid profile email offline_access"
-	refreshSkew     = 5 * time.Minute
+	clientID           = "app_EMoamEEZ73f0CkXaXp7hrann"
+	defaultTokenURL    = "https://auth.openai.com/oauth/token"
+	refreshSkew        = 5 * time.Minute
+	authClaimNamespace = "https://api.openai.com/auth"
 )
 
 var (
-	authorizeURL = defaultAuthURL
-	tokenURL     = defaultTokenURL
-	httpClient   = http.DefaultClient
-	randomBytes  = rand.Read
-	now          = time.Now
+	tokenURL   = defaultTokenURL
+	httpClient = http.DefaultClient
+	now        = time.Now
 )
 
-type authFile struct {
-	APIKey      *string `json:"OPENAI_API_KEY"`
-	Tokens      tokens  `json:"tokens"`
-	LastRefresh string  `json:"last_refresh"`
-}
-
-type tokens struct {
-	IDToken      string `json:"id_token"`
+type tokenResponse struct {
 	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
-	AccountID    string `json:"account_id"`
+	RefreshToken string `json:"refresh_token,omitempty"`
+	IDToken      string `json:"id_token,omitempty"`
 }
 
-// Store supplies living subscription tokens from one explicitly named auth
-// file. Refresh and rewrite operations are serialized within the store.
+// Store supplies living subscription tokens from one explicitly named token
+// response file. Refresh and rewrite operations are serialized within the
+// store so a rotating refresh-token lineage is never raced by its callers.
 type Store struct {
-	mu       sync.Mutex
-	path     string
-	auth     authFile
-	client   *http.Client
-	tokenURL string
-	now      func() time.Time
+	mu        sync.Mutex
+	path      string
+	tokens    tokenResponse
+	accountID string
+	client    *http.Client
+	tokenURL  string
+	now       func() time.Time
 }
 
-// Load opens an existing Codex-CLI-compatible auth file at path. Because OAuth
-// refresh tokens rotate, sharing the official Codex CLI's live file can cause
-// refresh-lineage contention; a separately created auth file is preferable.
+// Load opens the raw OAuth token-endpoint response at path. The caller owns
+// path selection and initial login; this package performs no discovery and
+// reads no ambient credentials.
 func Load(path string) (*Store, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("load subscription auth: %w", err)
+		return nil, fmt.Errorf("load subscription token response: %w", err)
 	}
-	var auth authFile
-	if err := json.Unmarshal(raw, &auth); err != nil {
-		return nil, fmt.Errorf("decode subscription auth: %w", err)
+	var tokens tokenResponse
+	if err := json.Unmarshal(raw, &tokens); err != nil {
+		return nil, fmt.Errorf("decode subscription token response: %w", err)
 	}
-	if auth.Tokens.AccessToken == "" || auth.Tokens.AccountID == "" {
-		return nil, errors.New("subscription auth file is missing access_token or account_id")
+	if tokens.AccessToken == "" {
+		return nil, errors.New("subscription token response is missing access_token")
 	}
-	return &Store{path: path, auth: auth, client: httpClient, tokenURL: tokenURL, now: now}, nil
+	accountID := tokenAccountID(tokens.IDToken)
+	if accountID == "" {
+		accountID = tokenAccountID(tokens.AccessToken)
+	}
+	if accountID == "" {
+		return nil, errors.New("subscription token response is missing the ChatGPT account claim")
+	}
+	return &Store{
+		path:      path,
+		tokens:    tokens,
+		accountID: accountID,
+		client:    httpClient,
+		tokenURL:  tokenURL,
+		now:       now,
+	}, nil
 }
 
-// Token returns a current bearer and its account ID, refreshing and atomically
-// rewriting the auth file when the access token is near expiry.
+// Token returns a current bearer and its load-derived account identifier,
+// refreshing and atomically rewriting the token response when near expiry.
 func (s *Store) Token(ctx context.Context) (bearer, accountID string, err error) {
 	if s == nil {
 		return "", "", errors.New("nil subscription store")
@@ -88,21 +92,21 @@ func (s *Store) Token(ctx context.Context) (bearer, accountID string, err error)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if tokenExpiresBy(s.auth.Tokens.AccessToken, s.now().Add(refreshSkew)) {
+	if tokenExpiresBy(s.tokens.AccessToken, s.now().Add(refreshSkew)) {
 		if err := s.refresh(ctx); err != nil {
 			return "", "", err
 		}
 	}
-	return s.auth.Tokens.AccessToken, s.auth.Tokens.AccountID, nil
+	return s.tokens.AccessToken, s.accountID, nil
 }
 
 func (s *Store) refresh(ctx context.Context) error {
-	if s.auth.Tokens.RefreshToken == "" {
+	if s.tokens.RefreshToken == "" {
 		return errors.New("subscription access token expired and no refresh_token is available")
 	}
 	form := url.Values{
 		"grant_type":    {"refresh_token"},
-		"refresh_token": {s.auth.Tokens.RefreshToken},
+		"refresh_token": {s.tokens.RefreshToken},
 		"client_id":     {clientID},
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.tokenURL, strings.NewReader(form.Encode()))
@@ -122,42 +126,50 @@ func (s *Store) refresh(ctx context.Context) error {
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("refresh subscription token: status %d", resp.StatusCode)
 	}
-	var result struct {
-		AccessToken  string `json:"access_token"`
-		RefreshToken string `json:"refresh_token"`
-		IDToken      string `json:"id_token"`
-		AccountID    string `json:"account_id"`
-	}
-	if err := json.Unmarshal(raw, &result); err != nil {
+	var refreshed tokenResponse
+	if err := json.Unmarshal(raw, &refreshed); err != nil {
 		return fmt.Errorf("decode subscription refresh response: %w", err)
 	}
-	if result.AccessToken == "" {
+	if refreshed.AccessToken == "" {
 		return errors.New("subscription refresh response is missing access_token")
 	}
-	s.auth.Tokens.AccessToken = result.AccessToken
-	if result.RefreshToken != "" {
-		s.auth.Tokens.RefreshToken = result.RefreshToken
+	if refreshed.RefreshToken == "" {
+		refreshed.RefreshToken = s.tokens.RefreshToken
 	}
-	if result.IDToken != "" {
-		s.auth.Tokens.IDToken = result.IDToken
+	if refreshed.IDToken == "" {
+		refreshed.IDToken = s.tokens.IDToken
 	}
-	if result.AccountID != "" {
-		s.auth.Tokens.AccountID = result.AccountID
-	}
-	s.auth.LastRefresh = s.now().UTC().Format(time.RFC3339)
-	if err := writeAuthFile(s.path, s.auth); err != nil {
+	if err := writeTokenResponse(s.path, refreshed); err != nil {
 		return fmt.Errorf("persist refreshed subscription token: %w", err)
 	}
+	s.tokens = refreshed
 	return nil
 }
 
-func tokenExpiresBy(token string, cutoff time.Time) bool {
-	parts := strings.Split(token, ".")
-	if len(parts) != 3 {
-		return true
+func tokenAccountID(token string) string {
+	payload, ok := tokenPayload(token)
+	if !ok {
+		return ""
 	}
-	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil {
+	var claims map[string]json.RawMessage
+	if err := json.Unmarshal(payload, &claims); err != nil {
+		return ""
+	}
+	var authClaims map[string]json.RawMessage
+	if err := json.Unmarshal(claims[authClaimNamespace], &authClaims); err != nil {
+		return ""
+	}
+	claimName := "chatgpt_" + "account" + "_id"
+	var value string
+	if err := json.Unmarshal(authClaims[claimName], &value); err != nil {
+		return ""
+	}
+	return value
+}
+
+func tokenExpiresBy(token string, cutoff time.Time) bool {
+	payload, ok := tokenPayload(token)
+	if !ok {
 		return true
 	}
 	var claims struct {
@@ -169,135 +181,16 @@ func tokenExpiresBy(token string, cutoff time.Time) bool {
 	return !time.Unix(claims.ExpiresAt, 0).After(cutoff)
 }
 
-// Flow holds the values needed to complete a manual-paste PKCE login.
-type Flow struct {
-	authorizeURL string
-	state        string
-	verifier     string
-	client       *http.Client
-	tokenURL     string
-	now          func() time.Time
+func tokenPayload(token string) ([]byte, bool) {
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return nil, false
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	return payload, err == nil
 }
 
-// BeginLogin starts a manual-paste PKCE flow without performing network or
-// terminal I/O.
-func BeginLogin() (*Flow, error) {
-	state, err := randomURLString(32)
-	if err != nil {
-		return nil, fmt.Errorf("generate OAuth state: %w", err)
-	}
-	verifier, err := randomURLString(64)
-	if err != nil {
-		return nil, fmt.Errorf("generate PKCE verifier: %w", err)
-	}
-	digest := sha256.Sum256([]byte(verifier))
-	challenge := base64.RawURLEncoding.EncodeToString(digest[:])
-	query := url.Values{
-		"client_id":             {clientID},
-		"redirect_uri":          {redirectURI},
-		"response_type":         {"code"},
-		"scope":                 {oauthScope},
-		"state":                 {state},
-		"code_challenge":        {challenge},
-		"code_challenge_method": {"S256"},
-	}
-	return &Flow{
-		authorizeURL: authorizeURL + "?" + query.Encode(),
-		state:        state,
-		verifier:     verifier,
-		client:       httpClient,
-		tokenURL:     tokenURL,
-		now:          now,
-	}, nil
-}
-
-// AuthorizeURL returns the URL the consumer presents to the user.
-func (f *Flow) AuthorizeURL() string {
-	if f == nil {
-		return ""
-	}
-	return f.authorizeURL
-}
-
-// Complete verifies a pasted redirect URL, exchanges its authorization code,
-// and writes a fresh Codex-CLI-compatible auth file at path.
-func (f *Flow) Complete(ctx context.Context, path, pastedRedirectURL string) error {
-	if f == nil {
-		return errors.New("complete subscription login: nil flow")
-	}
-	callbackText := strings.TrimSpace(pastedRedirectURL)
-	callback, err := url.ParseRequestURI(callbackText)
-	if err != nil || callbackText == "" || callback.Scheme == "" || callback.Host == "" {
-		return errors.New("complete subscription login: full redirect URL expected")
-	}
-	if callback.Query().Get("state") != f.state {
-		return errors.New("OAuth callback state does not match")
-	}
-	code := callback.Query().Get("code")
-	if code == "" {
-		return errors.New("OAuth callback is missing code")
-	}
-
-	form := url.Values{
-		"grant_type":    {"authorization_code"},
-		"client_id":     {clientID},
-		"code":          {code},
-		"redirect_uri":  {redirectURI},
-		"code_verifier": {f.verifier},
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, f.tokenURL, strings.NewReader(form.Encode()))
-	if err != nil {
-		return fmt.Errorf("create OAuth token request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := f.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("exchange OAuth code: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("exchange OAuth code: status %d", resp.StatusCode)
-	}
-	var result struct {
-		AccessToken  string `json:"access_token"`
-		RefreshToken string `json:"refresh_token"`
-		IDToken      string `json:"id_token"`
-		AccountID    string `json:"account_id"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return fmt.Errorf("decode OAuth token response: %w", err)
-	}
-	if result.AccessToken == "" || result.RefreshToken == "" || result.AccountID == "" {
-		return errors.New("OAuth token response is missing required tokens or account_id")
-	}
-	auth := authFile{
-		Tokens: tokens{
-			IDToken:      result.IDToken,
-			AccessToken:  result.AccessToken,
-			RefreshToken: result.RefreshToken,
-			AccountID:    result.AccountID,
-		},
-		LastRefresh: f.now().UTC().Format(time.RFC3339),
-	}
-	if err := writeAuthFile(path, auth); err != nil {
-		return fmt.Errorf("write subscription auth: %w", err)
-	}
-	return nil
-}
-
-func randomURLString(size int) (string, error) {
-	raw := make([]byte, size)
-	n, err := randomBytes(raw)
-	if err != nil {
-		return "", err
-	}
-	if n != len(raw) {
-		return "", io.ErrUnexpectedEOF
-	}
-	return base64.RawURLEncoding.EncodeToString(raw), nil
-}
-
-func writeAuthFile(path string, auth authFile) (err error) {
+func writeTokenResponse(path string, tokens tokenResponse) (err error) {
 	dir := filepath.Dir(path)
 	temp, err := os.CreateTemp(dir, ".agentkit-auth-*")
 	if err != nil {
@@ -313,7 +206,7 @@ func writeAuthFile(path string, auth authFile) (err error) {
 	}
 	encoder := json.NewEncoder(temp)
 	encoder.SetIndent("", "  ")
-	if err := encoder.Encode(auth); err != nil {
+	if err := encoder.Encode(tokens); err != nil {
 		return err
 	}
 	if err := temp.Sync(); err != nil {

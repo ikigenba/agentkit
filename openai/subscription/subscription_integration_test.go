@@ -5,7 +5,6 @@ package subscription
 import (
 	"context"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -18,15 +17,11 @@ func TestSubscriptionIntegrationRoundTrip(t *testing.T) {
 	// R-DJXO-DW6X
 	path := os.Getenv("OPENAI_SUBSCRIPTION_AUTH_FILE")
 	if path == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			t.Skip("cannot locate a codex-compatible auth file")
-		}
-		path = filepath.Join(home, ".codex", "auth.json")
+		t.Skip("OPENAI_SUBSCRIPTION_AUTH_FILE does not name a raw token-response credential file")
 	}
 	if _, err := os.Stat(path); err != nil {
 		if os.IsNotExist(err) {
-			t.Skip("codex-compatible auth file is not present")
+			t.Skip("raw token-response credential file is not present")
 		}
 		t.Fatalf("stat auth file: %v", err)
 	}
