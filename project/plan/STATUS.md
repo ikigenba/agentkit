@@ -4,5 +4,4 @@ The manifest, and a work **queue**: one line per **pending** phase, in build ord
 
 Next phase: 65
 
-- Phase 63  ⬜  realizes D13,D24,D25                  — live integration: uniform happy-path suite + OpenRouter reported cost + subscription round trip (D13 slice: R-CL9K-41F1, R-CMHG-HT5Q, R-CNPC-VKWF, R-COX9-9CN4, R-CQ55-N4DT, R-CRD2-0W4I, R-CSKY-ENV7, R-CTSU-SFLW; R-DF22-UT85, R-DJXO-DW6X)
 - Phase 64  ⬜  realizes —                            — Release: minor version bump to v0.3.0
