@@ -730,13 +730,16 @@ Gathered from the working notes in `openai-auth.md` (2026-07) and verified local
 
 ### 15.1 The credential store
 
-The official `codex` CLI writes plaintext JSON at `~/.codex/auth.json` (mode `0600`; `$CODEX_HOME` overrides the dir):
+The credential file AgentKit consumes is the **raw RFC 6749 token-endpoint response, verbatim** — exactly the bytes a generic OAuth login tool (the standalone `oauth-login` CLI) prints to stdout, saved to a file. Observed shape of a real `auth.openai.com/oauth/token` response (login verified 2026-07-18):
 
-- `auth_mode`: `"chatgpt"` or `"apikey"`; `OPENAI_API_KEY`: null under subscription
-- `tokens.access_token` (short-lived JWT bearer, carries `exp`), `tokens.refresh_token` (opaque, long-lived), `tokens.id_token` (OIDC), `tokens.account_id` (UUID — stored as a **plain field**, so no JWT decoding is needed to obtain it)
-- `last_refresh` (RFC3339). Sessions go stale after ~8 days without a successful refresh.
+- `access_token` — short-lived JWT bearer, carries `exp`
+- `refresh_token` — opaque, long-lived; rotates on refresh
+- `id_token` — OIDC JWT
+- plus standard fields AgentKit ignores: `token_type`, `expires_in`, `scope`
 
-Local verification 2026-07-17: the file exists on the dev machine with exactly this key structure — live integration tests can be gated on its presence.
+**There is no top-level `account_id` in the token response.** The ChatGPT account id lives *inside* the JWTs, as `chatgpt_account_id` under the `https://api.openai.com/auth` claim — present in the `id_token` and in login-time `access_token`s. Empirically (2026-07-18 real login, corroborated by third-party harness reports), access tokens returned by *refresh* can lack the claim, so the id must be extracted at load from `id_token` first, `access_token` as fallback, and any file rewrite must preserve the `id_token` so the file stays self-sufficient.
+
+The official codex CLI's `~/.codex/auth.json` is a **different wrapper shape** (`tokens.{access_token,refresh_token,id_token,account_id}`, `last_refresh`, `auth_mode`) with the account id duplicated as a plain field. AgentKit no longer reads that shape; its earlier expectation of a top-level `account_id` in the token response was the confirmed cause of every real login failing at the exchange step. Sessions go stale after ~8 days without a successful refresh.
 
 ### 15.2 The wire
 
@@ -745,11 +748,11 @@ Local verification 2026-07-17: the file exists on the dev machine with exactly t
 - Body constraints enforced by the backend: `store:false`, mandatory `instructions`, `include:["reasoning.encrypted_content"]` — all already the adapter's fixed behavior.
 - Model set is gated by the backend (gpt-5.x-codex family); an unsupported model fails loudly with a backend error — consistent with free-flow model strings.
 
-### 15.3 Login & refresh (headless-capable)
+### 15.3 Login (external) & refresh (AgentKit's job)
 
-- Login is OAuth 2.0 **PKCE** against `auth.openai.com`, public client id `app_EMoamEEZ73f0CkXaXp7hrann`, registered redirect `http://localhost:1455/auth/callback`. Headless flow (no browser on the box): print the authorize URL; the user opens it on any machine; the localhost redirect fails to connect but the browser URL bar carries the `code`; the user pastes the full callback URL back; exchange `POST auth.openai.com/oauth/token` (`grant_type=authorization_code`, `code_verifier`) from the server. This is OpenCode's proven "manual URL paste" technique. Two items to pin at build time by capturing one real login: the exact `scope` string, and whether a device-code flow exists for this client id.
-- Refresh: `POST auth.openai.com/oauth/token` (`grant_type=refresh_token`, same client id); rotated tokens are written back atomically. Refresh proactively before `exp` and reactively on 401.
-- **Refresh-token lineages are per-login.** Copying one auth.json to two machines shares a lineage — rotation on one invalidates the other. Two independent logins coexist fine (like two signed-in devices), sharing only the account-level rate-limit pool. Consequence for testing: live tests against the operator's real codex-owned file must read/use only; refresh-and-rewrite is exercised only against files AgentKit's own login created.
+- **Login is outside AgentKit.** The one-time OAuth 2.0 PKCE login against `auth.openai.com` (public client id `app_EMoamEEZ73f0CkXaXp7hrann`, registered redirect `http://localhost:1455/auth/callback`, scope `openid profile email offline_access` — confirmed from a real 2026-07-18 login) is performed by the standalone generic `oauth-login` CLI, which serves the loopback callback itself and prints the token response verbatim to stdout; the consumer saves that output as the credential file AgentKit loads. AgentKit ships no login flow.
+- Refresh: `POST auth.openai.com/oauth/token` (`grant_type=refresh_token`, same client id); rotated tokens are written back atomically, in the same raw token-response shape, carrying forward the prior `refresh_token` and `id_token` when the response omits them (refresh responses can omit both the `id_token` and the account claim — §15.1). Refresh proactively before `exp` and reactively on 401.
+- **Refresh-token lineages are per-login.** Copying one credential file to two machines shares a lineage — rotation on one invalidates the other. Two independent logins coexist fine (like two signed-in devices), sharing only the account-level rate-limit pool. Consequence for testing: live tests against a shared-lineage file must read/use only; refresh-and-rewrite is exercised only against fakes or a file whose lineage is expendable.
 
 ### 15.4 Cost
 
