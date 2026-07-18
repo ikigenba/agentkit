@@ -17,6 +17,11 @@ import (
 )
 
 func TestZaiSendUsesBakedBaseURLAndAssemblesToolTurn(t *testing.T) {
+	// R-CQO3-7EE9
+	// R-CRVZ-L64Y
+	var _ agentkit.Provider = New(APIKey("compile-time-credential-check"))
+	var _ func(Credential, ...Option) *Provider = New
+
 	var mu sync.Mutex
 	var requests []map[string]any
 	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
@@ -64,8 +69,8 @@ func TestZaiSendUsesBakedBaseURLAndAssemblesToolTurn(t *testing.T) {
 		return "sunny", nil
 	})
 	c := &agentkit.Conversation{
-		Provider: New("test-key", WithHTTPClient(client)),
-		Model:    ModelGLM52,
+		Provider: New(APIKey("test-key"), WithHTTPClient(client)),
+		Model:    "glm-5.2",
 		System:   "Be terse.",
 		Gen: agentkit.GenSettings{
 			Temperature: &temperature,
@@ -185,8 +190,8 @@ func TestZaiReplayedToolCallArgumentsAreJSONString(t *testing.T) {
 		return "sunny", nil
 	})
 	c := &agentkit.Conversation{
-		Provider: New("test-key", WithBaseURL(server.URL), WithHTTPClient(server.Client())),
-		Model:    ModelGLM52,
+		Provider: New(APIKey("test-key"), WithBaseURL(server.URL), WithHTTPClient(server.Client())),
+		Model:    "glm-5.2",
 		Tools:    []agentkit.Tool{tool},
 	}
 
@@ -215,28 +220,34 @@ func TestZaiReplayedToolCallArgumentsAreJSONString(t *testing.T) {
 	}
 }
 
-func TestZaiNativeReasoningToggleLoweringAndDefaultWarning(t *testing.T) {
+func TestZaiReasoningLoweringDependsOnlyOnValueShape(t *testing.T) {
 	tests := []struct {
-		name        string
-		reasoning   agentkit.ReasoningValue
-		wantDisable bool
-		wantWarning bool
+		name         string
+		model        string
+		reasoning    agentkit.ReasoningValue
+		wantThinking string
+		wantEffort   string
 	}{
 		{
-			// R-T40A-VZQ7
-			// R-ELUQ-VJIQ
-			name:        "disable reaches toggle model",
-			reasoning:   agentkit.DisableReasoning(),
-			wantDisable: true,
+			name:         "native level is sent unchanged for arbitrary model",
+			model:        "never-cataloged-level-model",
+			reasoning:    agentkit.Level("vendor-native-ultra"),
+			wantThinking: "enabled",
+			wantEffort:   "vendor-native-ultra",
 		},
 		{
-			// R-B7YX-J342
-			name:        "unsupported level defaults to unset",
-			reasoning:   agentkit.Level("max"),
-			wantWarning: true,
+			name:         "disable uses wire off form",
+			model:        "never-cataloged-disable-model",
+			reasoning:    agentkit.DisableReasoning(),
+			wantThinking: "disabled",
+		},
+		{
+			name:  "unset omits reasoning fields",
+			model: "never-cataloged-unset-model",
 		},
 	}
 
+	// R-CVJO-QHD1
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var body map[string]any
@@ -250,8 +261,8 @@ func TestZaiNativeReasoningToggleLoweringAndDefaultWarning(t *testing.T) {
 			defer server.Close()
 
 			conv := &agentkit.Conversation{
-				Provider: New("test-key", WithBaseURL(server.URL), WithHTTPClient(server.Client())),
-				Model:    ModelGLM47,
+				Provider: New(APIKey("test-key"), WithBaseURL(server.URL), WithHTTPClient(server.Client())),
+				Model:    tt.model,
 				Pricing:  &agentkit.Pricing{},
 				Gen:      agentkit.GenSettings{Reasoning: tt.reasoning},
 			}
@@ -263,22 +274,114 @@ func TestZaiNativeReasoningToggleLoweringAndDefaultWarning(t *testing.T) {
 			}
 
 			thinking, hasThinking := body["thinking"].(map[string]any)
-			if tt.wantDisable {
-				if !hasThinking || thinking["type"] != "disabled" {
-					t.Fatalf("thinking = %#v, want disabled", body["thinking"])
+			if tt.wantThinking == "" {
+				if hasThinking || body["reasoning_effort"] != nil {
+					t.Fatalf("unset reasoning fields were sent: %#v", body)
 				}
-			} else if hasThinking || body["reasoning_effort"] != nil {
-				t.Fatalf("unsupported toggle level was not defaulted to unset: %#v", body)
+			} else if !hasThinking || thinking["type"] != tt.wantThinking {
+				t.Fatalf("thinking = %#v, want type %q", body["thinking"], tt.wantThinking)
 			}
-			warnings := stream.Warnings()
-			if tt.wantWarning {
-				if len(warnings) != 1 || warnings[0].Setting != "reasoning" || warnings[0].Code != agentkit.WarnReasoningUnsupported {
-					t.Fatalf("warnings = %#v, want reasoning unsupported", warnings)
+			if tt.wantEffort == "" {
+				if _, ok := body["reasoning_effort"]; ok {
+					t.Fatalf("reasoning_effort = %#v, want omitted", body["reasoning_effort"])
 				}
-			} else if len(warnings) != 0 {
-				t.Fatalf("warnings = %#v, want none", warnings)
+			} else if got := body["reasoning_effort"]; got != tt.wantEffort {
+				t.Fatalf("reasoning_effort = %#v, want %q", got, tt.wantEffort)
+			}
+			if len(stream.Warnings()) != 0 {
+				t.Fatalf("warnings = %#v, want none", stream.Warnings())
 			}
 		})
+	}
+
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { requests++ }))
+	defer server.Close()
+	p := New(APIKey("test-key"), WithBaseURL(server.URL), WithHTTPClient(server.Client()))
+	rt := p.RoundTrip(context.Background(), &agentkit.Request{
+		Model: "any-model",
+		Gen:   agentkit.GenSettings{Reasoning: agentkit.Budget(8000)},
+	})
+	if !errors.Is(rt.Err(), agentkit.ErrInvalidConfig) || requests != 0 {
+		t.Fatalf("budget error = %v, requests = %d; want ErrInvalidConfig without request", rt.Err(), requests)
+	}
+}
+
+func TestZaiVendorRejectionsPreserveModelAndReasoningValue(t *testing.T) {
+	// R-CT3V-YXVN
+	// R-CUBS-CPMC
+	const model = "brand-new-model-not-in-agentkit"
+	const effort = "vendor-native-rejected-effort"
+	var body map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprint(w, `{"error":{"code":"1210","message":"unknown model or reasoning effort"}}`)
+	}))
+	defer server.Close()
+
+	conv := &agentkit.Conversation{
+		Provider: New(APIKey("test-key"), WithBaseURL(server.URL), WithHTTPClient(server.Client())),
+		Model:    model,
+		Gen:      agentkit.GenSettings{Reasoning: agentkit.Level(effort)},
+		Retry:    agentkit.RetryPolicy{MaxAttempts: 1},
+	}
+	stream := conv.Send(context.Background(), "hello")
+	for range stream.Events() {
+	}
+	if body["model"] != model || body["reasoning_effort"] != effort {
+		t.Fatalf("wire body = %#v, want unchanged model and reasoning effort", body)
+	}
+	if len(stream.Warnings()) != 0 {
+		t.Fatalf("warnings = %#v, want none", stream.Warnings())
+	}
+	var providerErr *agentkit.Error
+	if !errors.As(stream.Err(), &providerErr) || providerErr.Provider != "zai" || !errors.Is(providerErr, agentkit.ErrInvalidRequest) {
+		t.Fatalf("error = %#v, want typed Z.ai invalid-request error", stream.Err())
+	}
+}
+
+func TestZaiProviderOptionsShallowMergeIntoWireBody(t *testing.T) {
+	// R-CXZH-I0UF
+	var bodies []map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		bodies = append(bodies, body)
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, zaiTextSSE("ok", 1, 0, 1))
+	}))
+	defer server.Close()
+
+	p := New(APIKey("test-key"), WithBaseURL(server.URL), WithHTTPClient(server.Client()))
+	requests := []*agentkit.Request{
+		{Model: "custom", ProviderOptions: json.RawMessage(`{"stream":false,"provider":{"order":["zai"]},"vendor_flag":"verbatim"}`)},
+		{Model: "plain"},
+	}
+	for _, req := range requests {
+		if err := p.RoundTrip(context.Background(), req).Err(); err != nil {
+			t.Fatalf("RoundTrip: %v", err)
+		}
+	}
+	if len(bodies) != 2 {
+		t.Fatalf("bodies = %d, want 2", len(bodies))
+	}
+	if bodies[0]["stream"] != false || bodies[0]["vendor_flag"] != "verbatim" {
+		t.Fatalf("merged body = %#v", bodies[0])
+	}
+	provider, ok := bodies[0]["provider"].(map[string]any)
+	if !ok || fmt.Sprint(provider["order"]) != "[zai]" {
+		t.Fatalf("provider option = %#v, want verbatim nested object", bodies[0]["provider"])
+	}
+	if bodies[1]["stream"] != true {
+		t.Fatalf("empty options changed adapter body: %#v", bodies[1])
+	}
+	if _, ok := bodies[1]["vendor_flag"]; ok {
+		t.Fatalf("empty options leaked prior merged key: %#v", bodies[1])
 	}
 }
 
@@ -293,9 +396,9 @@ func TestZaiDropsForeignReasoningFromWireRequest(t *testing.T) {
 	}))
 	defer server.Close()
 
-	p := New("test-key", WithBaseURL(server.URL), WithHTTPClient(server.Client()))
+	p := New(APIKey("test-key"), WithBaseURL(server.URL), WithHTTPClient(server.Client()))
 	rt := p.RoundTrip(context.Background(), &agentkit.Request{
-		Model: ModelGLM46,
+		Model: "glm-4.6",
 		Messages: []agentkit.Message{{
 			Role: agentkit.RoleAssistant,
 			Blocks: []agentkit.Block{
@@ -322,9 +425,9 @@ func TestZaiUsageMappingDisjointBucketsAndNativeTotal(t *testing.T) {
 	}))
 	defer server.Close()
 
-	p := New("test-key", WithBaseURL(server.URL), WithHTTPClient(server.Client()))
+	p := New(APIKey("test-key"), WithBaseURL(server.URL), WithHTTPClient(server.Client()))
 	rt := p.RoundTrip(context.Background(), &agentkit.Request{
-		Model:    ModelGLM51,
+		Model:    "glm-5.1",
 		Messages: []agentkit.Message{{Role: agentkit.RoleUser, Blocks: []agentkit.Block{agentkit.TextBlock{Text: "hi"}}}},
 	})
 
@@ -350,7 +453,7 @@ func TestZaiUsageMappingDisjointBucketsAndNativeTotal(t *testing.T) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		fmt.Fprint(w, zaiBadUsageSSE())
 	})
-	rt = p.RoundTrip(context.Background(), &agentkit.Request{Model: ModelGLM51})
+	rt = p.RoundTrip(context.Background(), &agentkit.Request{Model: "glm-5.1"})
 	if err := rt.Err(); err == nil {
 		t.Fatal("native total mismatch did not error")
 	}
@@ -387,8 +490,8 @@ func TestZaiErrorMappingPreservesRawRetryAfterAndCodes(t *testing.T) {
 			}))
 			defer server.Close()
 
-			p := New("test-key", WithBaseURL(server.URL), WithHTTPClient(server.Client()))
-			rt := p.RoundTrip(context.Background(), &agentkit.Request{Model: ModelGLM47})
+			p := New(APIKey("test-key"), WithBaseURL(server.URL), WithHTTPClient(server.Client()))
+			rt := p.RoundTrip(context.Background(), &agentkit.Request{Model: "glm-4.7"})
 			err := rt.Err()
 			// R-BUR1-XAK8, R-BX6U-OU1M, R-BYER-2LSB, R-BZMN-GDJ0
 			if !errors.Is(err, tt.category) {

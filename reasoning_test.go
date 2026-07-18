@@ -1,11 +1,9 @@
 package agentkit_test
 
 import (
-	"reflect"
 	"testing"
 
 	"github.com/ikigenba/agentkit"
-	"github.com/ikigenba/agentkit/zai"
 )
 
 func TestReasoningValueStatesAreMutuallyExclusive(t *testing.T) {
@@ -40,66 +38,6 @@ func TestReasoningValueStatesAreMutuallyExclusive(t *testing.T) {
 			}
 			if got := tt.value.Disabled(); got != tt.wantDisabled {
 				t.Fatalf("Disabled() = %v, want %v", got, tt.wantDisabled)
-			}
-		})
-	}
-}
-
-func TestProviderReasoningInspectorsExposeDesignSpecs(t *testing.T) {
-	providers := map[string]struct {
-		inspector agentkit.ReasoningInspector
-		specs     map[string]agentkit.ReasoningSpec
-	}{
-		"zai": {
-			inspector: zai.Reasoning,
-			specs: map[string]agentkit.ReasoningSpec{
-				zai.ModelGLM52: {
-					Term: "effort (+ toggle)", Kind: agentkit.ReasoningEnum,
-					Levels:     []string{"high", "max"},
-					Default:    agentkit.Level("max"),
-					CanDisable: true,
-				},
-				zai.ModelGLM51: {
-					Term: "effort (+ toggle)", Kind: agentkit.ReasoningEnum,
-					Levels:     []string{"high", "max"},
-					Default:    agentkit.Level("max"),
-					CanDisable: true,
-				},
-				zai.ModelGLM47: {
-					Term: "thinking", Kind: agentkit.ReasoningToggle,
-					CanDisable: true,
-				},
-				zai.ModelGLM46: {
-					Term: "thinking", Kind: agentkit.ReasoningToggle,
-					CanDisable: true,
-				},
-			},
-		},
-	}
-
-	for name, provider := range providers {
-		t.Run(name, func(t *testing.T) {
-			// R-S6NB-RYUE, R-S7V8-5QL3
-			supported := provider.inspector.SupportedReasoning()
-			if !reflect.DeepEqual(supported, provider.specs) {
-				t.Fatalf("SupportedReasoning() = %#v, want %#v", supported, provider.specs)
-			}
-			for model, want := range provider.specs {
-				// R-S934-JIBS, R-EN2N-9B9F
-				got, ok := provider.inspector.ReasoningSpec(model)
-				if !ok {
-					t.Fatalf("ReasoningSpec(%q) ok=false, want true", model)
-				}
-				if !reflect.DeepEqual(got, want) {
-					t.Fatalf("ReasoningSpec(%q) = %#v, want %#v", model, got, want)
-				}
-				// R-EPIG-0UQT
-				if !got.Accepts(got.Default) {
-					t.Fatalf("ReasoningSpec(%q).Default = %#v, want accepted by its own spec %#v", model, got.Default, got)
-				}
-			}
-			if got, ok := provider.inspector.ReasoningSpec("unknown-model"); ok {
-				t.Fatalf("ReasoningSpec(unknown-model) = %#v, true; want false", got)
 			}
 		})
 	}

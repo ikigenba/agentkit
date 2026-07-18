@@ -29,8 +29,6 @@ type Config struct {
 	APIKey                   string
 	HTTPClient               *http.Client
 	Now                      func() time.Time
-	Pricing                  map[string]agentkit.Pricing
-	Reasoning                map[string]agentkit.ReasoningSpec
 	Classify                 ErrorClassifier
 	WarnForcedToolChoiceAuto bool
 }
@@ -98,17 +96,37 @@ func (p *Provider) RoundTrip(ctx context.Context, req *agentkit.Request) *agentk
 }
 
 type chatRequest struct {
-	Model         string        `json:"model"`
-	Messages      []chatMessage `json:"messages"`
-	Stream        bool          `json:"stream"`
-	StreamOptions streamOptions `json:"stream_options"`
-	Tools         []toolDef     `json:"tools,omitempty"`
-	ToolChoice    string        `json:"tool_choice,omitempty"`
-	Temperature   *float64      `json:"temperature,omitempty"`
-	TopP          *float64      `json:"top_p,omitempty"`
-	MaxTokens     int           `json:"max_tokens,omitempty"`
-	Thinking      *thinkingConf `json:"thinking,omitempty"`
-	Reasoning     string        `json:"reasoning_effort,omitempty"`
+	Model           string                     `json:"model"`
+	Messages        []chatMessage              `json:"messages"`
+	Stream          bool                       `json:"stream"`
+	StreamOptions   streamOptions              `json:"stream_options"`
+	Tools           []toolDef                  `json:"tools,omitempty"`
+	ToolChoice      string                     `json:"tool_choice,omitempty"`
+	Temperature     *float64                   `json:"temperature,omitempty"`
+	TopP            *float64                   `json:"top_p,omitempty"`
+	MaxTokens       int                        `json:"max_tokens,omitempty"`
+	Thinking        *thinkingConf              `json:"thinking,omitempty"`
+	Reasoning       string                     `json:"reasoning_effort,omitempty"`
+	ProviderOptions map[string]json.RawMessage `json:"-"`
+}
+
+func (r chatRequest) MarshalJSON() ([]byte, error) {
+	type wireRequest chatRequest
+	raw, err := json.Marshal(wireRequest(r))
+	if err != nil {
+		return nil, err
+	}
+	if len(r.ProviderOptions) == 0 {
+		return raw, nil
+	}
+	var body map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &body); err != nil {
+		return nil, err
+	}
+	for key, value := range r.ProviderOptions {
+		body[key] = value
+	}
+	return json.Marshal(body)
 }
 
 type streamOptions struct {
@@ -162,7 +180,14 @@ func (p *Provider) buildRequest(req *agentkit.Request) (chatRequest, []agentkit.
 		out.MaxTokens = req.Gen.MaxTokens
 	}
 	var warnings []agentkit.Warning
-	warnings = append(warnings, p.applyReasoning(req.Model, req.Gen.Reasoning, &out)...)
+	if err := applyReasoning(req.Gen.Reasoning, &out); err != nil {
+		return chatRequest{}, warnings, err
+	}
+	if len(req.ProviderOptions) != 0 {
+		if err := json.Unmarshal(req.ProviderOptions, &out.ProviderOptions); err != nil || out.ProviderOptions == nil {
+			return chatRequest{}, warnings, fmt.Errorf("OpenAI-compatible provider options must be a JSON object: %w", agentkit.ErrInvalidConfig)
+		}
+	}
 	if req.System != "" {
 		out.Messages = append(out.Messages, chatMessage{Role: "system", Content: req.System})
 	}
@@ -196,55 +221,23 @@ func (p *Provider) buildRequest(req *agentkit.Request) (chatRequest, []agentkit.
 	return out, warnings, nil
 }
 
-func (p *Provider) applyReasoning(model string, value agentkit.ReasoningValue, out *chatRequest) []agentkit.Warning {
-	value, warnings := p.checkedReasoning(model, value)
+func applyReasoning(value agentkit.ReasoningValue, out *chatRequest) error {
 	if value.IsUnset() {
-		return warnings
+		return nil
 	}
 	if value.Disabled() {
 		out.Thinking = &thinkingConf{Type: "disabled"}
-		return warnings
+		return nil
 	}
 	if level, ok := value.Level(); ok {
 		out.Thinking = &thinkingConf{Type: "enabled"}
 		out.Reasoning = level
+		return nil
 	}
-	return warnings
-}
-
-func (p *Provider) checkedReasoning(model string, value agentkit.ReasoningValue) (agentkit.ReasoningValue, []agentkit.Warning) {
-	if value.IsUnset() {
-		return value, nil
+	if _, ok := value.Budget(); ok {
+		return fmt.Errorf("OpenAI-compatible Chat Completions API cannot encode token-budget reasoning: %w", agentkit.ErrInvalidConfig)
 	}
-	spec, ok := p.cfg.Reasoning[model]
-	if !ok || spec.Accepts(value) {
-		return value, nil
-	}
-	code := agentkit.WarnReasoningUnsupported
-	if value.Disabled() && !spec.CanDisable {
-		code = agentkit.WarnReasoningCannotDisable
-	}
-	return spec.Default, []agentkit.Warning{{
-		Setting: "reasoning",
-		Code:    code,
-		Detail:  "requested " + describeReasoning(value) + "; applied " + describeReasoning(spec.Default),
-	}}
-}
-
-func describeReasoning(value agentkit.ReasoningValue) string {
-	if value.IsUnset() {
-		return "unset"
-	}
-	if value.Disabled() {
-		return "disabled"
-	}
-	if level, ok := value.Level(); ok {
-		return "level " + level
-	}
-	if budget, ok := value.Budget(); ok {
-		return fmt.Sprintf("budget %d", budget)
-	}
-	return "unknown"
+	return fmt.Errorf("unknown OpenAI-compatible reasoning value: %w", agentkit.ErrInvalidConfig)
 }
 
 func convertMessage(message agentkit.Message) ([]chatMessage, error) {
@@ -295,7 +288,7 @@ func convertMessage(message agentkit.Message) ([]chatMessage, error) {
 			}
 			out = append(out, chatMessage{Role: "tool", ToolCallID: b.ToolUseID, Content: b.Content})
 		default:
-			return nil, agentkit.ErrInvalidConfig
+			panic(fmt.Sprintf("unknown block type %T", block))
 		}
 	}
 	if message.Role == agentkit.RoleAssistant {

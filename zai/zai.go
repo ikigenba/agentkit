@@ -10,14 +10,23 @@ import (
 	"github.com/ikigenba/agentkit/internal/openaicompat"
 )
 
-const (
-	defaultBaseURL = "https://api.z.ai/api/paas/v4"
+const defaultBaseURL = "https://api.z.ai/api/paas/v4"
 
-	ModelGLM52 = "glm-5.2"
-	ModelGLM51 = "glm-5.1"
-	ModelGLM47 = "glm-4.7"
-	ModelGLM46 = "glm-4.6"
-)
+// Credential is the closed set of credentials accepted by New.
+type Credential interface {
+	zaiCredential() credential
+}
+
+type credential struct {
+	apiKey string
+}
+
+// APIKey authenticates requests with a Z.ai API key.
+type APIKey string
+
+func (key APIKey) zaiCredential() credential {
+	return credential{apiKey: string(key)}
+}
 
 // Option configures a Z.ai provider handle.
 type Option func(*options)
@@ -49,7 +58,11 @@ type Provider struct {
 
 // New constructs a Z.ai provider. The Z.ai API root is baked into the provider;
 // consumers supply only the API key.
-func New(apiKey string, opts ...Option) *Provider {
+func New(cred Credential, opts ...Option) *Provider {
+	var auth credential
+	if cred != nil {
+		auth = cred.zaiCredential()
+	}
 	cfg := options{baseURL: defaultBaseURL}
 	for _, opt := range opts {
 		opt(&cfg)
@@ -57,10 +70,8 @@ func New(apiKey string, opts ...Option) *Provider {
 	return &Provider{compat: openaicompat.New(openaicompat.Config{
 		Provider:                 "zai",
 		BaseURL:                  cfg.baseURL,
-		APIKey:                   apiKey,
+		APIKey:                   auth.apiKey,
 		HTTPClient:               cfg.client,
-		Pricing:                  pricingRegistry(),
-		Reasoning:                reasoningRegistry(),
 		Classify:                 classify,
 		WarnForcedToolChoiceAuto: true,
 	})}
@@ -74,97 +85,6 @@ func (p *Provider) Name() string {
 // RoundTrip performs one Z.ai Chat-Completions model call.
 func (p *Provider) RoundTrip(ctx context.Context, req *agentkit.Request) *agentkit.RoundTrip {
 	return p.compat.RoundTrip(ctx, req)
-}
-
-// Reasoning exposes Z.ai's static native reasoning vocabulary.
-var Reasoning agentkit.ReasoningInspector = reasoningInspector{}
-
-type modelEntry struct {
-	Pricing   agentkit.Pricing
-	Reasoning agentkit.ReasoningSpec
-}
-
-var registry = map[string]modelEntry{
-	ModelGLM52: {
-		Pricing: agentkit.Pricing{Tiers: []agentkit.RateTier{{
-			MinInputTokens: 0, InputUncached: 1400, CacheReadInput: 260, Output: 4400,
-		}}},
-		Reasoning: agentkit.ReasoningSpec{
-			Term: "effort (+ toggle)", Kind: agentkit.ReasoningEnum,
-			Levels:     []string{"high", "max"},
-			Default:    agentkit.Level("max"),
-			CanDisable: true,
-		},
-	},
-	ModelGLM51: {
-		Pricing: agentkit.Pricing{Tiers: []agentkit.RateTier{{
-			MinInputTokens: 0, InputUncached: 1400, CacheReadInput: 260, Output: 4400,
-		}}},
-		Reasoning: agentkit.ReasoningSpec{
-			Term: "effort (+ toggle)", Kind: agentkit.ReasoningEnum,
-			Levels:     []string{"high", "max"},
-			Default:    agentkit.Level("max"),
-			CanDisable: true,
-		},
-	},
-	ModelGLM47: {
-		Pricing: agentkit.Pricing{Tiers: []agentkit.RateTier{{
-			MinInputTokens: 0, InputUncached: 600, CacheReadInput: 110, Output: 2200,
-		}}},
-		Reasoning: agentkit.ReasoningSpec{
-			Term: "thinking", Kind: agentkit.ReasoningToggle,
-			CanDisable: true,
-		},
-	},
-	ModelGLM46: {
-		Pricing: agentkit.Pricing{Tiers: []agentkit.RateTier{{
-			MinInputTokens: 0, InputUncached: 600, CacheReadInput: 110, Output: 2200,
-		}}},
-		Reasoning: agentkit.ReasoningSpec{
-			Term: "thinking", Kind: agentkit.ReasoningToggle,
-			CanDisable: true,
-		},
-	},
-}
-
-type reasoningInspector struct{}
-
-func (reasoningInspector) ReasoningSpec(model string) (agentkit.ReasoningSpec, bool) {
-	entry, ok := registry[model]
-	if !ok {
-		return agentkit.ReasoningSpec{}, false
-	}
-	return cloneReasoningSpec(entry.Reasoning), true
-}
-
-func (reasoningInspector) SupportedReasoning() map[string]agentkit.ReasoningSpec {
-	out := make(map[string]agentkit.ReasoningSpec, len(registry))
-	for model, entry := range registry {
-		out[model] = cloneReasoningSpec(entry.Reasoning)
-	}
-	return out
-}
-
-func cloneReasoningSpec(spec agentkit.ReasoningSpec) agentkit.ReasoningSpec {
-	spec.Levels = append([]string(nil), spec.Levels...)
-	spec.Sentinels = append([]agentkit.Sentinel(nil), spec.Sentinels...)
-	return spec
-}
-
-func pricingRegistry() map[string]agentkit.Pricing {
-	out := make(map[string]agentkit.Pricing, len(registry))
-	for model, entry := range registry {
-		out[model] = entry.Pricing
-	}
-	return out
-}
-
-func reasoningRegistry() map[string]agentkit.ReasoningSpec {
-	out := make(map[string]agentkit.ReasoningSpec, len(registry))
-	for model, entry := range registry {
-		out[model] = cloneReasoningSpec(entry.Reasoning)
-	}
-	return out
 }
 
 func classify(status int, code, message string) error {

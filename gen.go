@@ -23,9 +23,4 @@ const (
 	WarnToolChoiceForced WarningCode = iota
 	WarnToolSchemaLossy
 	WarnCostUnknown
-
-	// Deprecated compatibility values retained until provider-native reasoning
-	// lowering replaces model-aware degradation in the adapter phases.
-	WarnReasoningUnsupported
-	WarnReasoningCannotDisable
 )
