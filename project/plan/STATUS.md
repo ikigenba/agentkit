@@ -4,5 +4,4 @@ The manifest, and a work **queue**: one line per **pending** phase, in build ord
 
 Next phase: 69
 
-- Phase 67 ⬜ realizes D25 (slice: R-PV6N-URM6, R-PWEK-8JCV, R-PXMG-MB3K) — `openai/subscription` consumes the raw token response; login flow deleted
 - Phase 68 ⬜ realizes — (structural) — release: minor version bump to v0.5.0
