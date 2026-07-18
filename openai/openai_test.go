@@ -68,8 +68,8 @@ func TestProviderSendBuildsResponsesRequestsAndReplaysReasoning(t *testing.T) {
 		return "sunny", nil
 	})
 	c := &agentkit.Conversation{
-		Provider: New("test-key", WithBaseURL(server.URL), WithHTTPClient(server.Client())),
-		Model:    ModelGPT55,
+		Provider: New(APIKey("test-key"), WithBaseURL(server.URL), WithHTTPClient(server.Client())),
+		Model:    "gpt-5.5",
 		System:   "Be terse.",
 		Gen: agentkit.GenSettings{
 			Temperature: &temperature,
@@ -161,9 +161,9 @@ func TestProviderSendBuildsResponsesRequestsAndReplaysReasoning(t *testing.T) {
 
 func TestOpenAIBuildRequestPanicsOnUnknownOutboundBlockType(t *testing.T) {
 	// R-4YSE-6YBS
-	provider := New("test-key")
+	provider := New(APIKey("test-key"))
 	req := &agentkit.Request{
-		Model: ModelGPT55,
+		Model: "gpt-5.5",
 		Messages: []agentkit.Message{{
 			Role:   agentkit.RoleUser,
 			Blocks: []agentkit.Block{unknownBlock{}},
@@ -234,8 +234,8 @@ func TestProviderReplaysEmptyReasoningSummaryArrayOnSecondSend(t *testing.T) {
 	defer server.Close()
 
 	c := &agentkit.Conversation{
-		Provider: New("test-key", WithBaseURL(server.URL), WithHTTPClient(server.Client())),
-		Model:    ModelGPT55,
+		Provider: New(APIKey("test-key"), WithBaseURL(server.URL), WithHTTPClient(server.Client())),
+		Model:    "gpt-5.5",
 		Gen:      agentkit.GenSettings{Reasoning: agentkit.Level("low")},
 	}
 
@@ -270,42 +270,64 @@ func TestProviderReplaysEmptyReasoningSummaryArrayOnSecondSend(t *testing.T) {
 	}
 }
 
-func TestProviderWarnsAndDefaultsNativeReasoningAtBuildTime(t *testing.T) {
-	tests := []struct {
-		name         string
-		model        string
-		reasoning    agentkit.ReasoningValue
-		wantEffort   string
-		wantWarnings []agentkit.WarningCode
-		requirement  string
-	}{
-		{
-			// R-T587-9RGW
-			name:        "unset omits reasoning",
-			model:       ModelGPT55,
-			wantEffort:  "",
-			requirement: "R-T587-9RGW",
-		},
-		{
-			// R-B7YX-J342
-			name:         "wrong kind defaults",
-			model:        ModelGPT55,
-			reasoning:    agentkit.Budget(8000),
-			wantEffort:   "medium",
-			wantWarnings: []agentkit.WarningCode{agentkit.WarnReasoningUnsupported},
-			requirement:  "R-B7YX-J342",
-		},
-		{
-			// R-P89V-WVXD
-			name:         "cannot disable defaults",
-			model:        ModelGPT55Pro,
-			reasoning:    agentkit.DisableReasoning(),
-			wantEffort:   "high",
-			wantWarnings: []agentkit.WarningCode{agentkit.WarnReasoningCannotDisable},
-			requirement:  "R-P89V-WVXD",
-		},
-	}
+func TestNewAPIKeyAuthenticatesResponsesRequest(t *testing.T) {
+	var provider agentkit.Provider = New(APIKey("secret"))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/responses" {
+			t.Errorf("path = %q, want /v1/responses", r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer secret" {
+			t.Errorf("Authorization = %q, want bearer credential", got)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, textOnlySSE("ok", 1, 0, 1, 0))
+	}))
+	defer server.Close()
+	provider = New(APIKey("secret"), WithBaseURL(server.URL), WithHTTPClient(server.Client()))
 
+	// R-CQO3-7EE9
+	stream := (&agentkit.Conversation{Provider: provider, Model: "any-model", Pricing: &agentkit.Pricing{}}).Send(context.Background(), "hello")
+	for range stream.Events() {
+	}
+	if err := stream.Err(); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+}
+
+func TestUncatalogedModelFlowsToWireAndVendorErrorIsTyped(t *testing.T) {
+	const model = "future-model-never-cataloged"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		if body["model"] != model {
+			t.Errorf("model = %#v, want %q", body["model"], model)
+		}
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprint(w, `{"error":{"message":"unknown model","type":"invalid_request_error"}}`)
+	}))
+	defer server.Close()
+
+	p := New(APIKey("secret"), WithBaseURL(server.URL), WithHTTPClient(server.Client()))
+	// R-CT3V-YXVN
+	rt := p.RoundTrip(context.Background(), &agentkit.Request{Model: model})
+	var providerErr *agentkit.Error
+	if !errors.As(rt.Err(), &providerErr) || providerErr.Provider != "openai" || providerErr.StatusCode != http.StatusBadRequest {
+		t.Fatalf("error = %#v, want typed OpenAI 400", rt.Err())
+	}
+}
+
+func TestReasoningLowersByShapeWithoutModelKnowledge(t *testing.T) {
+	tests := []struct {
+		name       string
+		value      agentkit.ReasoningValue
+		wantEffort string
+	}{
+		{name: "level", value: agentkit.Level("brand-new-effort"), wantEffort: "brand-new-effort"},
+		{name: "disabled", value: agentkit.DisableReasoning(), wantEffort: "none"},
+		{name: "unset"},
+	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var body map[string]any
@@ -318,113 +340,99 @@ func TestProviderWarnsAndDefaultsNativeReasoningAtBuildTime(t *testing.T) {
 			}))
 			defer server.Close()
 
-			conv := &agentkit.Conversation{
-				Provider: New("test-key", WithBaseURL(server.URL), WithHTTPClient(server.Client())),
-				Model:    tt.model,
-				Pricing:  &agentkit.Pricing{},
-				Gen:      agentkit.GenSettings{Reasoning: tt.reasoning},
+			p := New(APIKey("secret"), WithBaseURL(server.URL), WithHTTPClient(server.Client()))
+			rt := p.RoundTrip(context.Background(), &agentkit.Request{Model: "unknown-" + tt.name, Gen: agentkit.GenSettings{Reasoning: tt.value}})
+			if err := rt.Err(); err != nil {
+				t.Fatalf("RoundTrip: %v", err)
 			}
-			stream := conv.Send(context.Background(), "hello")
-			for range stream.Events() {
+			if warnings := rt.Warnings(); len(warnings) != 0 {
+				t.Fatalf("warnings = %#v, want none", warnings)
 			}
-			if err := stream.Err(); err != nil {
-				t.Fatalf("stream error: %v", err)
+			reasoning, present := body["reasoning"].(map[string]any)
+			if tt.wantEffort == "" && present {
+				t.Fatalf("reasoning = %#v, want omitted", reasoning)
 			}
-
-			reasoning, hasReasoning := body["reasoning"].(map[string]any)
-			if tt.wantEffort == "" {
-				// R-T587-9RGW
-				if hasReasoning {
-					t.Fatalf("%s: request carried reasoning: %#v", tt.requirement, body["reasoning"])
-				}
-			} else if !hasReasoning || reasoning["effort"] != tt.wantEffort {
-				t.Fatalf("%s: reasoning = %#v, want effort %q", tt.requirement, body["reasoning"], tt.wantEffort)
-			}
-
-			warnings := stream.Warnings()
-			if len(warnings) != len(tt.wantWarnings) {
-				t.Fatalf("%s: warnings = %#v", tt.requirement, warnings)
-			}
-			for i, want := range tt.wantWarnings {
-				if warnings[i].Setting != "reasoning" || warnings[i].Code != want {
-					t.Fatalf("%s: warning[%d] = %#v, want reasoning/%v", tt.requirement, i, warnings[i], want)
-				}
+			if tt.wantEffort != "" && (!present || reasoning["effort"] != tt.wantEffort) {
+				t.Fatalf("reasoning = %#v, want effort %q", body["reasoning"], tt.wantEffort)
 			}
 		})
 	}
+
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { requests++ }))
+	defer server.Close()
+	p := New(APIKey("secret"), WithBaseURL(server.URL), WithHTTPClient(server.Client()))
+	// R-CVJO-QHD1
+	rt := p.RoundTrip(context.Background(), &agentkit.Request{Model: "any-model", Gen: agentkit.GenSettings{Reasoning: agentkit.Budget(8000)}})
+	if !errors.Is(rt.Err(), agentkit.ErrInvalidConfig) || requests != 0 {
+		t.Fatalf("budget error = %v, requests = %d; want ErrInvalidConfig without request", rt.Err(), requests)
+	}
 }
 
-func TestConversationWarnsWhenCarriedReasoningInvalidForNewModel(t *testing.T) {
-	var mu sync.Mutex
-	var requests []map[string]any
-
+func TestVendorRejectedReasoningValueReturnsTypedErrorUnchanged(t *testing.T) {
+	const effort = "vendor-will-reject-this"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]any
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			t.Errorf("decode request: %v", err)
+			t.Fatalf("decode request: %v", err)
 		}
-		mu.Lock()
-		requests = append(requests, body)
-		n := len(requests)
-		mu.Unlock()
-
-		w.Header().Set("Content-Type", "text/event-stream")
-		switch n {
-		case 1:
-			fmt.Fprint(w, textOnlySSE("first", 1, 0, 1, 0))
-		case 2:
-			fmt.Fprint(w, textOnlySSE("second", 1, 0, 1, 0))
-		default:
-			t.Errorf("unexpected request count: %d", n)
+		reasoning, _ := body["reasoning"].(map[string]any)
+		if reasoning["effort"] != effort {
+			t.Errorf("reasoning = %#v, want unchanged effort", body["reasoning"])
 		}
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprint(w, `{"error":{"message":"unsupported effort","type":"invalid_request_error"}}`)
 	}))
 	defer server.Close()
 
-	conv := &agentkit.Conversation{
-		Provider: New("test-key", WithBaseURL(server.URL), WithHTTPClient(server.Client())),
-		Model:    ModelGPT55,
-		Pricing:  &agentkit.Pricing{},
-		Gen:      agentkit.GenSettings{Reasoning: agentkit.Level("low")},
+	p := New(APIKey("secret"), WithBaseURL(server.URL), WithHTTPClient(server.Client()))
+	// R-CUBS-CPMC
+	rt := p.RoundTrip(context.Background(), &agentkit.Request{Model: "uncataloged-model", Gen: agentkit.GenSettings{Reasoning: agentkit.Level(effort)}})
+	if len(rt.Warnings()) != 0 {
+		t.Fatalf("warnings = %#v, want none", rt.Warnings())
 	}
+	var providerErr *agentkit.Error
+	if !errors.As(rt.Err(), &providerErr) || providerErr.Provider != "openai" {
+		t.Fatalf("error = %#v, want typed OpenAI error", rt.Err())
+	}
+}
 
-	first := conv.Send(context.Background(), "first")
-	for range first.Events() {
-	}
-	if err := first.Err(); err != nil {
-		t.Fatalf("first stream error: %v", err)
-	}
-	if warnings := first.Warnings(); len(warnings) != 0 {
-		t.Fatalf("first warnings = %#v", warnings)
-	}
+func TestProviderOptionsShallowMergeIntoResponsesBody(t *testing.T) {
+	var bodies []map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		bodies = append(bodies, body)
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, textOnlySSE("ok", 1, 0, 1, 0))
+	}))
+	defer server.Close()
 
-	conv.Model = ModelGPT55Pro
-	// R-B96T-WUUR
-	second := conv.Send(context.Background(), "second")
-	for range second.Events() {
+	p := New(APIKey("secret"), WithBaseURL(server.URL), WithHTTPClient(server.Client()))
+	requests := []*agentkit.Request{
+		{Model: "custom", ProviderOptions: json.RawMessage(`{"metadata":{"trace":"abc"},"service_tier":"priority"}`)},
+		{Model: "plain"},
 	}
-	if err := second.Err(); err != nil {
-		t.Fatalf("second stream error: %v", err)
+	// R-CXZH-I0UF
+	for _, req := range requests {
+		rt := p.RoundTrip(context.Background(), req)
+		if err := rt.Err(); err != nil {
+			t.Fatalf("RoundTrip: %v", err)
+		}
 	}
-	warnings := second.Warnings()
-	if len(warnings) != 1 {
-		t.Fatalf("second warnings = %#v", warnings)
+	if len(bodies) != 2 {
+		t.Fatalf("bodies = %d, want 2", len(bodies))
 	}
-	if warnings[0].Setting != "reasoning" || warnings[0].Code != agentkit.WarnReasoningUnsupported {
-		t.Fatalf("second warning = %#v, want reasoning/%v", warnings[0], agentkit.WarnReasoningUnsupported)
+	if bodies[0]["service_tier"] != "priority" || !reflect.DeepEqual(bodies[0]["metadata"], map[string]any{"trace": "abc"}) {
+		t.Fatalf("merged body = %#v", bodies[0])
 	}
-
-	mu.Lock()
-	defer mu.Unlock()
-	if len(requests) != 2 {
-		t.Fatalf("requests = %d, want 2", len(requests))
+	if _, ok := bodies[1]["service_tier"]; ok {
+		t.Fatalf("empty options leaked merged key: %#v", bodies[1])
 	}
-	firstReasoning, _ := requests[0]["reasoning"].(map[string]any)
-	if firstReasoning["effort"] != "low" {
-		t.Fatalf("first reasoning = %#v, want effort low", requests[0]["reasoning"])
-	}
-	secondReasoning, _ := requests[1]["reasoning"].(map[string]any)
-	if secondReasoning["effort"] != "high" {
-		t.Fatalf("second reasoning = %#v, want effort high", requests[1]["reasoning"])
+	if _, ok := bodies[1]["metadata"]; ok {
+		t.Fatalf("empty options leaked metadata: %#v", bodies[1])
 	}
 }
 
@@ -481,8 +489,8 @@ func TestProviderReplaysFunctionCallArgumentsAsJSONString(t *testing.T) {
 		return "hello", nil
 	})
 	c := &agentkit.Conversation{
-		Provider: New("test-key", WithBaseURL(server.URL), WithHTTPClient(server.Client())),
-		Model:    ModelGPT55,
+		Provider: New(APIKey("test-key"), WithBaseURL(server.URL), WithHTTPClient(server.Client())),
+		Model:    "gpt-5.5",
 		Tools:    []agentkit.Tool{pathTool, echoTool},
 	}
 
@@ -525,9 +533,9 @@ func TestProviderDropsForeignReasoningFromWireRequest(t *testing.T) {
 	}))
 	defer server.Close()
 
-	p := New("test-key", WithBaseURL(server.URL), WithHTTPClient(server.Client()))
+	p := New(APIKey("test-key"), WithBaseURL(server.URL), WithHTTPClient(server.Client()))
 	rt := p.RoundTrip(context.Background(), &agentkit.Request{
-		Model: ModelGPT54Mini,
+		Model: "gpt-5.4-mini",
 		Messages: []agentkit.Message{{
 			Role: agentkit.RoleAssistant,
 			Blocks: []agentkit.Block{
@@ -554,9 +562,9 @@ func TestUsageMappingDisjointBucketsAndNativeTotal(t *testing.T) {
 	}))
 	defer server.Close()
 
-	p := New("test-key", WithBaseURL(server.URL), WithHTTPClient(server.Client()))
+	p := New(APIKey("test-key"), WithBaseURL(server.URL), WithHTTPClient(server.Client()))
 	rt := p.RoundTrip(context.Background(), &agentkit.Request{
-		Model:    ModelGPT54,
+		Model:    "gpt-5.4",
 		Messages: []agentkit.Message{{Role: agentkit.RoleUser, Blocks: []agentkit.Block{agentkit.TextBlock{Text: "hi"}}}},
 	})
 
@@ -617,8 +625,8 @@ func TestOpenAIErrorMappingPreservesRawAndRetryAfter(t *testing.T) {
 			}))
 			defer server.Close()
 
-			p := New("test-key", WithBaseURL(server.URL), WithHTTPClient(server.Client()))
-			rt := p.RoundTrip(context.Background(), &agentkit.Request{Model: ModelGPT54Nano})
+			p := New(APIKey("test-key"), WithBaseURL(server.URL), WithHTTPClient(server.Client()))
+			rt := p.RoundTrip(context.Background(), &agentkit.Request{Model: "gpt-5.4-nano"})
 			err := rt.Err()
 			// R-BUR1-XAK8, R-BX6U-OU1M, R-BYER-2LSB
 			if !errors.Is(err, tt.category) {
@@ -638,31 +646,6 @@ func TestOpenAIErrorMappingPreservesRawAndRetryAfter(t *testing.T) {
 				t.Fatalf("retry-after = %s, want %s", providerErr.RetryAfter, tt.wantDelay)
 			}
 		})
-	}
-}
-
-func TestGPT56ReasoningSpecsUseNativeEffortVocabulary(t *testing.T) {
-	models := []string{ModelGPT56Sol, ModelGPT56Terra, ModelGPT56Luna}
-	wantLevels := []string{"none", "low", "medium", "high", "xhigh"}
-
-	// R-CERX-6M7G
-	for _, model := range models {
-		spec, ok := Reasoning.ReasoningSpec(model)
-		if !ok {
-			t.Fatalf("ReasoningSpec(%q) returned ok=false", model)
-		}
-		if spec.Term != "effort" || spec.Kind != agentkit.ReasoningEnum {
-			t.Errorf("ReasoningSpec(%q) term/kind = %q/%v, want effort/%v", model, spec.Term, spec.Kind, agentkit.ReasoningEnum)
-		}
-		if !reflect.DeepEqual(spec.Levels, wantLevels) {
-			t.Errorf("ReasoningSpec(%q) levels = %v, want %v", model, spec.Levels, wantLevels)
-		}
-		if spec.Default != agentkit.Level("medium") {
-			t.Errorf("ReasoningSpec(%q) default = %#v, want %#v", model, spec.Default, agentkit.Level("medium"))
-		}
-		if !spec.CanDisable {
-			t.Errorf("ReasoningSpec(%q) CanDisable = false, want true", model)
-		}
 	}
 }
 

@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/ikigenba/agentkit"
-	"github.com/ikigenba/agentkit/openai"
 	"github.com/ikigenba/agentkit/zai"
 )
 
@@ -51,57 +50,6 @@ func TestProviderReasoningInspectorsExposeDesignSpecs(t *testing.T) {
 		inspector agentkit.ReasoningInspector
 		specs     map[string]agentkit.ReasoningSpec
 	}{
-		"openai": {
-			inspector: openai.Reasoning,
-			specs: map[string]agentkit.ReasoningSpec{
-				openai.ModelGPT56Sol: {
-					Term: "effort", Kind: agentkit.ReasoningEnum,
-					Levels:     []string{"none", "low", "medium", "high", "xhigh"},
-					Default:    agentkit.Level("medium"),
-					CanDisable: true,
-				},
-				openai.ModelGPT56Terra: {
-					Term: "effort", Kind: agentkit.ReasoningEnum,
-					Levels:     []string{"none", "low", "medium", "high", "xhigh"},
-					Default:    agentkit.Level("medium"),
-					CanDisable: true,
-				},
-				openai.ModelGPT56Luna: {
-					Term: "effort", Kind: agentkit.ReasoningEnum,
-					Levels:     []string{"none", "low", "medium", "high", "xhigh"},
-					Default:    agentkit.Level("medium"),
-					CanDisable: true,
-				},
-				openai.ModelGPT55Pro: {
-					Term: "effort", Kind: agentkit.ReasoningEnum,
-					Levels: []string{"high", "xhigh"}, Default: agentkit.Level("high"),
-				},
-				openai.ModelGPT55: {
-					Term: "effort", Kind: agentkit.ReasoningEnum,
-					Levels:     []string{"none", "low", "medium", "high", "xhigh"},
-					Default:    agentkit.Level("medium"),
-					CanDisable: true,
-				},
-				openai.ModelGPT54: {
-					Term: "effort", Kind: agentkit.ReasoningEnum,
-					Levels:     []string{"none", "low", "medium", "high", "xhigh"},
-					Default:    agentkit.Level("none"),
-					CanDisable: true,
-				},
-				openai.ModelGPT54Mini: {
-					Term: "effort", Kind: agentkit.ReasoningEnum,
-					Levels:     []string{"none", "low", "medium", "high", "xhigh"},
-					Default:    agentkit.Level("none"),
-					CanDisable: true,
-				},
-				openai.ModelGPT54Nano: {
-					Term: "effort", Kind: agentkit.ReasoningEnum,
-					Levels:     []string{"none", "low", "medium", "high", "xhigh"},
-					Default:    agentkit.Level("none"),
-					CanDisable: true,
-				},
-			},
-		},
 		"zai": {
 			inspector: zai.Reasoning,
 			specs: map[string]agentkit.ReasoningSpec{

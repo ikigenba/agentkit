@@ -1065,8 +1065,8 @@ func TestStreamPendingAndEarlyBreakCleanup(t *testing.T) {
 		defer transport.closeIdleConnections()
 		client := &http.Client{Transport: transport}
 		conv := &agentkit.Conversation{
-			Provider: openai.New("test-key", openai.WithBaseURL(server.URL), openai.WithHTTPClient(client)),
-			Model:    openai.ModelGPT55,
+			Provider: openai.New(openai.APIKey("test-key"), openai.WithBaseURL(server.URL), openai.WithHTTPClient(client)),
+			Model:    "gpt-5.5",
 		}
 		baselineGoroutines := runtime.NumGoroutine()
 

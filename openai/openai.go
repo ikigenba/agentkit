@@ -21,18 +21,25 @@ import (
 const (
 	defaultBaseURL = "https://api.openai.com"
 
-	ModelGPT55Pro   = "gpt-5.5-pro"
-	ModelGPT55      = "gpt-5.5"
-	ModelGPT54      = "gpt-5.4"
-	ModelGPT54Mini  = "gpt-5.4-mini"
-	ModelGPT54Nano  = "gpt-5.4-nano"
-	ModelGPT56Sol   = "gpt-5.6-sol"
-	ModelGPT56Terra = "gpt-5.6-terra"
-	ModelGPT56Luna  = "gpt-5.6-luna"
-
 	EmbedModel3Small = "text-embedding-3-small"
 	EmbedModel3Large = "text-embedding-3-large"
 )
+
+// Credential is the closed set of credentials accepted by New.
+type Credential interface {
+	openAICredential() credential
+}
+
+type credential struct {
+	apiKey string
+}
+
+// APIKey authenticates requests with an OpenAI API key.
+type APIKey string
+
+func (key APIKey) openAICredential() credential {
+	return credential{apiKey: string(key)}
+}
 
 // Option configures an OpenAI provider handle.
 type Option func(*Provider)
@@ -60,10 +67,14 @@ type Provider struct {
 	now     func() time.Time
 }
 
-// New constructs an OpenAI provider.
-func New(apiKey string, opts ...Option) *Provider {
+// New constructs an OpenAI provider using cred.
+func New(cred Credential, opts ...Option) *Provider {
+	var cfg credential
+	if cred != nil {
+		cfg = cred.openAICredential()
+	}
 	p := &Provider{
-		apiKey:  apiKey,
+		apiKey:  cfg.apiKey,
 		baseURL: defaultBaseURL,
 		now:     time.Now,
 	}
@@ -75,7 +86,7 @@ func New(apiKey string, opts ...Option) *Provider {
 
 // NewEmbedder constructs an OpenAI embeddings provider.
 func NewEmbedder(apiKey string, opts ...Option) agentkit.EmbeddingProvider {
-	p := New(apiKey, opts...)
+	p := New(APIKey(apiKey), opts...)
 	return &embeddingProvider{cfg: openaicompat.EmbeddingConfig{
 		Provider:   "openai",
 		BaseURL:    p.baseURL,
@@ -135,129 +146,6 @@ func (p *Provider) RoundTrip(ctx context.Context, req *agentkit.Request) *agentk
 	}
 	warnings = append(warnings, assembled.warnings...)
 	return agentkit.NewRoundTrip(assembled.message, assembled.finish, assembled.usage, warnings, nil, 0, false)
-}
-
-// Reasoning exposes OpenAI's static native reasoning vocabulary.
-var Reasoning agentkit.ReasoningInspector = reasoningInspector{}
-
-type modelEntry struct {
-	Pricing   agentkit.Pricing
-	Reasoning agentkit.ReasoningSpec
-}
-
-var registry = map[string]modelEntry{
-	ModelGPT56Sol: {
-		Pricing: agentkit.Pricing{Tiers: []agentkit.RateTier{{
-			MinInputTokens: 0, InputUncached: 5000, CacheReadInput: 500, Output: 30000,
-		}}},
-		Reasoning: agentkit.ReasoningSpec{
-			Term: "effort", Kind: agentkit.ReasoningEnum,
-			Levels:     []string{"none", "low", "medium", "high", "xhigh"},
-			Default:    agentkit.Level("medium"),
-			CanDisable: true,
-		},
-	},
-	ModelGPT56Terra: {
-		Pricing: agentkit.Pricing{Tiers: []agentkit.RateTier{{
-			MinInputTokens: 0, InputUncached: 2500, CacheReadInput: 250, Output: 15000,
-		}}},
-		Reasoning: agentkit.ReasoningSpec{
-			Term: "effort", Kind: agentkit.ReasoningEnum,
-			Levels:     []string{"none", "low", "medium", "high", "xhigh"},
-			Default:    agentkit.Level("medium"),
-			CanDisable: true,
-		},
-	},
-	ModelGPT56Luna: {
-		Pricing: agentkit.Pricing{Tiers: []agentkit.RateTier{{
-			MinInputTokens: 0, InputUncached: 1000, CacheReadInput: 100, Output: 6000,
-		}}},
-		Reasoning: agentkit.ReasoningSpec{
-			Term: "effort", Kind: agentkit.ReasoningEnum,
-			Levels:     []string{"none", "low", "medium", "high", "xhigh"},
-			Default:    agentkit.Level("medium"),
-			CanDisable: true,
-		},
-	},
-	ModelGPT55Pro: {
-		Pricing: agentkit.Pricing{Tiers: []agentkit.RateTier{{
-			MinInputTokens: 0, InputUncached: 30000, CacheReadInput: 30000, Output: 180000,
-		}}},
-		Reasoning: agentkit.ReasoningSpec{
-			Term: "effort", Kind: agentkit.ReasoningEnum,
-			Levels: []string{"high", "xhigh"}, Default: agentkit.Level("high"),
-		},
-	},
-	ModelGPT55: {
-		Pricing: agentkit.Pricing{Tiers: []agentkit.RateTier{
-			{MinInputTokens: 0, InputUncached: 5000, CacheReadInput: 500, Output: 30000},
-			{MinInputTokens: 272001, InputUncached: 10000, CacheReadInput: 1000, Output: 45000},
-		}},
-		Reasoning: agentkit.ReasoningSpec{
-			Term: "effort", Kind: agentkit.ReasoningEnum,
-			Levels:     []string{"none", "low", "medium", "high", "xhigh"},
-			Default:    agentkit.Level("medium"),
-			CanDisable: true,
-		},
-	},
-	ModelGPT54: {
-		Pricing: agentkit.Pricing{Tiers: []agentkit.RateTier{
-			{MinInputTokens: 0, InputUncached: 2500, CacheReadInput: 250, Output: 15000},
-			{MinInputTokens: 272001, InputUncached: 5000, CacheReadInput: 500, Output: 22500},
-		}},
-		Reasoning: agentkit.ReasoningSpec{
-			Term: "effort", Kind: agentkit.ReasoningEnum,
-			Levels:     []string{"none", "low", "medium", "high", "xhigh"},
-			Default:    agentkit.Level("none"),
-			CanDisable: true,
-		},
-	},
-	ModelGPT54Mini: {
-		Pricing: agentkit.Pricing{Tiers: []agentkit.RateTier{{
-			MinInputTokens: 0, InputUncached: 750, CacheReadInput: 75, Output: 4500,
-		}}},
-		Reasoning: agentkit.ReasoningSpec{
-			Term: "effort", Kind: agentkit.ReasoningEnum,
-			Levels:     []string{"none", "low", "medium", "high", "xhigh"},
-			Default:    agentkit.Level("none"),
-			CanDisable: true,
-		},
-	},
-	ModelGPT54Nano: {
-		Pricing: agentkit.Pricing{Tiers: []agentkit.RateTier{{
-			MinInputTokens: 0, InputUncached: 200, CacheReadInput: 20, Output: 1250,
-		}}},
-		Reasoning: agentkit.ReasoningSpec{
-			Term: "effort", Kind: agentkit.ReasoningEnum,
-			Levels:     []string{"none", "low", "medium", "high", "xhigh"},
-			Default:    agentkit.Level("none"),
-			CanDisable: true,
-		},
-	},
-}
-
-type reasoningInspector struct{}
-
-func (reasoningInspector) ReasoningSpec(model string) (agentkit.ReasoningSpec, bool) {
-	entry, ok := registry[model]
-	if !ok {
-		return agentkit.ReasoningSpec{}, false
-	}
-	return cloneReasoningSpec(entry.Reasoning), true
-}
-
-func (reasoningInspector) SupportedReasoning() map[string]agentkit.ReasoningSpec {
-	out := make(map[string]agentkit.ReasoningSpec, len(registry))
-	for model, entry := range registry {
-		out[model] = cloneReasoningSpec(entry.Reasoning)
-	}
-	return out
-}
-
-func cloneReasoningSpec(spec agentkit.ReasoningSpec) agentkit.ReasoningSpec {
-	spec.Levels = append([]string(nil), spec.Levels...)
-	spec.Sentinels = append([]agentkit.Sentinel(nil), spec.Sentinels...)
-	return spec
 }
 
 // Embeddings exposes OpenAI's static embedding model metadata.
@@ -323,17 +211,37 @@ func classifyEmbedding(status int, code, message string) error {
 }
 
 type responsesRequest struct {
-	Model           string         `json:"model"`
-	Stream          bool           `json:"stream"`
-	Store           bool           `json:"store"`
-	Include         []string       `json:"include"`
-	Instructions    string         `json:"instructions,omitempty"`
-	Input           []inputItem    `json:"input"`
-	Tools           []toolDef      `json:"tools,omitempty"`
-	Temperature     *float64       `json:"temperature,omitempty"`
-	TopP            *float64       `json:"top_p,omitempty"`
-	MaxOutputTokens int            `json:"max_output_tokens,omitempty"`
-	Reasoning       *reasoningConf `json:"reasoning,omitempty"`
+	Model           string                     `json:"model"`
+	Stream          bool                       `json:"stream"`
+	Store           bool                       `json:"store"`
+	Include         []string                   `json:"include"`
+	Instructions    string                     `json:"instructions,omitempty"`
+	Input           []inputItem                `json:"input"`
+	Tools           []toolDef                  `json:"tools,omitempty"`
+	Temperature     *float64                   `json:"temperature,omitempty"`
+	TopP            *float64                   `json:"top_p,omitempty"`
+	MaxOutputTokens int                        `json:"max_output_tokens,omitempty"`
+	Reasoning       *reasoningConf             `json:"reasoning,omitempty"`
+	ProviderOptions map[string]json.RawMessage `json:"-"`
+}
+
+func (r responsesRequest) MarshalJSON() ([]byte, error) {
+	type wireRequest responsesRequest
+	raw, err := json.Marshal(wireRequest(r))
+	if err != nil {
+		return nil, err
+	}
+	if len(r.ProviderOptions) == 0 {
+		return raw, nil
+	}
+	var body map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &body); err != nil {
+		return nil, err
+	}
+	for key, value := range r.ProviderOptions {
+		body[key] = value
+	}
+	return json.Marshal(body)
 }
 
 type reasoningConf struct {
@@ -389,7 +297,15 @@ func (p *Provider) buildRequest(req *agentkit.Request) (responsesRequest, []agen
 	if req.Gen.MaxTokens > 0 {
 		out.MaxOutputTokens = req.Gen.MaxTokens
 	}
-	warnings := applyReasoning(req.Model, req.Gen.Reasoning, &out)
+	warnings, err := applyReasoning(req.Gen.Reasoning, &out)
+	if err != nil {
+		return responsesRequest{}, warnings, err
+	}
+	if len(req.ProviderOptions) != 0 {
+		if err := json.Unmarshal(req.ProviderOptions, &out.ProviderOptions); err != nil || out.ProviderOptions == nil {
+			return responsesRequest{}, warnings, fmt.Errorf("openai provider options must be a JSON object: %w", agentkit.ErrInvalidConfig)
+		}
+	}
 	for _, tool := range req.Tools {
 		out.Tools = append(out.Tools, toolDef{
 			Type:        "function",
@@ -408,54 +324,22 @@ func (p *Provider) buildRequest(req *agentkit.Request) (responsesRequest, []agen
 	return out, warnings, nil
 }
 
-func applyReasoning(model string, value agentkit.ReasoningValue, out *responsesRequest) []agentkit.Warning {
-	value, warnings := checkedReasoning(model, value)
+func applyReasoning(value agentkit.ReasoningValue, out *responsesRequest) ([]agentkit.Warning, error) {
 	if value.IsUnset() {
-		return warnings
+		return nil, nil
 	}
 	if value.Disabled() {
 		out.Reasoning = &reasoningConf{Effort: "none"}
-		return warnings
+		return nil, nil
 	}
 	if level, ok := value.Level(); ok {
 		out.Reasoning = &reasoningConf{Effort: level}
+		return nil, nil
 	}
-	return warnings
-}
-
-func checkedReasoning(model string, value agentkit.ReasoningValue) (agentkit.ReasoningValue, []agentkit.Warning) {
-	if value.IsUnset() {
-		return value, nil
+	if _, ok := value.Budget(); ok {
+		return nil, fmt.Errorf("openai Responses API cannot encode token-budget reasoning: %w", agentkit.ErrInvalidConfig)
 	}
-	entry, ok := registry[model]
-	if !ok || entry.Reasoning.Accepts(value) {
-		return value, nil
-	}
-	code := agentkit.WarnReasoningUnsupported
-	if value.Disabled() && !entry.Reasoning.CanDisable {
-		code = agentkit.WarnReasoningCannotDisable
-	}
-	return entry.Reasoning.Default, []agentkit.Warning{{
-		Setting: "reasoning",
-		Code:    code,
-		Detail:  "requested " + describeReasoning(value) + "; applied " + describeReasoning(entry.Reasoning.Default),
-	}}
-}
-
-func describeReasoning(value agentkit.ReasoningValue) string {
-	if value.IsUnset() {
-		return "unset"
-	}
-	if value.Disabled() {
-		return "disabled"
-	}
-	if level, ok := value.Level(); ok {
-		return "level " + level
-	}
-	if budget, ok := value.Budget(); ok {
-		return fmt.Sprintf("budget %d", budget)
-	}
-	return "unknown"
+	return nil, fmt.Errorf("unknown OpenAI reasoning value: %w", agentkit.ErrInvalidConfig)
 }
 
 func messageInputItems(message agentkit.Message) ([]inputItem, error) {
