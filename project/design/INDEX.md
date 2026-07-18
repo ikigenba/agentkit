@@ -49,7 +49,7 @@ One line per Decision, in number order — file, label, and the Verification ids
 - **D24** `project/design/D24.md` — The `openrouter` provider
   - ids: R-DA6H-BQ9D, R-DBED-PI02, R-DCMA-39QR, R-DF22-UT85
 - **D25** `project/design/D25.md` — OpenAI credentials: API key and ChatGPT subscription
-  - ids: R-DG9Z-8KYU, R-DHHV-MCPJ, R-DIPS-04G8, R-DL5K-RNXM, R-DJXO-DW6X
+  - ids: R-DG9Z-8KYU, R-DHHV-MCPJ, R-I8OP-9XZ7, R-I9WL-NPPW, R-DL5K-RNXM, R-DJXO-DW6X
 - **D26** `project/design/D26.md` — The advisory model catalog: `agentkit/catalog`
   - ids: R-DMDH-5FOB, R-DNLD-J7F0, R-DOT9-WZ5P, R-DQ16-AQWE, R-DR92-OIN3, R-DSGZ-2ADS
 
@@ -135,7 +135,6 @@ R-DF22-UT85  D24  project/design/D24.md
 R-DFH0-A8TE  D23  project/design/D23.md
 R-DG9Z-8KYU  D25  project/design/D25.md
 R-DHHV-MCPJ  D25  project/design/D25.md
-R-DIPS-04G8  D25  project/design/D25.md
 R-DJXO-DW6X  D25  project/design/D25.md
 R-DL5K-RNXM  D25  project/design/D25.md
 R-DMDH-5FOB  D26  project/design/D26.md
@@ -152,6 +151,8 @@ R-GSIG-PT07  D9  project/design/D09.md
 R-H65D-HYXH  D5  project/design/D05.md
 R-HUZX-7N2W  D2  project/design/D02.md
 R-I5VJ-CTXE  D7  project/design/D07.md
+R-I8OP-9XZ7  D25  project/design/D25.md
+R-I9WL-NPPW  D25  project/design/D25.md
 R-IKKQ-Z3B4  D3  project/design/D03.md
 R-ILSN-CV1T  D3  project/design/D03.md
 R-IN0J-QMSI  D3  project/design/D03.md
