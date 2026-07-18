@@ -45,7 +45,7 @@ func TestCatalogDataMatchesRecordedReference(t *testing.T) {
 		t.Fatal(err)
 	}
 	digest := sha256.Sum256(encoded)
-	const recordedReference = "72bddb04355786ddcb6397c658daefcb8452b6e68ca158f99440c7c4835d5548"
+	const recordedReference = "11dd7eee9eb3e80894d9c0f1f098e77567de2baac239c4fcb687a12dfeb53b81"
 	if got := hex.EncodeToString(digest[:]); got != recordedReference {
 		t.Fatalf("catalog data differs from recorded reference table: got %s, want %s", got, recordedReference)
 	}

@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/ikigenba/agentkit"
@@ -72,7 +73,7 @@ func TestResolveUsesDefaultAndNamedRoutesAndPassesUnknownThrough(t *testing.T) {
 func TestListByProviderIncludesDefaultAndRoutedEntriesOnly(t *testing.T) {
 	// R-DOT9-WZ5P
 	openRouter := ListByProvider("openrouter")
-	want := []string{"glm-4.6", "glm-4.7", "glm-5.1", "glm-5.2"}
+	want := []string{"deepseek-v4-flash", "deepseek-v4-pro", "glm-4.6", "glm-4.7", "glm-5.1", "glm-5.2", "grok-4.20", "grok-4.20-multi-agent", "grok-4.3", "grok-4.5", "kimi-k2.6", "kimi-k2.7-code", "kimi-k3"}
 	got := make([]string, len(openRouter))
 	for i, entry := range openRouter {
 		got[i] = entry.Model
@@ -95,6 +96,31 @@ func TestListByProviderIncludesDefaultAndRoutedEntriesOnly(t *testing.T) {
 	}
 	if got := ListByProvider("provider-with-no-catalog-rows"); len(got) != 0 {
 		t.Fatalf("ListByProvider(empty) = %#v, want empty", got)
+	}
+}
+
+func TestAggregatorDefaultEntriesResolveToVendorNamespacedRoutes(t *testing.T) {
+	// R-4MB8-ERDC
+	listed := make(map[string]Entry)
+	for _, entry := range ListByProvider("openrouter") {
+		listed[entry.Model] = entry
+	}
+
+	for model, entry := range entries {
+		if entry.Provider != "openrouter" {
+			continue
+		}
+		slug := entry.Routes["openrouter"]
+		if slug == "" || !strings.Contains(slug, "/") {
+			t.Errorf("aggregator-default entry %q has invalid OpenRouter route %q", model, slug)
+		}
+		provider, wireModel, _, ok := Resolve("", model)
+		if !ok || provider != "openrouter" || wireModel != slug || wireModel == model {
+			t.Errorf("Resolve(\"\", %q) = %q/%q/%v, want openrouter/%q/true", model, provider, wireModel, ok, slug)
+		}
+		if _, ok := listed[model]; !ok {
+			t.Errorf("ListByProvider(openrouter) omitted aggregator-default entry %q", model)
+		}
 	}
 }
 
