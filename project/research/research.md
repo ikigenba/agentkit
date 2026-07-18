@@ -1,30 +1,28 @@
 # AgentKit — Research
 
-**Status: non-contractual.** This document informs the *author* of `project/design/README.md`; nothing downstream (the autonomous build) reads it. It records options, prior art, constraints, and recommendations as of **2026-06-17**. Design remains the single authority for *how*; where this doc recommends a mechanism, design may adopt, refine, or reject it. Edit this doc in place as the product evolves — never append a log.
+**Status: non-contractual.** This document informs the *author* of `project/design/README.md`; nothing downstream (the autonomous build) reads it. It records external ground truth — provider API footprints, prior art, and constraints — so design never has to re-derive them. Design remains the single authority for *how*; where this doc describes a mechanism, design may adopt, refine, or reject it. It is the single **current** statement of that ground truth, rewritten in place: a changed fact replaces its predecessor and a dropped one is removed. There is no history here — construction history lives in git.
 
-**Model-list re-verification (2026-06-17).** The supported-model set was re-verified against each provider's official live model/pricing/deprecation pages. Net result: the design registry (D16) needed reconciling — see the reconciliation block in §6.5 (now applied). Key facts baked in below: OpenAI dropped `o3`/`o4-mini` (deprecated) and `gpt-5.4-nano` *does* exist; Google's 3.x Pro is **preview-only** (`gemini-3.1-pro-preview` — no GA `gemini-3.1-pro`); Anthropic `claude-fable-5` was **dropped from the curated set** — it is globally disabled since 2026-06-12 (export control) and so cannot be served.
+**Live commercial values re-verify before release.** Rates, context windows, and model ids below are read off vendor pages and move without notice; the release process owns re-checking them.
 
-**Reasoning re-architected to native-first (2026-06-18, product change).** The product (both AgentKit's and agentrepl's) now rejects the single universal `ReasoningEffort` enum (`default/off/minimal/low/medium/high/max`) that this doc's earlier §7 mapped lossily per provider. Reasoning is now expressed in **each model's own native term and native values** — the term the provider documents (effort / thinking level / thinking budget) and the values that model actually accepts (its discrete levels, OR a token-budget integer within a valid range) — with **no cross-model vocabulary and no translation**. A value the selected model natively understands is honored exactly; anything it does not (unknown term, invalid/out-of-range value, or a setting carried over after a mid-conversation model switch) → **warning + fall back to that model's default**, never silently misapplied, never breaks the turn. AgentKit exposes a **per-model introspection API** (term + accepted values/range + default) so consumers display and accept exactly what each model supports. §7 has been rewritten accordingly; the cross-turn reasoning-state preservation findings there are unaffected by this change and still stand. ⚠ One factual correction surfaced during re-verification: **Opus 4.8 reasoning *can* be disabled** (it is adaptive-only-when-on, not always-on) — the prior "cannot be disabled" claim now attaches to **Fable 5 / Mythos 5**, not Opus 4.8 (§7.1).
+**Dependency policy: external libraries require explicit per-case human approval.** The default is the Go standard library (`net/http`, `encoding/json`, `iter`, …); a third-party module enters the build only when the operator has approved that specific module, and approval covers its transitive closure. **Approved:** `github.com/invopop/jsonschema` — struct→JSON-Schema derivation for `NewTool[In]` — together with the indirect modules it pulls in (`bahlo/generic-list-go`, `buger/jsonparser`, `pb33f/ordered-map/v2`, `go.yaml.in/yaml/v4`). **Not approved, and therefore not used:** the official provider SDKs (`anthropic-sdk-go`, `openai-go`, `google.golang.org/genai`), the MCP `go-sdk`, and `cenkalti/backoff`. Every provider adapter and the MCP client are consequently **raw HTTP**: SSE parsing, partial-JSON tool-call accumulation, retry/backoff, and error/usage extraction are all hand-rolled. The SDKs appear below only as reference for *what* behavior AgentKit re-implements.
 
-**MCP support added (2026-06-17, product change).** The product now promises **remote MCP (Model Context Protocol) tool servers**: AgentKit acts as an MCP **client** — the consumer attaches one or more remote MCP servers (network transport only; AgentKit spawns **no** subprocesses, so local stdio servers are out of scope), AgentKit connects, discovers each server's tools, and feeds them into the *same* automatic tool loop as custom tools, uniformly across all four providers. Only **tools** are surfaced (MCP resources/prompts deferred); the consumer names each server and that name **prefixes** its tools; credentials are supplied **explicitly**; **no interactive OAuth**. Servers attach/detach **between turns**, mirroring provider/model switching. This adds a new research dimension — see the new **§9** (protocol, transport, integration, auth, failure-mapping) — and new recommendation items in §10.
+**Reasoning is native-first.** Reasoning is expressed in **each model's own native term and native values** — the term the provider documents (effort / thinking level / thinking budget / thinking) and the values that model accepts (discrete levels, or a token-budget integer within a range) — with **no cross-model vocabulary and no translation**. A value the model accepts is honored exactly; one it does not is rejected by the vendor and surfaces as that provider's typed error. The advisory catalog exposes each cataloged model's term, accepted values, and default so a consumer can render and validate a choice before spending a round trip; nothing in the request path consults it.
 
-**Hard constraint (user directive, 2026-06-17): no third-party libraries.** Using a library is **not an option to consider** — AgentKit is built on the **Go standard library only** (`net/http`, `encoding/json`, `iter`, …). This is no longer a tradeoff to weigh: it **decides** every wrap-vs-raw question in this doc. All four provider adapters (Anthropic, Google, OpenAI, Z.ai) and the MCP client are **raw HTTP**; SSE parsing, partial-JSON tool-call accumulation, retry/backoff, error/usage extraction, and struct→JSON-Schema generation are all **hand-rolled**. The official provider SDKs, the MCP `go-sdk`, `invopop/jsonschema`, and `cenkalti/backoff` are all **excluded** — they appear below only as reference for *what* behavior AgentKit must re-implement. The former "open question" §11 is consequently **closed** (raw HTTP), and §9.2 / §4.3 are settled the same way.
+**Remote MCP tool servers are supported.** AgentKit is an MCP **client**: the consumer attaches remote MCP servers (network transport only — AgentKit spawns no subprocesses, so local stdio servers are out of scope), AgentKit connects, discovers each server's tools, and feeds them into the *same* automatic tool loop as custom tools, uniformly across every provider. Only **tools** are surfaced (MCP resources/prompts are out of scope); the consumer names each server and that name **prefixes** its tools; credentials are supplied explicitly with no interactive OAuth. Servers attach and detach between turns, mirroring provider/model switching. See **§9** for protocol, transport, integration, auth, and failure mapping.
 
-The product (`project/product/README.md`) fixes the target: a Go 1.26 library, module `github.com/ikigenba/agentkit`, starting `v0.1.0`, giving **one uniform surface** for a tool-using, multi-turn, **text-only**, streaming chat across multiple providers — provider+model is configuration, switchable mid-conversation. **Dollar-cost accounting is in scope** (product change): AgentKit ships baked-in per-model pricing and reports per-turn and cumulative cost; because the supported-model set is closed and curated, every supported model has a pricing entry by construction and cost is always available (no "unavailable" state). Out of scope: images/audio, persistence, ambient credentials. Embeddings are a committed *later* phase, not v1.
+The product (`project/product/README.md`) fixes the target: a Go 1.26 library, module `github.com/ikigenba/agentkit`, giving **one uniform surface** for a tool-using, multi-turn, **text-only**, streaming chat plus a text-embeddings surface — provider+model is configuration, switchable mid-conversation. Model strings are **free-flow**: AgentKit maintains no allow-list, the vendor judges the id, and an advisory catalog carries metadata for the models we track. **Dollar-cost accounting is in scope** and honest at the edges: where the provider reports the true charge (OpenRouter) that figure wins, otherwise cost is computed from consumer-supplied rates (typically one catalog lookup), and a call with no rate source still runs — reporting zero cost with a `WarnCostUnknown` warning rather than blocking. Out of scope: images/audio, persistence, ambient credentials.
 
-**Providers researched: Anthropic, Google, OpenAI, and Z.ai (Zhipu/BigModel, GLM family) — treated as four equal options.** ✅ **Scope note (resolved):** Z.ai is now a promised, first-class v1 provider — `project/product/README.md` names all four, and the design exposes it as the `zai` sub-package (`zai.New(apiKey)`, base URL internal), a first-class peer rather than a generic `openaicompat` endpoint. The first-classness principle: a provider reached via API-compatibility is still first-class on the public surface; the OpenAI-compatible reuse lives in `internal/openaicompat`. Practically, Z.ai remains the cheapest provider to add: it is an **OpenAI Chat-Completions-compatible** endpoint, so the internal adapter largely reuses the OpenAI Chat-Completions path (see §2.4, §2.3).
-
-This is a **greenfield** repo — only `project/product/README.md` exists (no Go code, no `go.mod`, not yet a git repo). So nearly all research is external: current provider APIs, prior art, and the core abstraction.
+**Five chat providers, each a first-class peer: Anthropic, Google, OpenAI, Z.ai (Zhipu/BigModel, GLM family), and OpenRouter (aggregator).** A provider reached through API-compatibility or through an aggregator is no less first-class on the public surface; how it is implemented is not user-visible. Implementation splits two ways: Anthropic, Google, and OpenAI are bespoke adapters over native protocols, while Z.ai and OpenRouter share `internal/openaicompat`, an OpenAI-Chat-Completions core parameterized by base URL (see §2.4, §14). OpenAI is reachable two ways, chosen at construction: a platform API key, or a ChatGPT subscription token file (§15). **Embeddings are a narrower set — OpenAI and Google only** (§12).
 
 ---
 
 ## 1. The central finding
 
-Structural unification across the providers is **genuinely achievable and clean for text chat**. Every serious prior-art abstraction confirms it. The irreducible leaks cluster in exactly four places — **streaming tool-call deltas, tool-call identity, reasoning/thinking state, and token/usage accounting**. AgentKit's *text-only* scope drops images and persistence — but it does **not** get to drop cost (now in scope, computed from baked-in per-model rates against the usage buckets) and does **not** get to drop reasoning, because the v1 target models are all newest-generation **reasoning** models and three of four providers *require* reasoning state to be echoed back across tool-use turns (see §7). So **three** of the four leak zones are squarely in play and are where the design must concentrate: **tool-call identity (§5), reasoning-state preservation (§7), and token/usage + caching accounting (§6.3, §8)**. Get those three right and the rest of the uniform surface falls out naturally.
+Structural unification across the providers is **genuinely achievable and clean for text chat**. Every serious prior-art abstraction confirms it. The irreducible leaks cluster in exactly four places — **streaming tool-call deltas, tool-call identity, reasoning/thinking state, and token/usage accounting**. AgentKit's *text-only* scope drops images and persistence — but it does **not** get to drop cost (computed from consumer-supplied rates against the usage buckets, or read off the provider where it reports one) and does **not** get to drop reasoning, because the target models are newest-generation **reasoning** models and three providers *require* reasoning state to be echoed back across tool-use turns (see §7). So **three** of the four leak zones are squarely in play and are where the design must concentrate: **tool-call identity (§5), reasoning-state preservation (§7), and token/usage + caching accounting (§6.3, §8)**. Get those three right and the rest of the uniform surface falls out naturally.
 
 The recommended canonical model is **Anthropic-shaped**: a conversation is `[]Message`; each `Message` is a `Role` plus an ordered `[]Block`; blocks are `text` / `tool_use` / `tool_result`. Anthropic's content-block shape is the richest of the providers and the cleanest to down-convert from. OpenAI's Responses API, Google's `Part` struct, and Z.ai's OpenAI-compatible Chat Completions shape all map onto it; the provider adapter owns the translation.
 
-**The four providers split into two implementation families.** Three are *native* protocols requiring bespoke adapters: Anthropic (Messages API), Google (Gemini `genai`), OpenAI (Responses API). The fourth — **Z.ai/GLM — is OpenAI-Chat-Completions-compatible**, so it is not a fourth bespoke adapter but a **near-clone of an OpenAI Chat-Completions adapter** parameterized by base URL + key + model, with three small deltas (Zhipu-shaped error envelope, GLM `thinking`/`reasoning_content` fields, `tool_choice=auto`-only). This is the strongest single argument for building an OpenAI **Chat-Completions** adapter (not only Responses) and for designing the OpenAI-compatible path around a **configurable base URL** — it makes Z.ai (and any other OpenAI-compatible endpoint) nearly free.
+**The five providers split into two implementation families.** Three are *native* protocols with bespoke adapters: Anthropic (Messages API), Google (Gemini), OpenAI (Responses API). The other two — **Z.ai/GLM and OpenRouter** — are OpenAI-Chat-Completions-compatible, so they are not bespoke adapters but consumers of a shared `internal/openaicompat` core parameterized by base URL + key + model, each with a few small deltas (for Z.ai: a Zhipu-shaped error envelope, GLM `thinking`/`reasoning_content` fields, `tool_choice=auto`-only; for OpenRouter: its own `reasoning` object encoding and per-response cost). Building the OpenAI-compatible path around a **configurable base URL** is what makes each additional compatible endpoint nearly free.
 
 **MCP rides on the existing tool abstraction — it is not a fifth provider.** The MCP addition (§9) does **not** introduce a new leak zone; it introduces a new *capability source*. MCP tools are discovered over the wire and then become ordinary entries in the same `Tool` registry and the same auto-loop as custom tools — the model and the providers never know the difference. So MCP's work concentrates in three already-familiar places plus one new transport concern: (1) **name prefixing + collision detection** (reuses the strict tool-name charset from §5), (2) **JSON-Schema translation** — MCP `inputSchema` is arbitrary third-party JSON Schema, so it hits the *same* lossy Gemini converter as custom tools (§4.3), only now with schemas AgentKit does not control, (3) **failure-channel mapping** into the existing error taxonomy (§6.1) — the MCP `isError` result-vs-protocol-error split maps exactly onto AgentKit's "tool returns an error result (fed back to model)" vs "transport failed (uniform error)" distinction — and the one genuinely new piece, (4) a **remote Streamable-HTTP MCP client** (§9.1–9.2). No new error sentinel and no change to the canonical message model are needed.
 
@@ -41,19 +39,19 @@ The recommended canonical model is **Anthropic-shaped**: a conversation is `[]Me
 - **Errors.** `{type:"error", error:{type,message}, request_id}`; `request-id` header on every response. 400 `invalid_request_error`, 401 `authentication_error`, 402 `billing_error`, 403 `permission_error`, 404 `not_found_error`, 413 `request_too_large`, 429 `rate_limit_error`, 500 `api_error`, 504 `timeout_error`, **529 `overloaded_error`**. Retryable: 408/409/429/529 and ≥500.
 - **Retry signals.** `retry-after` (seconds) on 429/529; rich `anthropic-ratelimit-*` headers (reset is RFC 3339).
 - **Usage.** `input_tokens`, `output_tokens`, `cache_creation_input_tokens`, `cache_read_input_tokens`. **Gotcha:** `input_tokens` counts only tokens *after the last cache breakpoint*; total input = `cache_read + cache_creation + input_tokens`.
-- **Models (verified 2026-06-17 vs official models/pricing pages).** Curated set = `claude-opus-4-8` (most capable default, 1M ctx), `claude-sonnet-4-6`, `claude-haiku-4-5` — all three confirmed current and correctly priced (§6.5). Opus 4.8 is the safe default top tier. **Reasoning control (per current docs, 2026-06-18 — see §7.1 for the full native spec):** Opus 4.8 and Sonnet 4.6 take a native `output_config.effort` enum plus a `thinking` on/off toggle (adaptive-only when on); **Haiku 4.5 has no `effort` field** — its only reasoning-depth control is `thinking:{type:"enabled",budget_tokens}`. All three *can* be disabled (omit `thinking` / `type:"disabled"`); Opus 4.8 is **not** always-on (that is Fable 5 / Mythos 5). `budget_tokens` is removed on Opus 4.8 (400). Snapshot-id nuance: Opus 4.8 / Sonnet 4.6 are genuinely **dateless pinned snapshots**, but **`claude-haiku-4-5` is an alias for the dated canonical `claude-haiku-4-5-20251001`** (both resolve). ⚠ **`claude-fable-5` was DROPPED from the curated set.** It is a valid, priced id but was globally DISABLED for ALL customers on 2026-06-12 under a US export-control directive (Anthropic could not segment foreign-national access in time; the pricing/models docs still call it "GA", so the docs are stale on availability). Because a supported model must be servable, and Fable 5's disablement is a global, indefinite provider state, the design **removes it from the registry** rather than shipping a priced-but-unrunnable id; if Anthropic re-enables it, it can be re-added.
+- **Models.** Tracked ids = `claude-opus-4-8` (1M ctx), `claude-sonnet-4-6`, `claude-sonnet-5`, `claude-haiku-4-5`, `claude-fable-5` (§6.5). Opus 4.8 is the safe default top tier. **Reasoning control (see §7.1 for the full native spec):** Opus 4.8 and Sonnet 4.6 take a native `output_config.effort` enum plus a `thinking` on/off toggle (adaptive-only when on); **Haiku 4.5 has no `effort` field** — its only reasoning-depth control is `thinking:{type:"enabled",budget_tokens}`. All three *can* be disabled (omit `thinking` / `type:"disabled"`); Opus 4.8 is **not** always-on (that is Fable 5 / Mythos 5). `budget_tokens` is removed on Opus 4.8 (400). Snapshot-id nuance: Opus 4.8 / Sonnet 4.6 are genuinely **dateless pinned snapshots**, but **`claude-haiku-4-5` is an alias for the dated canonical `claude-haiku-4-5-20251001`** (both resolve). `claude-fable-5` is always-on reasoning — it is the model that cannot disable thinking, not Opus 4.8.
 - **Official `anthropic-sdk-go`.** GA, idiomatic (`NewStreaming` + `message.Accumulate`), typed `*anthropic.Error` carrying status/request-id/raw body, built-in auto-retry (on by default). A single concrete error type — branch on `StatusCode`.
 
 ### 2.2 Google — Gemini API
 
-- **SDK landscape (CONFIRMED current).** The old `github.com/google/generative-ai-go` and `cloud.google.com/go/vertexai/genai` are **both deprecated** (Vertex one removed 2026-06-24). The single GA, maintained library is **`google.golang.org/genai`** (repo `github.com/googleapis/go-genai`), unified across Developer + Vertex backends, uses Go 1.23 range-over-func iterators.
+- **SDK landscape (reference only — no Google SDK is an approved dependency, §10).** The old `github.com/google/generative-ai-go` and `cloud.google.com/go/vertexai/genai` are both deprecated; the maintained library is `google.golang.org/genai`. AgentKit speaks the Gemini wire directly over raw HTTP, so `genai.Schema` below names a **wire shape**, not a Go type in play.
 - **Shape.** `[]*genai.Content{{Role, Parts}}`; **role is `"user"` or `"model"`** (not "assistant"). `Part` is a struct of optional pointer fields (`Text`, `FunctionCall`, `FunctionResponse`, …). **System prompt is `config.SystemInstruction`, not in `contents`.** Gen config on `GenerateContentConfig` (`MaxOutputTokens`, `Temperature`, `Tools`).
 - **Function calling — CRITICAL CONFLICT.** Declarations pass `Parameters *genai.Schema`, an **OpenAPI-3.0 subset, NOT raw JSON Schema**. Supported: `type` (enum string `"OBJECT"` etc.), `nullable`, `required`, `format`, `description`, `properties`, `items`, `enum`, `anyOf`, `$ref`/`$defs` (written `Ref`/`Defs`). Unsupported (`$schema`, `additionalProperties`, `oneOf`/`allOf`/`not`/`const`, deep recursion) is dropped or 400s. **AgentKit must translate JSON Schema → `genai.Schema` for Google specifically.** Model returns a whole `FunctionCall{Name, Args}`; consumer replies `functionResponse` under role `user`.
 - **Streaming.** `GenerateContentStream` returns **`iter.Seq2[*GenerateContentResponse, error]`**. Text deltas via `resp.Text()`. **FunctionCalls arrive whole in one chunk** (NOT streamed as partial JSON — asymmetry vs Anthropic/OpenAI). `UsageMetadata` on the final chunk.
 - **Errors.** `genai.APIError`; wire shape `google.rpc.Status {code,message,status,details[]}` (`status` e.g. `RESOURCE_EXHAUSTED`). Retryable: 429/500/503/504. **SDK does NOT auto-retry — AgentKit must.**
 - **Retry signals.** No `Retry-After` header; delay is in the body `details[]` as `RetryInfo.retryDelay` (e.g. `"31s"`). `QuotaFailure.quotaId` distinguishes per-minute (retry) vs per-day (fail fast).
 - **Usage.** `UsageMetadata{PromptTokenCount, CandidatesTokenCount, TotalTokenCount, CachedContentTokenCount}`. Cached is a read-cache counted *within* prompt tokens.
-- **Auth.** Developer API key (`BackendGeminiAPI`, single string) vs Vertex (project+location+ADC). For a neutral library taking explicit credentials, **the Developer API key path is by far simplest.** **Models (verified 2026-06-17 vs ai.google.dev models/pricing pages):** GA/stable text ids = `gemini-2.5-flash`, `gemini-2.5-pro` (tiered >200K), `gemini-3.5-flash` (current-gen default Flash, stable), and the stable cheap workhorse `gemini-3.1-flash-lite`. **The 3.x Pro reasoning model is PREVIEW-only: the served id is `gemini-3.1-pro-preview` (tiered >200K) — there is NO GA `gemini-3.1-pro` or `gemini-3-pro` text id.** ⚠ This contradicts the design registry (D16), which lists a bare `gemini-3.1-pro` as if GA: that id does not resolve and must become `gemini-3.1-pro-preview` (flagged preview) — or be replaced by GA `gemini-2.5-pro` if the curated set is GA-only. Flash naming is also resolved: `gemini-3.5-flash` (stable) and `gemini-3-flash-preview` (preview, prior-gen 3 Flash) are **two distinct models**, not two names for one.
+- **Auth.** Developer API key (`BackendGeminiAPI`, single string) vs Vertex (project+location+ADC). For a neutral library taking explicit credentials, **the Developer API key path is by far simplest.** **Models.** GA/stable text ids = `gemini-2.5-flash`, `gemini-2.5-pro` (tiered >200K), `gemini-3.5-flash` (current-gen default Flash, stable), and the stable cheap workhorse `gemini-3.1-flash-lite`. **The 3.x Pro reasoning model is PREVIEW-only: the served id is `gemini-3.1-pro-preview` (tiered >200K) — there is NO GA `gemini-3.1-pro` or `gemini-3-pro` text id.** Flash naming is also resolved: `gemini-3.5-flash` (stable) and `gemini-3-flash-preview` (preview, prior-gen 3 Flash) are **two distinct models**, not two names for one.
 - **Mandatory adapters regardless of wrap/raw choice:** (a) JSON-Schema→`genai.Schema` translator, (b) `assistant`↔`model` role normalization, (c) system prompt out of `contents`.
 
 ### 2.3 OpenAI — Responses vs Chat Completions
@@ -66,7 +64,7 @@ The recommended canonical model is **Anthropic-shaped**: a conversation is `[]Me
 - **Errors.** `{"error":{message,type,param,code}}`. Never retry 400/401/403/404; retry 408/409/429/500/502/503. `*openai.Error` carries status + raw body.
 - **Retry signals.** `x-ratelimit-*` headers; `Retry-After` on 429/503 when present.
 - **Usage.** `input_tokens`, `output_tokens`, `total_tokens`, `input_tokens_details.cached_tokens`. (Chat Completions uses `prompt_tokens`/`completion_tokens`/`prompt_tokens_details.cached_tokens` — a rename trap if both were ever supported.)
-- **Models (verified 2026-06-17 vs developers.openai.com models/pricing/deprecations).** Curated set = `gpt-5.5-pro` (Responses-only, highest compute), `gpt-5.5` (flagship, ~1.05M ctx), `gpt-5.4` (more-affordable frontier), `gpt-5.4-mini`, `gpt-5.4-nano` (both 400K ctx) — **this matches the design registry (D16), which is the correct set.** Two corrections to *this research's own* earlier drift: (a) **`o4-mini` and `o3` are officially DEPRECATED/superseded** by the gpt-5.x reasoning models (older snapshots scheduled for API removal 2026-12-11) and must NOT be in a forward-looking curated set — drop them; (b) **`gpt-5.4-nano` DOES exist** (a §7 note had wrongly called nano nonexistent); `gpt-5.5-mini`/`gpt-5.5-nano` do not exist. Reasoning defaults differ by model — gpt-5.5 defaults to `medium`, gpt-5.4 defaults to `none` (don't assume a uniform default).
+- **Models.** Tracked ids = `gpt-5.5-pro` (Responses-only, highest compute), `gpt-5.5` (flagship, ~1.05M ctx), `gpt-5.4` (more-affordable frontier), `gpt-5.4-mini`, `gpt-5.4-nano` (both 400K ctx), and the `gpt-5.6` family (`-sol`, `-terra`, `-luna`). `o3`/`o4-mini` are deprecated and superseded by the gpt-5.x reasoning models; `gpt-5.5-mini`/`gpt-5.5-nano` do not exist. Reasoning defaults differ by model — gpt-5.5 defaults to `medium`, gpt-5.4 defaults to `none` (don't assume a uniform default).
 - **Official `openai-go` (v3).** Current, idiomatic; `Responses.New`/`NewStreaming`, built-in retries, `*openai.Error` with raw body.
 
 ### 2.4 Z.ai — GLM (Zhipu / BigModel)
@@ -80,7 +78,7 @@ The fourth provider, treated as an equal option. **It is OpenAI Chat-Completions
 - **Errors — Zhipu-shaped, NOT OpenAI-shaped.** `{"error":{"code":"1302","message":"..."}}` — `code` is a **string-numeric**, no `type`/`param`. Known: 401/`1001,1002,1003` auth (non-retryable); **429/`1302`** concurrency-too-high (**retryable**), **`1303`** request-rate (**retryable**); `1304/1308/1310` quota/limit (retry only after reset — treat non-transient); `1110–1113` balance/overdue/locked (non-retryable); **500/`1230,1234`** internal/network (**retryable**). The retry classifier must key off these **numeric codes**, not OpenAI `error.type`.
 - **Retry signals.** No documented `Retry-After` or `x-ratelimit-*` headers — rely on status + body-code classification and own backoff (exponential + jitter; community reports ~1s retries clear 1302). Rate-limit HTTP status is 429.
 - **Usage — OpenAI-named.** `usage.{prompt_tokens, completion_tokens, total_tokens}`, with prompt caching via **`usage.prompt_tokens_details.cached_tokens`** (OpenAI-compatible nesting; consistent with the published cached-input price). Maps to the uniform `Usage` exactly like OpenAI Chat Completions.
-- **Models.** `glm-5.2` (flagship, ~744B MoE, 1M context, released 2026-06-13), `glm-5.1` (200K), `glm-4.7`/`-flash`, `glm-4.6`. Confirm exact live IDs against `https://docs.z.ai/llms.txt` at integration time.
+- **Models.** `glm-5.2` (flagship), `glm-5.1`, `glm-4.7`, `glm-4.6` — all ~200K context on the plain ids. GLM-5.2's 1M window is a **separate id**, `glm-5.2[1m]`, not a parameter on `glm-5.2`; it is not currently cataloged. Only GLM-5.2 accepts `reasoning_effort`; 5.1 and the 4.x line carry the `thinking` toggle alone (§7.1). Confirm live ids against `https://docs.z.ai/llms.txt` at integration time.
 - **GLM-specific gotchas.** Proprietary `thinking` toggle (`{"type":"enabled"|"disabled"}`, default enabled on 4.6/5.x); `reasoning_content` appears in both non-stream `message` and stream `delta`; `tool_choice=auto`-only; Zhipu string-coded error envelope. **Everything else matches OpenAI Chat Completions exactly.**
 - **Implementation take.** Not a fourth bespoke adapter — **reuse the OpenAI Chat-Completions adapter with three deltas**: Zhipu error parsing, `thinking`/`reasoning_content` handling, and the `tool_choice=auto` constraint. This is the cheapest provider to add and is the reason the OpenAI-family path should be built on a **configurable base URL** from the start. No first-party Go SDK needed — point the OpenAI Chat-Completions client (or raw HTTP) at the base URL.
 
@@ -114,13 +112,16 @@ type Message struct { Role Role; Blocks []Block }
 type Block interface{ isBlock() }
 type TextBlock       struct{ Text string }
 type ToolUseBlock    struct{ ID, Name string; Input json.RawMessage } // structured, not string
-type ToolResultBlock struct{ ToolUseID string; Content string; IsError bool }
+type ToolResultBlock struct{ ToolUseID, Name, Content string; IsError bool }
+type ReasoningBlock  struct{ Opaque, Summary, BoundToID string }      // preserved thinking state (§7.2)
 ```
+
+`ReasoningBlock` is first-class in the canonical model, not a provider extension: three of the five providers require prior reasoning output to be echoed back verbatim during a tool-use loop (§7.2), so the block has to survive in neutral history. `ToolResultBlock` carries `Name` alongside the id because Gemini matches results by function name (§5).
 
 Adapters reconcile: role `assistant`→`model` for Gemini (which also puts `functionResponse` under role `user`); **system prompt is a first-class field on the state object, not a message** (matches Anthropic top-level `system` + Gemini `systemInstruction`; OpenAI gets it as an injected `developer`/`instructions`); tool-call IDs always present (§5).
 
 ### 4.2 Streaming surface
-**Recommendation: a `*Stream` struct exposing `Events() iter.Seq[Event]` plus terminal `Err() error` and `Usage() Usage` accessors** — the `sql.Rows`/`bufio.Scanner` pattern on Go 1.23+ range-over-func.
+**The consumption surface is a `*Stream` exposing `Events() iter.Seq[Event]` plus terminal `Err()`, `Usage()`, `Warnings()`, and `Cost()` accessors** — the `sql.Rows`/`bufio.Scanner` pattern on Go 1.23+ range-over-func.
 
 ```go
 for ev := range stream.Events() { /* TextDelta, ToolCallDelta, … */ }
@@ -131,61 +132,72 @@ usage := stream.Usage()
 Iterators beat channels (which leak goroutines on early `break` and force `select` plumbing) and callbacks (lose composability/early-exit). Early `break` makes `yield` return false → iterator returns and runs `defer` cleanup (close HTTP body) with no leak. Prefer the **terminal `Err()` accessor** over `iter.Seq2[Event,error]` (one stream error invalidates the whole sequence; `Seq2` is awkward and also can't carry setup/teardown errors). Pass `context.Context` as a normal arg, checked inside the loop. Go 1.26 changes no iterator semantics — stable.
 
 ### 4.3 Tool definition & JSON Schema
-Canonical internal representation = **JSON Schema as `json.RawMessage`**, cached, converted per-provider at the boundary. ⚠ **The no-library constraint excludes `github.com/invopop/jsonschema`** (the de-facto struct→schema generator) — so AgentKit must produce the schema *without* it. Two standard-library-only options for the design author: **(a)** require the consumer to **supply the JSON Schema directly** (`json.RawMessage` / `map[string]any`) when registering a tool — simplest, zero reflection, but drops the typed-struct convenience; **(b)** hand-roll a **minimal `reflect`-based generator** covering the common Go-struct → JSON-Schema cases (structs, scalars, slices, maps, `json`/`jsonschema`-style tags) — more code, keeps the ergonomic `NewTool[In]` edge. Recommendation: **(a) as the guaranteed-correct core surface, with (b) as an optional convenience layered on top** if the typed edge is wanted; either way the registry stores raw JSON Schema and the per-provider boundary conversion is unchanged. Generics only at the registration edge, erased into a non-generic registry interface:
+Canonical internal representation = **JSON Schema as `json.RawMessage`**, cached, converted per-provider at the boundary. The typed edge derives the schema from the input struct via the approved `invopop/jsonschema` reflector; `RawTool` is the escape hatch for a hand-written schema. Generics live only at the registration edge, erased into a non-generic sealed interface:
 
 ```go
 type Tool interface {
     Name() string
+    Description() string
     JSONSchema() json.RawMessage
-    Call(ctx context.Context, args json.RawMessage) (any, error)
+    Call(ctx context.Context, input json.RawMessage) (string, error)
+    isTool() // sealed: construct via NewTool or RawTool
 }
-func NewTool[In any](name, desc string, fn func(context.Context, In) (any, error)) Tool
+func NewTool[In any](name, description string, fn func(context.Context, In) (string, error)) Tool
+func RawTool(name, description string, schema json.RawMessage, fn func(context.Context, json.RawMessage) (string, error)) Tool
 ```
 
-Anthropic/OpenAI pass the schema through nearly verbatim; **Gemini needs the lossy `jsonSchema → *genai.Schema` converter isolated in one place** (no `$ref`/`oneOf`/`additionalProperties`; nullability via a `Nullable` field; `Enum []string` only). Keep hand-written `map[string]any` schemas available as an escape hatch.
+`Call` returns `string`, not `any` — a tool result is text fed back to the model, so serializing at the tool boundary keeps the orchestrator free of reflection.
+
+Anthropic and OpenAI pass the schema through nearly verbatim. **Gemini needs a translation isolated in one place**, and it is *faithful*, not lossy-by-default: `$ref`/`$defs` are inlined, `oneOf` becomes `anyOf`, and only genuinely unconveyable residue (`additionalProperties`, `not`, `const`, unbounded recursion) is dropped — with a `WarnToolSchemaLossy` warning naming what was dropped, so a silently weakened schema is never shipped. The translation is schema-driven, never dispatched on provider name.
+
+**Deferred tools** are a second tool source on the same surface: a consumer may register tools as *deferred*, in which case AgentKit synthesizes one built-in `load_tools` meta-tool whose description carries a generated catalog (per-group blurb + bare tool names). The model calls `load_tools` with exact tool or group names and they become ordinary live tools from the next round trip. The heavy per-tool descriptions and schemas stay out of the request until a tool is actually loaded.
 
 ### 4.4 State/config object
 A single mutable struct bundling config + history, threaded explicitly into each call; primary verbs as **methods** on it (they mutate `History`, read all config):
 
 ```go
-type State struct {
-    Provider Provider     // swappable mid-conversation
-    Model    string
-    Creds    Credentials
-    Gen      GenSettings  // temperature, max tokens, …
+type Conversation struct {
+    Provider Provider     // swappable mid-conversation; holds its own credentials
+    Model    string       // free-flow string; the vendor judges it
+    Gen      GenSettings  // temperature, max tokens, native reasoning value
     System   string       // system prompt — first-class field, not a message
     History  []Message
     Tools    []Tool
+    Pricing  *Pricing     // consumer-supplied rates, sibling of Model (typically a catalog lookup)
+    // plus: Log, Retry, DeferredTools, MCPServers, MaxToolIterations
 }
 ```
 
-**Mid-conversation provider switching is just field mutation between calls** (`s.Provider = …; s.Model = …`); history is plain `[]Message` carried over untouched — the whole reason the message model must be a neutral superset. **Document explicitly: a `*State` is one conversation owned by one goroutine — not safe for concurrent use** (standard Go stance, cf. `sql.Rows`); no hidden locking.
+**Credentials are not on the conversation** — they are bound into the provider at construction, so a provider value is already authenticated and the conversation never carries secrets. **Mid-conversation provider switching is just field mutation between calls** (`c.Provider = …; c.Model = …`); history is plain `[]Message` carried over untouched — the whole reason the message model must be a neutral superset. **A `*Conversation` is one conversation owned by one goroutine — not safe for concurrent use** (standard Go stance, cf. `sql.Rows`); no hidden locking.
 
 ### 4.5 Provider abstraction interface
 One narrow internal interface — translation between AgentKit's canonical types and one wire format, nothing more:
 
 ```go
 type Provider interface {
-    Stream(ctx context.Context, req Request) *Stream
+    RoundTrip(ctx context.Context, req *Request) *RoundTrip
+    Name() string // for error attribution
 }
 type Request struct {
     Model string; System string; Messages []Message
-    Tools []Tool; Gen GenSettings; Creds Credentials
+    Tools []Tool; Gen GenSettings
+    ProviderOptions json.RawMessage // opaque per-provider fragment, passed through uninterpreted
 }
 ```
 
-The auto-tool-loop, history accumulation, and full transparency (surfacing every message/tool-call/tool-result to the consumer) live in the `State` orchestration layer **above** this interface, not inside providers.
+The interface is **one round trip**, not one turn: the auto-tool-loop, history accumulation, and full transparency (surfacing every message/tool-call/tool-result to the consumer) live in the `Conversation` orchestration layer **above** it, not inside providers. `Request` carries no credentials — the provider was constructed with them. It also carries no pricing, no reasoning spec, and no capability metadata: **providers hold no model knowledge at all**, which is what lets a day-one model run without a library release. Reasoning lowers **by the value's shape alone** (level / budget / disabled / unset), consulting nothing about the model.
 
 ---
 
 ## 5. Tool-call identity — the load-bearing cross-provider problem
 
-This is the single key to safe mid-conversation switching, and the agents surfaced a **factual conflict worth resolving in design:**
+This is the single key to safe mid-conversation switching, and the providers genuinely disagree:
 
-- Prior-art and the Google-API research found Gemini historically returns **empty `tool_call_id`** and **matches tool results by function name, not id**; meanwhile Anthropic enforces a strict id charset `^[a-zA-Z0-9_-]+$` and OpenAI-style ids like `functions.exec:2` **corrupt an Anthropic session**.
-- The core-design research found **Gemini-3 now also emits a per-call `id`** to echo back — i.e. the name-only-matching premise may be outdated on the newest models.
+- Gemini has historically returned an **empty `tool_call_id`** and **matched tool results by function name, not id**; newer Gemini also emits a per-call `id`. Either way, name-matching must keep working.
+- Anthropic enforces a strict id charset `^[a-zA-Z0-9_-]+$`, so OpenAI-style ids like `functions.exec:2` **corrupt an Anthropic session**.
+- OpenAI's own wire key differs by surface: `tool_call_id` in Chat Completions, `call_id` in Responses.
 
-**Recommended design (works under either reading — verify against current Gemini at build time):** AgentKit **mints its own neutral tool-call IDs at write time in Anthropic's strict charset**, and **stores the function name alongside** every tool-call/tool-result. At send time each adapter uses whichever the provider needs — id for Anthropic/OpenAI, and name (or echoed id) for Gemini. Also normalize OpenAI's wire-key difference (`tool_call_id` in Chat Completions vs `call_id` in Responses). This makes history fully portable across a mid-conversation provider switch regardless of how Gemini behaves.
+**Resolution: AgentKit mints its own neutral tool-call ids** at write time, in Anthropic's strict charset with an `ak_` prefix, and **stores the function name alongside** every tool-call and tool-result block. A provider's id is never propagated across a switch. At send time each adapter uses whichever the provider needs — id for Anthropic and OpenAI, name (or echoed id) for Gemini — and normalizes the OpenAI key difference. History is therefore fully portable across a mid-conversation provider switch under either Gemini behavior, with no build-time branch on which one is live.
 
 ---
 
@@ -215,7 +227,7 @@ Retryable: `ErrRateLimited`, `ErrOverloaded`, `ErrServerError`, `ErrTimeout`, `E
 
 ### 6.3 Usage & cost accounting — the hardest uniformity problem
 
-This is the part the product calls out and the hardest to unify, because the four providers **disagree about what is included in what**. AgentKit now reports both tokens **and dollar cost** (cost is in scope per the product change): the uniform struct exposes enough **disjoint** token categories that cost is computed as `Σ bucket × rate[bucket]`, where `rate[bucket]` comes from AgentKit's baked-in per-model pricing table (the gathered rate data lives in §6.5). The disjoint-bucket design below is what makes that sum exact and provider-uniform.
+This is the part the product calls out and the hardest to unify, because the providers **disagree about what is included in what**. AgentKit reports both tokens **and dollar cost**: the uniform struct exposes enough **disjoint** token categories that cost is computed as `Σ bucket × rate[bucket]`, where `rate[bucket]` comes from the consumer-supplied rate row (typically a catalog lookup; the gathered rate data lives in §6.5). The disjoint-bucket design below is what makes that sum exact and provider-uniform.
 
 **Three irreducible mismatches** (each confirmed against live API responses / official docs):
 1. **Cached-input inclusion.** Anthropic's `input_tokens` **excludes** cached tokens (cache buckets are additive); OpenAI, Gemini, and Z.ai all report a prompt count that **includes** cached tokens (cached ⊂ input).
@@ -261,87 +273,107 @@ type Usage struct {
 
 **Caveats to document:**
 - **Anthropic & Z.ai cannot separate reasoning** — leave `ReasoningOutput=0`; reasoning stays inside `Output`. No cost loss (reasoning bills at the output rate everywhere) but the breakdown is unavailable for those two.
-- **OpenAI & Gemini require subtraction** to disjoint the buckets (reasoning out of output; cached out of input — three of four providers need the cached subtraction).
+- **OpenAI & Gemini require subtraction** to disjoint the buckets (reasoning out of output; cached out of input — three of the four native-usage shapes need the cached subtraction).
 - **Anthropic is the only derived `Total`** (no native total field); for the other three, assert their native total equals the bucket sum as a sanity check (and a regression canary on provider changes).
-- **Pricing dimensions** (now computed by AgentKit from its baked-in table — see §6.5): distinct billed rates are uncached-input, cached-read input (discounted), cache-write input (Anthropic only; 5m=1.25×, 1h=2× base), output. Reasoning bills at the **output rate** on all four — but the bucket is kept separate anyway (Gemini's total math depends on tracking it; cost just rates `Output + ReasoningOutput` together). The disjoint-bucket struct above covers every billable category, so the flat per-bucket rate table in §6.5 prices it directly.
+- **Pricing dimensions** (see §6.5): distinct billed rates are uncached-input, cached-read input (discounted), cache-write input (Anthropic only; 5m=1.25×, 1h=2× base), output. Reasoning bills at the **output rate** everywhere — but the bucket is kept separate anyway (Gemini's total math depends on tracking it; cost just rates `Output + ReasoningOutput` together). The disjoint-bucket struct above covers every billable category, so the per-bucket rate tables in §6.5 price it directly.
 
 ### 6.4 Testing strategy
 `net/http/httptest` + recorded fixtures + golden SSE files, table-driven. Inject a configurable base URL / `*http.Client` so tests hit a fake server returning fixtures (exercises real JSON/SSE decode + error mapping, no credits). Table-driven error-mapping tests over the §6.1 matrix. Streaming via recorded raw `.sse` byte streams under `testdata/`, asserting assembled turn + `Usage` against golden JSON (`-update` flag). Retry tests with a fake server returning 429/503 N times then 200 and an injected clock — assert attempt count, honored delay, and **that mid-stream failures are not retried**. Live integration tests gated behind `//go:build integration` **and** an env-presence skip; capture fixtures once in a recording mode, scrub keys, commit.
 
-### 6.5 Baked-in pricing data — per-model rate tables
+### 6.5 Rate data — per-model tables
 
-The product change makes cost in-scope, so the design's `Pricing` table (one entry per supported model) must be **populated with real rates**. This subsection holds the gathered data so the design author isn't re-researching it. **Closed set = every model the design exports a constant for; each must have an entry (no model ships unpriced).** Rates are **nano-USD per token** (1e-9 USD; published `$/1M tok × 1000`). Buckets match the design's `Pricing` struct: `InputUncached`, `CacheReadInput`, `CacheWrite5m`, `CacheWrite1h`, `Output`. Reasoning tokens bill at the `Output` rate on all four providers. Gathered **2026-06-17** from each provider's official pricing page — re-verify before a release, as these are live commercial rates.
+The catalog (D26) carries maintained rates for the models we track; this subsection is where that data is gathered so the catalog author is not re-researching it. **Coverage is advisory, not a gate:** an uncataloged model runs, and a call with no rate source reports zero cost with a `WarnCostUnknown` warning (D16). Rates are **nano-USD per token** (1e-9 USD; published `$/1M tok × 1000`). Buckets match `RateTier`: `InputUncached`, `CacheReadInput`, `CacheWrite5m`, `CacheWrite1h`, `Output`. Reasoning tokens bill at the `Output` rate on every provider.
 
-**Anthropic** — `CacheWrite5m/1h` are real Anthropic buckets. ⚠ Base input/output are published & high-confidence; the **cache rates are derived from Anthropic's conventional multipliers** (read 0.1×, 5m write 1.25×, 1h write 2× base input), *not* read off explicit per-model columns — verify against the live pricing page if exact cache billing matters.
+**`Pricing` is tiered, not flat.** `Pricing{Tiers []RateTier}` holds rates ordered by `RateTier.MinInputTokens`, and cost selects the highest tier whose threshold the turn's total input reaches. Context-length tiered models are therefore priced exactly rather than undercounted; a single-tier model is just one `RateTier` with `MinInputTokens: 0`.
+
+**Anthropic** — `CacheWrite5m/1h` are real Anthropic buckets. ⚠ Base input/output are published and high-confidence; the **cache rates are derived from Anthropic's conventional multipliers** (read 0.1×, 5m write 1.25×, 1h write 2× base input), not read off explicit per-model columns.
 
 | Model | InputUncached | CacheReadInput | CacheWrite5m | CacheWrite1h | Output |
 |---|---|---|---|---|---|
 | claude-opus-4-8 | 5000 | 500 | 6250 | 10000 | 25000 |
 | claude-sonnet-4-6 | 3000 | 300 | 3750 | 6000 | 15000 |
+| claude-sonnet-5 | 3000 | 300 | 3750 | 6000 | 15000 |
 | claude-haiku-4-5 | 1000 | 100 | 1250 | 2000 | 5000 |
+| claude-fable-5 | 10000 | 1000 | 12500 | 20000 | 50000 |
 
-**Google Gemini** (verified 2026-06-17) — no cache-write token bucket (caching is read-discount + separate per-hour storage fee AgentKit does not model); `CacheWrite5m/1h = 0`. ⚠ The 3.x Pro id is the **preview** `gemini-3.1-pro-preview`, NOT the design's bare `gemini-3.1-pro` (no such GA id). `gemini-3.1-flash-lite` added as the stable cheap option.
+**Google Gemini** — no cache-write token bucket (caching is a read discount plus a separate per-hour storage fee AgentKit does not model); `CacheWrite5m/1h = 0`. The 3.x Pro id is the **preview** `gemini-3.1-pro-preview`; there is no GA `gemini-3.1-pro`. `gemini-2.5-pro` and `gemini-3.1-pro-preview` are tiered above 200K input tokens.
 
-| Model | InputUncached | CacheReadInput | CacheWrite5m | CacheWrite1h | Output |
+| Model | InputUncached | CacheReadInput | Output | high tier (>200K) |
+|---|---|---|---|---|
+| gemini-2.5-flash | 300 | 30 | 2500 | — |
+| gemini-2.5-pro | 1250 | 125 | 10000 | 2500 / 250 / 15000 |
+| gemini-3.5-flash | 1500 | 150 | 9000 | — |
+| gemini-3.1-flash-lite | 250 | 25 | 1500 | — |
+| gemini-3.1-pro-preview | 2000 | 200 | 12000 | 4000 / 400 / 18000 |
+
+**OpenAI** — no cache-write bucket (cached-input read discount only). **`gpt-5.5-pro` has no cached-input discount** — its `CacheReadInput` equals `InputUncached` — and it is **single-tier**, with no >272K band. `gpt-5.5` and `gpt-5.4` are tiered above 272K input tokens (whole session).
+
+| Model | InputUncached | CacheReadInput | Output | high tier (>272K) |
+|---|---|---|---|---|
+| gpt-5.5-pro | 30000 | 30000 | 180000 | — (flat) |
+| gpt-5.5 | 5000 | 500 | 30000 | 10000 / 1000 / 45000 |
+| gpt-5.4 | 2500 | 250 | 15000 | 5000 / 500 / 22500 |
+| gpt-5.4-mini | 750 | 75 | 4500 | — |
+| gpt-5.4-nano | 200 | 20 | 1250 | — |
+| gpt-5.6-sol | 5000 | 500 | 30000 | — |
+| gpt-5.6-terra | 2500 | 250 | 15000 | — |
+| gpt-5.6-luna | 1000 | 100 | 6000 | — |
+
+**Z.ai / GLM** — international `api.z.ai` USD rates; no cache-write bucket (cached-input storage currently free). Default route `zai`, also reachable via OpenRouter (`z-ai/<id>`); on the OpenRouter route the aggregator's reported cost wins (D16), so these direct rates are never misapplied to it. ⚠ OpenRouter prices GLM-4.7 differently ($0.40 in / $1.75 out) because third parties host the open weights — one more reason reported-cost precedence matters.
+
+| Model | InputUncached | CacheReadInput | Output |
+|---|---|---|---|
+| glm-5.2 | 1400 | 260 | 4400 |
+| glm-5.1 | 1400 | 260 | 4400 |
+| glm-4.7 | 600 | 110 | 2200 |
+| glm-4.6 | 600 | 110 | 2200 |
+
+**OpenRouter-routed vendors — xAI (Grok), DeepSeek, Moonshot (Kimi).** These three have no native AgentKit adapter, so the aggregator is their only route: each entry's default provider **is** `openrouter` and its wire id is the vendor-namespaced slug. Because OpenRouter reports the true charge on every response (§14.2), these rates are advisory display data that the reported figure overrides in practice.
+
+Where OpenRouter and the vendor's own page disagree, **the OpenRouter figure is authoritative here**, since that is the route actually billed. Where OpenRouter publishes no discrete cached-read rate — which is the case for every Grok and DeepSeek model, and for Kimi K2.6 — the vendor-direct cache rate is carried instead and flagged; those cells mix sources deliberately.
+
+xAI Grok — all four are tiered above 200K input tokens; cached-read is xAI-direct (OpenRouter publishes none). Grok's headline OpenRouter price matches xAI's low tier exactly, so there is no conflict to resolve.
+
+| Model | OpenRouter slug | Context | InputUncached | CacheReadInput | Output | high tier (>200K) |
+|---|---|---|---|---|---|---|
+| grok-4.5 | `x-ai/grok-4.5` | 500000 | 2000 | 300 | 6000 | 4000 / 600 / 12000 |
+| grok-4.3 | `x-ai/grok-4.3` | 1000000 | 1250 | 200 | 2500 | 2500 / 400 / 5000 |
+| grok-4.20 | `x-ai/grok-4.20` | 2000000 | 1250 | 200 | 2500 | 2500 / 400 / 5000 |
+| grok-4.20-multi-agent | `x-ai/grok-4.20-multi-agent` | 2000000 | 1250 | 200 | 2500 | 2500 / 400 / 5000 |
+
+⚠ Context for the 4.20 family is contested: xAI's own docs say 1M, OpenRouter says 2M. The OpenRouter figure is used, being the served route. ⚠ For `grok-4.20-multi-agent`, effort selects the number of collaborating sub-agents (4 or 16), **not** reasoning depth, and every sub-agent's tokens bill — real cost at `high`/`xhigh` runs well above the headline rate.
+
+DeepSeek — V4 is unified: the historical `deepseek-chat` / `deepseek-reasoner` split no longer exists, thinking being a request parameter instead, and both legacy aliases retire 2026-07-24. V3.2 is no longer addressable on DeepSeek's own API and survives only via OpenRouter and open weights; it is deliberately not cataloged. Input/output below are OpenRouter's; cache-read is DeepSeek-direct, rounded to this table's granularity (V4-Flash's true $0.0028/M → 3, V4-Pro's $0.003625/M → 4).
+
+| Model | OpenRouter slug | Context | InputUncached | CacheReadInput | Output |
 |---|---|---|---|---|---|
-| gemini-2.5-flash | 300 | 30 | 0 | 0 | 2500 |
-| gemini-2.5-pro *(≤200K)* | 1250 | 125 | 0 | 0 | 10000 |
-| gemini-3.5-flash | 1500 | 150 | 0 | 0 | 9000 |
-| gemini-3.1-flash-lite *(stable, cheap)* | 250 | 25 | 0 | 0 | 1500 |
-| gemini-3.1-pro-preview *(≤200K; PREVIEW)* | 2000 | 200 | 0 | 0 | 12000 |
+| deepseek-v4-flash | `deepseek/deepseek-v4-flash` | 1048576 | 90 | 3 | 180 |
+| deepseek-v4-pro | `deepseek/deepseek-v4-pro` | 1048576 | 435 | 4 | 870 |
 
-**OpenAI** (verified 2026-06-17) — no cache-write bucket (cached-input read discount only); `CacheWrite5m/1h = 0`. **`o3`/`o4-mini` removed — officially deprecated/superseded (do not ship).** **`gpt-5.5-pro` has NO cached-input discount — its `CacheReadInput` equals `InputUncached` (full 30000 on cached reads).**
+⚠ OpenRouter undercuts DeepSeek direct on V4-Flash (90/180 vs 140/280) but matches it exactly on V4-Pro. ⚠ V4-Pro's 435/870 may be a lapsed promotional rate — a third-party source puts list at 1740/3480 — but DeepSeek's own page shows it plainly with no expiry, so the published figure is used.
 
-| Model | InputUncached | CacheReadInput | CacheWrite5m | CacheWrite1h | Output |
+Moonshot Kimi — the instruct-vs-thinking model split is gone: `kimi-k2-thinking` and the rest of the K2 preview family retired 2026-05-25, and thinking is a per-request mode from K2.5 onward. Input/output are OpenRouter's; K2.6's cache-read is Moonshot-direct (OpenRouter publishes none). K3's rates match direct exactly.
+
+| Model | OpenRouter slug | Context | InputUncached | CacheReadInput | Output |
 |---|---|---|---|---|---|
-| gpt-5.5-pro *(flat — see ⚠ below)* | 30000 | 30000 | 0 | 0 | 180000 |
-| gpt-5.5 *(≤272K)* | 5000 | 500 | 0 | 0 | 30000 |
-| gpt-5.4 *(≤272K)* | 2500 | 250 | 0 | 0 | 15000 |
-| gpt-5.4-mini | 750 | 75 | 0 | 0 | 4500 |
-| gpt-5.4-nano | 200 | 20 | 0 | 0 | 1250 |
+| kimi-k3 | `moonshotai/kimi-k3` | 1048576 | 3000 | 300 | 15000 |
+| kimi-k2.7-code | `moonshotai/kimi-k2.7-code` | 262144 | 720 | 149 | 3490 |
+| kimi-k2.6 | `moonshotai/kimi-k2.6` | 262144 | 660 | 160 | 3410 |
 
-**Z.ai / GLM** — international `api.z.ai` USD rates; no cache-write bucket (cached-input storage currently free); `CacheWrite5m/1h = 0`.
+⚠ OpenRouter prices for the open-weight Kimi models are provider-dependent and move; K2.7-code and K2.6 both run below Moonshot direct because third parties host the weights. Deliberately excluded: `kimi-k2.5` (EOL 2026-08-31), `kimi-k2.7-code-highspeed` (Moonshot-direct only, so unreachable without a native adapter), and Moonshot's `moonshot-v1-*` era.
 
-| Model | InputUncached | CacheReadInput | CacheWrite5m | CacheWrite1h | Output |
-|---|---|---|---|---|---|
-| glm-5.2 | 1400 | 260 | 0 | 0 | 4400 |
-| glm-5.1 | 1400 | 260 | 0 | 0 | 4400 |
-| glm-4.7 | 600 | 110 | 0 | 0 | 2200 |
-| glm-4.6 | 600 | 110 | 0 | 0 | 2200 |
 
-**Coverage:** every model in the closed set has findable, official pricing — **no gaps**. So "supported ⇒ priced" is achievable for the whole v1 set; no model is forced to ship unpriced.
-
-**⚠ One real constraint conflict — context-length tiered pricing vs the flat `Pricing` struct.** The design's `Pricing` struct is **flat**: one rate per bucket, no notion of prompt length. But three models charge a higher rate above a context threshold, which a flat table cannot represent:
-
-| Model | Threshold | Above-threshold rates (Input / CacheRead / Output, nano-USD/tok) |
-|---|---|---|
-| gemini-2.5-pro | > 200K input tokens | 2500 / 250 / 15000 (input 2×, output 1.5×) |
-| gemini-3.1-pro-preview | > 200K input tokens | 4000 / 400 / 18000 (input 2×, output 1.5×) |
-| gpt-5.5 | > 272K input tokens (whole session) | 10000 / 1000 / 45000 (input 2×, output 1.5×) |
-| gpt-5.4 | > 272K input tokens (whole session) | 5000 / 500 / 22500 (input 2×, output 1.5×) |
-
-⚠ **`gpt-5.5-pro` is NOT tiered in verified pricing** — the official model page gives a single flat rate (30000 in / 180000 out, no cached discount), with no >272K band. The design registry (D16) currently carries a `gpt-5.5-pro` 272001-tier (60000 / 60000 / 270000) that **could not be confirmed and is likely spurious** — recommend the design drop the pro high-tier (single flat tier) unless re-verified against the live page.
-
-**Design-registry reconciliation (apply in the next design-mode pass).** With the model list re-verified, four deltas between D16 and ground truth:
-1. **Google id bug** — D16's `gemini-3.1-pro` does not resolve; the served id is `gemini-3.1-pro-preview` and it is **preview, not GA**. Either rename + flag preview, or substitute GA `gemini-2.5-pro` if the curated set must be GA-only. (Pricing 2000/200/12000 → 4000/400/18000 above 200K is correct for the preview id.)
-2. **OpenAI pro tier** — drop the unverified `gpt-5.5-pro` >272K tier; it is flat. Keep `CacheReadInput == InputUncached` (no cached discount) for it.
-3. **Anthropic Fable 5 dropped** — `claude-fable-5` is globally disabled for all customers since 2026-06-12 (export control), so it cannot be served; the design **removes it from the curated set/registry** rather than shipping a priced-but-unrunnable id (re-add if Anthropic re-enables it).
-4. **OpenAI `o3`/`o4-mini`** — already correctly absent from D16 (this *research* was the stale one); no design change, just confirming D16's set is right.
-
-The tables above bake in the **low-tier (common-case)** rates for the tiered models. With a flat struct, cost is **exact below the threshold and undercounts above it**. Options for the design author: (a) accept the undercount and document it (simplest, and the threshold is rarely hit at 200–272K); (b) extend `Pricing` to carry an optional high-context tier + threshold (most correct, more surface); (c) define the supported-model constants to the low tier only. Recommendation: **(a)** for v1 — document the >threshold undercount — since it keeps the struct flat and the error only appears on very large prompts, but flag it so the choice is deliberate rather than accidental.
-
----
 
 ## 7. Reasoning models — native-first control + preserved cross-turn state
 
-The v1 targets are all newest-generation reasoning models, and "use the newest reasoning APIs unless a model doesn't support it." Reasoning is not cosmetic — it reshapes the message model in **two** independent ways, each load-bearing:
+The models AgentKit targets are newest-generation reasoning models. Reasoning is not cosmetic — it reshapes the message model in **two** independent ways, each load-bearing:
 
-- **§7.1 — controlling reasoning (the native-first knob).** *Per the 2026-06-18 product change*, reasoning is set in each model's **own native term and values**, with **no cross-model enum and no translation**, plus an **inspectable per-model spec** and a **warn-and-fall-back-to-default** contract for non-native input. (This *replaces* this section's former recommendation to map a single `ReasoningEffort` ordinal enum across providers — see the rejection rationale at the end of §7.1.)
-- **§7.2 — preserving reasoning across tool-loop turns.** **Three of four providers REQUIRE the model's prior reasoning output to be echoed back, verbatim, in the next request during a tool-use loop, or the turn errors or silently degrades.** AgentKit's auto-tool-loop is exactly such a loop, so this is mandatory. This is orthogonal to §7.1 and is **unchanged** by the native-first change.
+- **§7.1 — controlling reasoning (the native-first knob).** Reasoning is set in each model's **own native term and values**, with **no cross-model enum and no translation**, plus an inspectable per-model spec in the advisory catalog. A value the model does not accept is rejected by the **vendor** and surfaces as that provider's typed error — AgentKit substitutes nothing.
+- **§7.2 — preserving reasoning across tool-loop turns.** **Three providers REQUIRE the model's prior reasoning output to be echoed back, verbatim, in the next request during a tool-use loop, or the turn errors or silently degrades.** AgentKit's auto-tool-loop is exactly such a loop, so this is mandatory. It is orthogonal to §7.1.
 
 ### 7.1 Native-first reasoning control
 
-**Verified 2026-06-18 against each provider's live docs (one agent per provider).** The native vocabulary genuinely does **not** unify: two providers use a discrete **effort/level enum**, one uses an integer **token budget** on its older family and a discrete **level** enum on its newer one, and the values+defaults differ per model *within* a provider. This heterogeneity is exactly why the universal enum was rejected — there is no honest ordinal ladder spanning a `budget_tokens` integer and a `low/high/xhigh/max` enum, and "nearest" is undefinable across them.
+The native vocabulary genuinely does **not** unify: most providers use a discrete **effort/level enum**, some use an integer **token budget**, and the values and defaults differ per model *within* a provider. This heterogeneity is why a universal cross-model enum is not viable — there is no honest ordinal ladder spanning a `budget_tokens` integer and a `low/high/xhigh/max` enum, and "nearest" is undefinable across them.
 
 **Per-model native reasoning vocabulary (the data the introspection API must expose):**
 
@@ -349,23 +381,41 @@ The v1 targets are all newest-generation reasoning models, and "use the newest r
 |---|---|---|---|---|---|
 | **claude-opus-4-8** | effort (`output_config.effort`) + `thinking` on/off | enum | `low` `medium` `high` `xhigh` `max` | `high` (thinking off until `thinking:{type:"adaptive"}`) | **yes** (omit / `type:"disabled"`) |
 | **claude-sonnet-4-6** | effort (`output_config.effort`) + `thinking` on/off | enum | `low` `medium` `high` `max` (**no `xhigh`**) | `high` (adaptive when on) | **yes** |
-| **claude-haiku-4-5** | thinking budget (`thinking.budget_tokens`) | **int budget** | `1024 … max_tokens−1` (**no `effort` field — 400 if sent**) | thinking **off** | **yes** (`type:"disabled"`/omit) |
+| **claude-sonnet-5** | effort (`output_config.effort`) + `thinking` on/off | enum | `low` `medium` `high` `xhigh` `max` | `medium` | **yes** |
+| **claude-fable-5** | effort (`output_config.effort`) | enum | `low` `medium` `high` `xhigh` `max` | `medium` | **no** (always-on) |
+| **claude-haiku-4-5** | thinking budget (`thinking.budget_tokens`) | **int budget** | `1024 … 4096` (**no `effort` field — 400 if sent**) | thinking **off** | **yes** (`type:"disabled"`/omit) |
 | **gpt-5.5-pro** | effort (`reasoning.effort`) | enum | `high` `xhigh` *(est.)* | `high` *(est.)* | **no** (no `none`; always-on) |
 | **gpt-5.5** | effort (`reasoning.effort`) | enum | `none` `low` `medium` `high` `xhigh` | `medium` | yes (`none`) |
 | **gpt-5.4** | effort (`reasoning.effort`) | enum | `none` `low` `medium` `high` `xhigh` | `none` | yes (`none`) |
 | **gpt-5.4-mini** | effort (`reasoning.effort`) | enum | `none` `low` `medium` `high` `xhigh` | `none` *(est.)* | yes (`none`) |
 | **gpt-5.4-nano** | effort (`reasoning.effort`) | enum | `none` `low` `medium` `high` `xhigh` | `none` *(est.)* | yes (`none`) |
+| **gpt-5.6-sol** | effort (`reasoning.effort`) | enum | `none` `low` `medium` `high` `xhigh` | `medium` | yes (`none`) |
+| **gpt-5.6-terra** | effort (`reasoning.effort`) | enum | `none` `low` `medium` `high` `xhigh` | `medium` | yes (`none`) |
+| **gpt-5.6-luna** | effort (`reasoning.effort`) | enum | `none` `low` `medium` `high` `xhigh` | `medium` | yes (`none`) |
 | **gemini-2.5-flash** | thinking budget (`thinkingConfig.thinkingBudget`) | **int budget** | `0 … 24576`; `0`=off, `-1`=dynamic | `-1` (dynamic) | **yes** (`0`) |
 | **gemini-2.5-pro** | thinking budget (`thinkingConfig.thinkingBudget`) | **int budget** | `128 … 32768`; `-1`=dynamic (**`0` rejected**) | `-1` (dynamic) | **no** (min 128) |
 | **gemini-3.5-flash** | thinking level (`thinkingConfig.thinkingLevel`) | enum | `minimal` `low` `medium` `high` | `medium` | **no** (`minimal` = floor) |
 | **gemini-3.1-flash-lite** | thinking level (`thinkingConfig.thinkingLevel`) | enum | `minimal` `low` `medium` `high` | `medium` *(by tier)* | **no** (`minimal` = floor) |
 | **gemini-3.1-pro-preview** | thinking level (`thinkingConfig.thinkingLevel`) | enum | `low` `medium` `high` (**no `minimal`**) | `high` (dynamic) | **no** (always-on) |
 | **glm-5.2** | `thinking` on/off + `reasoning_effort` | enum + on/off | effort `high` `max`; `thinking.type` `enabled`/`disabled` | enabled, effort `max` | **yes** (`type:"disabled"`) |
-| **glm-5.1** | `thinking` on/off (+ `reasoning_effort` *likely*) | enum + on/off | effort `high` `max` *(under-documented)*; on/off | enabled, effort `max` | **yes** |
+| **glm-5.1** | `thinking` on/off | on/off only | `enabled` / `disabled` (**no effort**) | enabled | **yes** |
 | **glm-4.7** | `thinking` on/off | on/off only | `enabled` / `disabled` (**no effort**) | enabled | **yes** |
 | **glm-4.6** | `thinking` on/off | on/off only | `enabled` / `disabled` (**no effort**) | enabled | **yes** |
+| **grok-4.5** | effort (`reasoning_effort`) | enum | `low` `medium` `high` | `high` | **no** (docs: cannot be disabled) |
+| **grok-4.3** | effort (`reasoning_effort`) | enum | `none` `low` `medium` `high` | *undocumented* | **yes** (`none`) |
+| **grok-4.20** | `reasoning` on/off | on/off only | enabled / disabled | enabled | **yes** |
+| **grok-4.20-multi-agent** | effort (`reasoning.effort`) | enum | `low` `medium` `high` `xhigh` (**sub-agent count, not depth**) | *undocumented* | **no** |
+| **deepseek-v4-flash** | `thinking` on/off + `reasoning_effort` | enum + on/off | effort `high` `max`; `thinking.type` `enabled`/`disabled` | enabled, effort `high` | **yes** (`type:"disabled"`) |
+| **deepseek-v4-pro** | `thinking` on/off + `reasoning_effort` | enum + on/off | effort `high` `max`; `thinking.type` `enabled`/`disabled` | enabled, effort `high` | **yes** (`type:"disabled"`) |
+| **kimi-k3** | effort (`reasoning_effort`) | enum | `max` only *(more documented as forthcoming)* | `max` | **no** |
+| **kimi-k2.7-code** | `thinking` (pinned on) | on/off only | `{"type":"enabled","keep":"all"}` — any other value errors | enabled | **no** |
+| **kimi-k2.6** | `thinking` on/off | on/off only | `enabled` / `disabled` / `enabled,keep:all` | enabled | **yes** |
 
-Reading the table for design: **the value space is one of three shapes** — a discrete enum of native level strings (most models), an integer token budget within `[min,max]` with sentinel meanings (`0`=off, `-1`=dynamic) (Gemini 2.5 family, Anthropic Haiku), or a bare on/off with no depth control (GLM 4.6/4.7). Gemini 2.5's `0`-disables-on-Flash-but-min-128-on-Pro and Anthropic's two-axis (effort enum *and* a thinking on/off, with Haiku dropping effort entirely) are the awkward edges. **GLM is two-axis** (an on/off toggle *plus*, on 5.x, an effort enum) — model the effort enum as the level set and the toggle as `CanDisable`.
+Reading the table for design: **the value space is one of three shapes** — a discrete enum of native level strings (most models), an integer token budget within `[min,max]` with sentinel meanings (`0`=off, `-1`=dynamic) (Gemini 2.5 family, Anthropic Haiku), or a bare on/off with no depth control (GLM 4.6/4.7/5.1, Grok 4.20, Kimi K2.6/K2.7-code). Gemini 2.5's `0`-disables-on-Flash-but-min-128-on-Pro and Anthropic's two-axis (effort enum *and* a thinking on/off, with Haiku dropping effort entirely) are the awkward edges.
+
+**Two-axis models collapse cleanly into one spec.** GLM 5.2 and DeepSeek V4 each expose an on/off toggle *plus* an effort enum; both are modelled as `Kind: Enum` with the level set and `CanDisable: true`, since a toggle is exactly "the disabled value is accepted." A toggle pinned *on* (Kimi K2.7-code) is `Kind: Toggle, CanDisable: false`. No fourth shape is needed.
+
+Two vendor behaviors deliberately do **not** survive into the spec, because the spec's job is to say which values are accepted, not what the vendor does with them afterward: DeepSeek V4 silently maps `low`/`medium` **up** to `high` and `xhigh` up to `max` rather than erroring, and GLM 5.2 similarly folds its wider documented enum down to two distinct behaviors. Both are recorded as the two-value enums the vendor actually distinguishes.
 
 **Recommended introspection API (Go) — covers all three shapes with one discriminated type.** A consumer (agentrepl `--help`, a validator) reads this as data and never embeds provider knowledge:
 
@@ -389,10 +439,11 @@ type ReasoningSpec struct {
 }
 type Sentinel struct{ Value int; Meaning string } // e.g. {0,"off"}, {-1,"dynamic"}
 
-type ReasoningInspector interface {
-    ReasoningSpec(model string) (ReasoningSpec, bool) // false if unknown / no reasoning
-    SupportedReasoning() map[string]ReasoningSpec     // every model's spec, for catalog rendering
-}
+// Introspection is catalog data, not a provider interface: catalog.Lookup(model)
+// returns the Entry (whose Reasoning is a *ReasoningSpec, nil where unknown),
+// catalog.Check(model, v) reports whether a value is accepted, and
+// catalog.ListByProvider(p) enumerates entries for picker/--help rendering.
+// Providers expose no introspection of their own — they hold no model knowledge.
 ```
 
 **Setting reasoning natively — a tagged `ReasoningValue`** carrying exactly one native form (a level string, an int budget, or explicit-disabled), so the native value flows to the adapter untranslated. The zero value means "unset → use the model default, no warning":
@@ -407,25 +458,22 @@ func DisableReasoning() ReasoningValue // explicit off (lowered to each model's 
 
 `DisableReasoning()` is first-class rather than an overloaded `0`/`none`, because whether a magic value means "off" is itself model-specific — the consumer expresses intent and the adapter lowers it to that model's native off-representation (`thinking:{type:"disabled"}`, `reasoning.effort:"none"`, `thinkingBudget:0`), or emits a warning+default if the model **cannot** disable.
 
-**Warn-and-default mechanism.** Borrow the Vercel AI SDK's non-fatal **typed-warning** idiom (a `warnings[]` of structured objects returned with the result, never thrown) — and explicitly **reject** LiteLLM/LangChain/langchaingo/eino's approach, which is the universal-enum-with-lossy-per-provider-mapping AgentKit just removed (they silently drop or error on mismatch and expose no inspectable spec). AgentKit already has a `Warning{Setting, Detail}` type (gen.go); extend it to carry the classification and what was applied, and surface it on the stream alongside the existing `Err()`/`Usage()` accessors:
+**No AgentKit-side validation, fallback, or coercion — the vendor is the judge.** The value the consumer sets is lowered to the wire **by its shape alone** (level / budget / disabled / unset) and sent as given. A value the model accepts is honored exactly; one it does not is rejected by the provider and surfaces as that provider's typed error, attributable and loud. Nothing is ever silently substituted, and there is no "apply the model's default instead" path — the former warn-and-fall-back design required per-model specs in the request path, which the provider layer no longer holds.
+
+The zero value means "unset": an untouched `GenSettings` sends no reasoning fields at all, so a consumer that ignores reasoning is unaffected and a non-reasoning model is safe by default even when uncataloged.
 
 ```go
-type Warning struct {
-    Setting string         // "reasoning"
-    Code    WarningCode    // UnknownTerm | InvalidValue | OutOfRange | CarriedOver | CannotDisable
-    Model   string
-    Given   ReasoningValue // what the consumer asked for
-    Applied ReasoningValue // what was used instead (== spec.Default)
-    Detail  string
-}
-func (s *Stream) Warnings() []Warning // readable once the request is built
+type ReasoningValue struct { /* tag + level string + budget int, fields unexported */ }
+func Level(s string) ReasoningValue    // native level: Level("high"), Level("xhigh")
+func Budget(n int) ReasoningValue      // native budget: Budget(8000)
+func DisableReasoning() ReasoningValue // explicit off (lowered to each model's native off-form)
 ```
 
-A warning is a property of the whole turn (known at request-build time, not mid-stream), so a per-stream accessor — symmetric with `Usage()` — is the right surface, not an `Event` and not an error. A natively-understood value emits **nothing**.
+`DisableReasoning()` is first-class rather than an overloaded `0`/`none`, because whether a magic value means "off" is itself model-specific — the consumer expresses intent and the adapter lowers it to that model's native off-form (`thinking:{type:"disabled"}`, `reasoning.effort:"none"`, `thinkingBudget:0`).
 
-**Validation timing — at request-build time, against the request's selected model (not at set time).** This is forced by mid-conversation model switching: `Level("max")` is valid for Opus but invalid for Sonnet (no `xhigh`… actually `max` *is* valid on Sonnet, but `xhigh` is not), `Budget(8000)` is valid for Gemini-2.5 but meaningless for an enum model, and the **"setting carried over from a previously-selected model"** case is *only* detectable when the new model is active — i.e. at build time. So all five failure modes (unknown term, invalid level, out-of-range budget, cannot-disable, carried-over) reduce to one choke point: `spec := insp.ReasoningSpec(req.Model); if !spec.accepts(req.Reasoning) → apply spec.Default + emit one Warning`. An optional advisory `spec.Validate(v) error` can let an eager consumer (REPL) pre-reject bad input, but it is **not** the enforcement point.
+**Pre-send politeness is a consumer choice, outside the request path.** A consumer that wants to validate a `/set` before spending a round trip, or render a model's vocabulary in `--help`, calls `catalog.Check(model, v)` — advisory only. The warning channel that *does* exist is narrow and structural: `Warning{Setting, Code, Detail}` with codes `WarnToolChoiceForced`, `WarnToolSchemaLossy`, and `WarnCostUnknown`, read off the stream via `Warnings()` alongside `Err()`/`Usage()`/`Cost()`. There are no reasoning warning codes, because there is no reasoning fallback to report.
 
-**Why the universal `ReasoningEffort` enum was rejected (rationale, for the design author).** (1) A cross-model "nearest" requires rebuilding the very ordinal ladder being removed, and it is **undefinable** across a discrete enum and a `thinkingBudget` integer without arbitrary bucketing. (2) The per-model value sets genuinely differ even *within* effort-enum providers (`xhigh` exists on Opus but not Sonnet; gpt-5.4 default `none` vs gpt-5.5 default `medium`; GLM uses `high`/`max`, not `low`/`medium`/`high`), so one enum would either over-promise values a model rejects or under-expose values it supports. (3) For a *verification harness* (agentrepl's whole purpose), honoring exactly-the-native-value-or-warning-and-defaulting is the honest, predictable behavior; silent lossy coercion is precisely the bug class the harness exists to expose. The native-first surface + introspection + warn/default is strictly more truthful and not materially more code (the per-provider native mapping already had to exist in each adapter).
+**Why a universal `ReasoningEffort` enum is not viable.** (1) A cross-model "nearest" requires rebuilding the very ordinal ladder being removed, and it is **undefinable** across a discrete enum and a `thinkingBudget` integer without arbitrary bucketing. (2) The per-model value sets genuinely differ even *within* effort-enum providers (`xhigh` exists on Opus but not Sonnet; gpt-5.4 defaults to `none` while gpt-5.5 defaults to `medium`; GLM and DeepSeek use `high`/`max`, not `low`/`medium`/`high`), so one enum would either over-promise values a model rejects or under-expose values it supports. (3) Silent lossy coercion is precisely the bug class a verification harness exists to expose. Native-first plus an advisory catalog is strictly more truthful and not materially more code, since the per-provider native lowering had to exist in each adapter anyway.
 
 ### 7.2 Preserved cross-turn reasoning state (unchanged by native-first)
 
@@ -445,12 +493,12 @@ Google's per-part positional binding is the sharpest: the signature rides on a *
 **Interface implications — concrete recommendations:**
 1. **Add a first-class `ReasoningBlock` to the canonical message model** (§4.1), carrying: provider-opaque bytes (`signature`/`encrypted_content`/`thoughtSignature`/raw `reasoning_content`), an optional human-readable summary, and **association metadata** (which tool-call it binds to — required for Gemini). Treat the opaque payload as **preserve-and-replay-verbatim** — never synthesize, mutate, or reorder it. The block must survive the auto-loop and be re-emitted on the tool-result turn for the same provider/model. ⚠ **This block is provider-and-model-bound** — its opaque payload cannot cross a mid-conversation provider switch (unlike text/tool blocks). Design choice for the author: drop reasoning blocks on switch (safe — they're only needed by the model that produced them) and document it.
 2. **Native-first reasoning knob + introspection (§7.1)** on the request/state — a tagged `ReasoningValue` (native level / native budget / disabled / unset), validated against the selected model's `ReasoningSpec` at request-build time, warning + falling back to the model's default on non-native input. *(This replaces the former "uniform `ReasoningEffort` enum" recommendation; §7.1 is the authority.)* The §7.1 reasoning-control knob and this §7.2 `ReasoningBlock` are independent: the knob says *how hard* to think (native, validated, fallible); the block carries the model's *prior* opaque reasoning state forward verbatim. Both round-trip through the auto-loop.
-3. **Surface reasoning summary text** as a distinct streaming event/part (honoring the full-transparency promise), separate from the opaque replay payload. Default providers to emit summaries (Anthropic `display:"summarized"`, OpenAI `summary:"auto"`, Google `includeThoughts:true`). Raw CoT is unavailable on all but Z.ai, so "transparency" = summaries for three of four.
+3. **Surface reasoning summary text** as a distinct streaming event/part (honoring the full-transparency promise), separate from the opaque replay payload. Default providers to emit summaries (Anthropic `display:"summarized"`, OpenAI `summary:"auto"`, Google `includeThoughts:true`). Raw CoT is unavailable on all but Z.ai, so "transparency" means summaries nearly everywhere.
 4. **OpenAI:** default `store:false` + auto-inject `include:["reasoning.encrypted_content"]` so the stateless multi-turn tool loop has its reasoning chain.
 
-⚠ **Uncertainty flags (reasoning re-verified per-provider 2026-06-18; model-list flags from 2026-06-17 unchanged):** `gpt-5.4-nano` **does exist**, as do `gpt-5.4-mini`, `gpt-5.5`, `gpt-5.5-pro`, `gpt-5.4`; `gpt-5.5-mini`/`gpt-5.5-nano` do **not** exist; `o3`/`o4-mini` exist but are **deprecated** (drop). Gemini flash naming: `gemini-3.5-flash` (stable) ≠ `gemini-3-flash-preview` (preview); the 3.x **Pro** is preview-only (`gemini-3.1-pro-preview`; no GA `gemini-3.1-pro`). Gemini 3.x uses `thinkingLevel`, 2.5 uses `thinkingBudget` (an int; deprecated-but-accepted on 3.x — never send both, it 400s).
+⚠ **Model-id flags:** `gpt-5.4-nano` **does exist**, as do `gpt-5.4-mini`, `gpt-5.5`, `gpt-5.5-pro`, `gpt-5.4`; `gpt-5.5-mini`/`gpt-5.5-nano` do **not** exist; `o3`/`o4-mini` exist but are **deprecated** (drop). Gemini flash naming: `gemini-3.5-flash` (stable) ≠ `gemini-3-flash-preview` (preview); the 3.x **Pro** is preview-only (`gemini-3.1-pro-preview`; no GA `gemini-3.1-pro`). Gemini 3.x uses `thinkingLevel`, 2.5 uses `thinkingBudget` (an int; deprecated-but-accepted on 3.x — never send both, it 400s).
 
-Reasoning-specific open items and **corrections** from the 2026-06-18 native re-verification (see §7.1 table for the verified spec):
+Reasoning-specific open items (see the §7.1 table for the per-model spec):
 - **CORRECTION — Opus 4.8 *can* be disabled.** Current Anthropic docs (effort + adaptive-thinking pages) show Opus 4.8 thinking is **off unless `thinking:{type:"adaptive"}` is set**, and `{type:"disabled"}` is accepted — so the prior "always-on / cannot disable" claim was **wrong for Opus 4.8** and attaches instead to **Fable 5 / Mythos 5** (not in the curated set). Confirmed unchanged for Opus 4.8: `budget_tokens` removed (400), effort enum (default `high`).
 - **CORRECTION — Haiku 4.5 has no `effort` field.** It is a classic extended-thinking model: `thinking:{type:"enabled",budget_tokens}` only; sending `effort` 400s. Its native reasoning term is a **token budget**, not an effort enum — a genuine native divergence the universal enum would have masked.
 - **Sonnet 4.6 effort set excludes `xhigh`** (`low/medium/high/max`); `xhigh` is Opus-only (and Fable/Mythos 5).
@@ -458,7 +506,7 @@ Reasoning-specific open items and **corrections** from the 2026-06-18 native re-
 - **`gpt-5.4-mini`/`-nano` defaults** (`none`) and their acceptance of `xhigh` are estimates (official launch post says `xhigh` was added for both; one secondary source disputes nano) — gate `xhigh` on nano behind a check if strictness matters.
 - **Gemini 2.5 budget ranges** are verified (Flash `0–24576`, Pro `128–32768`); `-1`=dynamic, `0`=off (Flash only; Pro rejects `0`). **`gemini-3.1-flash-lite` default** (`medium`) is assigned by tier analogy — verify via a live `models.get`.
 - **GLM `reasoning_effort` is glm-5.2-confirmed, glm-5.1-likely** (`high`/`max`, default `max`); glm-4.6/4.7 have on/off only. Hosted z.ai uses `thinking:{type:"disabled"}` to disable — **not** the open-weights `enable_thinking` field.
-- Still genuinely open (preservation side, §7.2): Z.ai hard-fail-vs-degrade on dropped `reasoning_content` under preserve mode; Z.ai's exact error-envelope shape (error-code page 404'd 2026-06-17 — Zhipu string-numeric `code` assumed, verify against a live 4xx).
+- Still genuinely open (preservation side, §7.2): Z.ai hard-fail-vs-degrade on dropped `reasoning_content` under preserve mode; Z.ai's exact error-envelope shape (the error-code page 404s — Zhipu string-numeric `code` assumed; verify against a live 4xx).
 
 ---
 
@@ -483,9 +531,9 @@ Caching is the biggest cost/latency lever in a multi-turn + tool-loop conversati
 
 ---
 
-## 9. MCP client — remote tool servers (the new capability)
+## 9. MCP client — remote tool servers
 
-The product now promises **remote MCP tool servers**. AgentKit is the MCP **client**; it connects to consumer-attached **remote** servers (network only — no subprocess/stdio), discovers their tools, and feeds them into the same auto-loop as custom tools, uniformly across all four providers. The design target is small and well-bounded: AgentKit needs **only the client side** and **only tools** (resources/prompts deferred). The findings below are external — MCP is a published open protocol with an official spec.
+The product promises **remote MCP tool servers**. AgentKit is the MCP **client**; it connects to consumer-attached **remote** servers (network only — no subprocess/stdio), discovers their tools, and feeds them into the same auto-loop as custom tools, uniformly across every provider. The design target is small and well-bounded: AgentKit needs **only the client side** and **only tools** (resources/prompts deferred). The findings below are external — MCP is a published open protocol with an official spec.
 
 ### 9.1 Protocol & transport
 - **Spec revision.** MCP ships dated revisions; the current GA revision is **`2025-11-25`** (a `2026-06-30` revision is in development). The transport/auth/tools mechanics below are stable across `2025-06-18` → `2025-11-25`. **Pin a revision and send it explicitly** (see header note below). Everything is **JSON-RPC 2.0** over the transport.
@@ -496,7 +544,7 @@ The product now promises **remote MCP tool servers**. AgentKit is the MCP **clie
 - **Session & version headers.** Server MAY return an `Mcp-Session-Id` header on the `InitializeResult`; if so the client **MUST** echo it on every subsequent request. After init, the client **MUST** also send `MCP-Protocol-Version: <negotiated>` on every request — **omitting it makes servers assume `2025-03-26`**, so always set it explicitly. Clean detach = best-effort HTTP `DELETE` with the session header (ignore a `405`).
 
 ### 9.2 Client implementation — raw HTTP (decided: no library)
-**Decided by the no-third-party-libraries constraint: AgentKit hand-rolls a minimal raw-HTTP Streamable-HTTP MCP client over the standard library.** This is tractable because AgentKit needs only a *sliver* of the protocol — **4 client calls** (`initialize`, `notifications/initialized`, `tools/list`, `tools/call`), tools only, no server/resources/prompts — and is *already* writing bespoke SSE parsing and JSON handling for all four LLM providers. The marginal new machinery is one Streamable-HTTP client: POST a JSON-RPC body; **accept either an `application/json` response or a `text/event-stream` stream** and read the JSON-RPC response out of whichever arrives; carry the `Mcp-Session-Id` and `MCP-Protocol-Version` headers; do the `initialize`→`initialized` handshake. On the order of a few hundred lines, not thousands.
+**AgentKit hand-rolls a minimal raw-HTTP Streamable-HTTP MCP client over the standard library** (the MCP `go-sdk` is not an approved dependency).** This is tractable because AgentKit needs only a *sliver* of the protocol — **4 client calls** (`initialize`, `notifications/initialized`, `tools/list`, `tools/call`), tools only, no server/resources/prompts — and is *already* writing bespoke SSE parsing and JSON handling for the LLM providers. The marginal new machinery is one Streamable-HTTP client: POST a JSON-RPC body; **accept either an `application/json` response or a `text/event-stream` stream** and read the JSON-RPC response out of whichever arrives; carry the `Mcp-Session-Id` and `MCP-Protocol-Version` headers; do the `initialize`→`initialized` handshake. On the order of a few hundred lines, not thousands.
 
 *(Reference only — the existence of the mature official `github.com/modelcontextprotocol/go-sdk`, Anthropic+Google-maintained at stable v1.x with a clean `StreamableClientTransport`/`Connect`/`CallTool` API, is noted so the design author knows the protocol surface is well-trodden and can mirror its proven shapes — `HTTPClient` round-tripper for auth injection, iterator-based `tools/list` pagination. It is **not** a dependency option.)* The one part to get right is the **dual JSON-vs-SSE response path** on a request POST (a server may answer a `tools/call` with either) — AgentKit already owns provider SSE code, so this reuses that muscle rather than introducing new risk.
 
@@ -504,7 +552,7 @@ The product now promises **remote MCP tool servers**. AgentKit is the MCP **clie
 - **Reuse, don't special-case.** On attach, connect + `tools/list` once, wrap each MCP tool as an ordinary `Tool` (§4.3) that closes over its server connection, and concatenate into the same registry the auto-loop already drives. The model and providers see no difference. **Route a call back to its server by a stored `(serverHandle, originalMCPName)` binding — NOT by re-parsing a prefix out of the name** (sanitization below is lossy/irreversible). This is the dominant prior-art pattern (Vercel AI SDK, OpenAI Agents SDK, LangChain adapters, eino).
 - **Prefixing + name sanitization (separator = `_`).** Provider tool-name charsets are strict: **Anthropic and OpenAI both require `^[a-zA-Z0-9_-]{1,64}$`** — so `.`, `/`, `:` are **illegal** (Gemini tolerates `.`, the others do not). Real MCP servers ship tool names with dots/slashes (`git.commit`, `multi_tool_use.parallel`), which Anthropic/OpenAI **reject**. Recommended scheme: final name = `<serverName>_<mcpToolName>`, then **sanitize the whole string to `^[a-zA-Z_][a-zA-Z0-9_]{0,63}$`** (replace illegal chars with `_`, ensure a letter/`_` start, truncate to ≤64 with a hash suffix on overflow to keep uniqueness). Keep the sanitized→`(server, originalName)` map for routing.
 - **Collision = uniform error (already promised).** Detect duplicates **after** prefixing+sanitization (two raw names can sanitize to the same string), against the full merged set *including native tools*, and surface AgentKit's uniform collision error. This matches the **best** prior art (OpenAI Agents SDK hard-errors; LiteLLM prefixes) and **avoids the common anti-pattern** (Vercel/LangChain/langchaingo/eino all silently last-wins shadow).
-- **Schema-translation risk (Gemini) — the real one.** MCP `inputSchema` is arbitrary third-party JSON Schema (draft 2020-12; `$ref`/`$defs`/`oneOf`/`additionalProperties` all common) that AgentKit does not control. The §4.3 Gemini converter is **lossy** (`genai.Schema` has no `oneOf`/`$ref`/`$defs`/`additionalProperties`), so under Google a real MCP schema silently drops constraints or 400s (e.g. an untyped `array` with no `items`). No surveyed library handles this well. **Recommendation:** run the converter best-effort (inline `$ref`/`$defs`, map `oneOf`→`anyOf`, strip `$schema`/`additionalProperties`, synthesize `items` for untyped arrays), **detect lossiness and emit a non-fatal `warnings[]`-style notice** (per server+tool, naming dropped keywords) rather than degrading silently — doing better than prior art at exactly this point. Scope the conversion to the **Google boundary only**: don't fail registration when the active provider is Anthropic/OpenAI (which pass JSON Schema near-verbatim); the degradation + warning surfaces if/when the conversation switches to Gemini.
+- **Schema-translation risk (Gemini) — the real one.** MCP `inputSchema` is arbitrary third-party JSON Schema (draft 2020-12; `$ref`/`$defs`/`oneOf`/`additionalProperties` all common) that AgentKit does not control. The Gemini wire schema has no `oneOf`/`$ref`/`$defs`/`additionalProperties`, so under Google a real MCP schema would silently drop constraints or 400 (e.g. an untyped `array` with no `items`). No surveyed library handles this well. The §4.3 translation therefore runs faithfully (inline `$ref`/`$defs`, map `oneOf`→`anyOf`, strip `$schema`/`additionalProperties`, synthesize `items` for untyped arrays) and **emits `WarnToolSchemaLossy` naming the dropped keywords** rather than degrading silently. Scope the conversion to the **Google boundary only**: don't fail registration when the active provider is Anthropic/OpenAI (which pass JSON Schema near-verbatim); the degradation + warning surfaces if/when the conversation switches to Gemini.
 - **Result collapse (text-only).** Concatenate `content[]` in order into one string: `text`→its text; `image`/`audio`→a placeholder marker (e.g. `[image: <mimeType>, N bytes omitted]`) — **never dump base64 into the prompt** (LangChain's anti-pattern; token-expensive and useless to a text model); `resource_link`→its `uri` (+name/desc); embedded `resource`→its `text` if present else a `[resource: <uri>]` marker. **Prefer `structuredContent` when present** (serialize to compact JSON; the spec says servers SHOULD also mirror it into a text block, so either is safe). Do **not** JSON-dump the entire `CallToolResult` struct (eino's anti-pattern — noisy, token-heavy).
 - **The two failure channels map exactly onto AgentKit's existing two.** `isError:true` in a *successful* JSON-RPC `result` = the tool ran but its business logic failed → **`ToolResultBlock{IsError:true}` fed back to the model** so the conversation continues (the product's "tool returns an error result" promise). A JSON-RPC `error` object, or any transport/HTTP failure = **AgentKit uniform error** (the "transport fails mid-call" promise). **The decision rule: presence of `result` vs `error` in the JSON-RPC envelope decides it — never inspect `isError` to decide whether to raise; only to set the block flag.** (Avoid eino's anti-pattern of turning `isError:true` into a loop-aborting Go error.)
 
@@ -540,54 +588,22 @@ The product now promises **remote MCP tool servers**. AgentKit is the MCP **clie
 
 ---
 
-## 10. Recommendations carried into design (summary)
+## 10. Dependency policy — raw HTTP, approved libraries only
 
-1. **Canonical message model = Anthropic-shaped superset**: `[]Message` of `Role` + sealed `[]Block` (text/tool_use/tool_result **+ reasoning**); single `Message` + typed `FinishReason` response, never a `Choices[]` envelope.
-2. **System prompt is a first-class `State` field, not a message.**
-3. **Streaming = `*Stream` with `Events() iter.Seq[Event]` + terminal `Err()`/`Usage()` accessors.** Assemble partial tool-call JSON centrally, handling fragment-vs-whole (Gemini sends whole).
-4. **Tool input schema = JSON Schema (`json.RawMessage`)**, supplied directly by the consumer (no `invopop/jsonschema` — excluded by the no-library rule; optional hand-rolled `reflect` generator for the typed `NewTool[In]` edge, §4.3), with an isolated lossy `→ *genai.Schema` converter for Google; `map[string]any` escape hatch.
-5. **Mint neutral tool-call IDs (Anthropic charset) + carry function name** for portable mid-conversation switching. ⚠ Verify current Gemini id behavior at build time (§5 conflict).
-6. **Single mutable `*State`** bundling config+history, methods as verbs, provider switch = field mutation, documented single-goroutine.
-7. **One-method internal `Provider` interface**; auto-loop/history/transparency live in the orchestration layer above it.
-8. **Typed `Error`** (sentinel `Category` + verbatim raw body) and **typed disjoint-bucket `Usage`** (§6.3: uncached/cache-read/cache-write/output/reasoning, summing to total); branch on category, never strings; subtract to disjoint the buckets per provider.
-8a. **Baked-in cost (§6.5).** Ship a flat per-model rate table (nano-USD/token, populated in §6.5) keyed to the closed model set so every supported model is priced; cost = `Σ bucket × rate` over the disjoint `Usage`. One unresolved design call: the flat table can't represent the context-length tiers on gemini-2.5-pro / gemini-3.1-pro-preview / gpt-5.5 / gpt-5.4 (gpt-5.5-pro is flat) — recommend baking low-tier rates and documenting the >threshold undercount. (D16 already adopted a tiered `Pricing` struct, so this is largely resolved in design — see §6.5 reconciliation for the remaining id/tier corrections.)
-9. **Retry**: honor server delay → else full-jitter backoff; never retry after first stream byte; honor the non-retryable category list.
-10. **OpenAI-family = two adapters.** Responses API (stateless, `store:false`, resend history) for OpenAI proper; a **Chat-Completions adapter with configurable base URL** for OpenAI-compatible providers (**Z.ai/GLM**), reused with three deltas (Zhipu error parsing, `thinking`/`reasoning_content`, `tool_choice=auto`-only). Build the OpenAI-compatible path on a configurable base URL from day one so Z.ai (and any other compatible endpoint) is nearly free.
-11. **Reasoning is first-class — two independent parts (§7).** (a) **Control (§7.1, native-first):** reasoning is set in each model's own native term/values via a tagged `ReasoningValue` (native level / native budget / `DisableReasoning()` / unset), with a **per-model `ReasoningSpec` introspection API** (term + accepted levels-or-`[Min,Max]`-range + sentinels + default + `CanDisable`) that consumers render and validate against. **No universal enum, no cross-model translation.** Non-native input (unknown term, invalid/out-of-range value, cannot-disable, or a setting carried over after a model switch) is validated **at request-build time against the selected model** and produces a **typed `Warning` + fallback to the model's default** — never silent, never turn-breaking. (b) **Preservation (§7.2):** a preserve-and-replay-verbatim `ReasoningBlock` (opaque signature/encrypted/thoughtSignature + optional summary + tool-call association) that round-trips across the auto-loop; surface reasoning summaries as a distinct stream event; OpenAI default `store:false` + `include:["reasoning.encrypted_content"]`. Reasoning blocks are provider/model-bound — drop them on a mid-conversation provider switch. The native vocabulary genuinely doesn't unify (effort enum vs `thinkingBudget` int vs on/off-only; values differ per model even within a provider), which is exactly why the universal `ReasoningEffort` enum was removed (§7.1 rationale).
-12. **Caching (§8): don't sabotage it, don't build an API for it.** Stable deterministic prefix (frozen system, sorted/deterministic tools, append-only messages), volatile context injected late, cached tokens reported. Set a default Anthropic `cache_control` breakpoint (opt-in provider) so the uniform surface doesn't under-cache. Defer explicit caches/TTL knobs.
-13. **Decided — raw HTTP, no third-party libraries** (§11). The no-library constraint settles it: all four provider adapters and the MCP client are hand-rolled over the standard library; SSE parsing, partial-JSON tool accumulation, retry/backoff, and error/usage extraction are AgentKit's own. The official SDKs, MCP `go-sdk`, `invopop/jsonschema`, and `cenkalti/backoff` are excluded.
-14. **MCP client (§9): remote-only, Streamable HTTP, tools-only, hand-rolled.** Build a minimal raw-HTTP Streamable-HTTP client (4 calls: `initialize` / `initialized` / `tools/list` / `tools/call`) — the one part to get right is the **dual `application/json`-vs-`text/event-stream` response path**, which reuses AgentKit's existing provider SSE code. Wrap each MCP tool as an ordinary `Tool`; **prefix `<serverName>_<tool>` and sanitize to the strict tool-name charset**, routing by a stored `(server, originalName)` map; **hard-error on collision** (no silent shadow). Reuse the §4.3 Gemini schema converter at the Google boundary, but **warn on lossiness** (MCP schemas are third-party). Map `isError:true`→tool-result-to-model vs JSON-RPC/transport-error→uniform error by **`result` vs `error` envelope**; the §6.1 taxonomy absorbs MCP with **no new sentinel** (add an `MCPServer`/source field for attribution). **Static bearer-token auth, no interactive OAuth**; surface OAuth-required `401`s as `ErrAuthentication`. **Do not auto-retry `tools/call`** (non-idempotent); retry only idempotent discovery. Keep tool order deterministic for caching.
-15. **Testing**: httptest + golden SSE fixtures + gated live integration; capture fixtures once. Add MCP-client fixtures (Streamable-HTTP JSON-RPC: `initialize`/`tools/list`/`tools/call`, the JSON-vs-SSE response split, `isError` results, JSON-RPC error objects, `401`+`WWW-Authenticate`) against a fake MCP server.
+External libraries require **explicit per-case human approval**; the default is the standard library. The approved set today is `github.com/invopop/jsonschema` (struct→JSON-Schema derivation for `NewTool[In]`) and its transitive closure. Everything else is unapproved and therefore absent — in particular the official provider SDKs, the MCP `go-sdk`, and `cenkalti/backoff`.
 
----
+The consequence is that **every provider adapter and the MCP client are raw `net/http`**, over a shared `internal/httpx`. Hand-rolled accordingly: SSE framing and parsing, partial-JSON tool-call accumulation, retry/backoff with full jitter, and error/usage extraction per provider. This is also the direction the strongest prior art goes — the serious neutral gateways (gollm, langchaingo, bifrost, LiteLLM) hand-roll HTTP rather than carry several heavy, divergent SDKs, and the three official Go SDKs share no base type (OpenAI and Anthropic use `ssestream.Stream[T]`, Google uses `iter.Seq2`), so wrapping them would mean writing the unifying layer regardless.
 
-## 11. Resolved — raw HTTP, standard library only (no third-party deps)
+The SDK details recorded in §2 are reference for *what behavior* AgentKit re-implements — auto-retry policies, error field sets, stream accumulation — not options under consideration.
 
-**This was the one place the research did not converge; the no-third-party-libraries directive (2026-06-17) closes it: raw HTTP, standard library only.** Recorded here is what that decision *commits AgentKit to build* and what it gives up, so the design author inherits the consequences rather than re-litigating the choice.
 
-The split that existed: the **per-provider agents** (Anthropic/Google/OpenAI) each recommended **wrapping the official SDK** (all GA, idiomatic, providing streaming accumulation, typed errors with raw body, and Anthropic/OpenAI auto-retry); the **prior-art agent** recommended **raw HTTP** (serious neutral gateways hand-roll it to avoid heavy divergent deps and own errors/retries/usage). The directive selects raw HTTP unconditionally — the SDKs are not options.
+## 12. Embeddings — a generic API across providers
 
-**What raw HTTP commits AgentKit to hand-roll** (standard library: `net/http`, `encoding/json`, `bufio`, `iter`):
-- **Per-provider SSE parsing** — Anthropic/OpenAI emit partial-JSON tool-call fragments to concatenate and parse at block close; Gemini sends whole function calls; Z.ai is OpenAI-Chat-Completions-shaped. One central SSE/event assembler (§4.2) handles the fragment-vs-whole asymmetry.
-- **Partial-JSON tool-call accumulation**, keyed by index/id (§4.2, §5).
-- **Error + usage extraction per provider** from raw bodies into the typed `Error`/`Usage` (§6.1, §6.3) — this is *required* work regardless of wrap/raw, so raw HTTP loses little here.
-- **Retry/backoff** (§6.2) — full-jitter, honor-server-delay, no-retry-after-first-byte — hand-rolled (no `cenkalti/backoff`). Note Google's SDK auto-retries nothing anyway, so this was always partly hand-rolled.
-- **Struct→JSON-Schema generation** (§4.3) — consumer supplies the schema directly, or an optional hand-rolled `reflect` generator (no `invopop/jsonschema`).
-- **The MCP Streamable-HTTP client** (§9.2) — the 4-call client, dual JSON-vs-SSE response handling, session/version headers.
-
-**What it gives up:** the SDKs' free streaming accumulation, typed-error-with-raw-body, session/handshake lifecycle (MCP), and built-in retry. The mitigating fact throughout: **every provider adapter is bespoke regardless** (the four wire formats don't unify at the SDK level — OpenAI/Anthropic use `ssestream.Stream[T]`, Google uses `iter.Seq2`, Z.ai has no Go SDK at all), so wrapping would have bought less than it appears, and AgentKit owning the whole wire path keeps errors/retries/usage uniform and dependency-free. **Z.ai was already raw-HTTP-only** (no first-party Go SDK; a single Chat-Completions adapter parameterized by base URL serves it and any other OpenAI-compatible endpoint with small per-provider delta hooks) — so the OpenAI-compatible family needed hand-rolling either way.
-
-**Design consequence:** the adapter layer is uniformly raw HTTP across all four providers + the MCP client; there is no dependency footprint to manage and no SDK retry to disable. Build one shared SSE/JSON-RPC HTTP core and parameterize it per provider.
-
----
-
-## 12. Embeddings — a generic API across providers (new direction)
-
-The product is adding a **generic embeddings API** that mirrors the chat surface as closely as possible: provider + model + credentials in a consumer-held state object, a closed curated model registry, built-in per-model pricing, explicit credentials, the same error/retry rails. The animating goal: **changing the embedding model is a config-only problem** — ideally only the provider/model name changes. It is understood and accepted that embeddings are **not hot-swappable** — a vector is only comparable to vectors from the *exact same* model, so any switch means re-embedding the corpus. "Config-only" is a statement about *code and configuration*, never about *stored vectors*. (Verified mid-2026 against official provider docs; per-provider doc URLs at §12.9.)
+The embeddings surface mirrors the chat surface as closely as possible: provider + model + credentials in a consumer-held embedder object, free-flow model strings with advisory catalog metadata, consumer-supplied per-model pricing, explicit credentials, the same error/retry rails. The animating goal: **changing the embedding model is a config-only problem** — only the provider/model name changes. Embeddings are **not hot-swappable** — a vector is comparable only to vectors from the *exact same* model, so any switch means re-embedding the corpus. "Config-only" is a statement about *code and configuration*, never about *stored vectors*. Per-provider doc URLs are at §12.8.
 
 ### 12.1 The central finding
 
-The "config-only swap" promise is **mostly honest, but only if AgentKit's adapter layer absorbs four real divergences** (dimensionality bounds, normalization, batch limits, truncation behavior) and exposes **one** unavoidable per-call input (query-vs-document role). Of the four chat providers, **three offer embeddings (OpenAI, Google, Z.ai\*) and Anthropic does not** — confirmed, so excluding Anthropic from the embeddings surface is factually grounded, not an arbitrary cut. (\*Z.ai carries a scope caveat — see §12.2.)
+The "config-only swap" promise is **mostly honest, but only if AgentKit's adapter layer absorbs four real divergences** (dimensionality bounds, normalization, batch limits, truncation behavior) and exposes **one** unavoidable per-call input (query-vs-document role). The embeddings surface is **OpenAI and Google only** — a deliberate subset of the five chat providers. Anthropic offers no first-party embeddings API at all; Z.ai and OpenRouter embeddings could not be confirmed on the endpoints AgentKit uses, so both were evaluated and excluded rather than rejected outright (see §12.2).
 
 ### 12.2 Provider surfaces (verified)
 
@@ -610,11 +626,7 @@ The "config-only swap" promise is **mostly honest, but only if AgentKit's adapte
 - Usage reported (`usageMetadata.promptTokenCount`). Pricing /1M input tokens: `gemini-embedding-001` **$0.15** ($0.075 batch). Free tier exists.
 - Auth: **Gemini API key** via `x-goog-api-key` (simple). *Vertex AI* is a different endpoint requiring **OAuth2 bearer + project/region in URL** — AgentKit should use the **Gemini API key** path to mirror the chat provider, not Vertex.
 
-**Z.ai — supported, with a scope caveat that must be smoke-tested.**
-- OpenAI-compatible: `POST /api/paas/v4/embeddings`, `{model,input,dimensions}` → `{data[],usage}`.
-- Models: **`embedding-3`** (native **2048**, `dimensions` ∈ {256,512,1024,2048}, default 2048), legacy `embedding-2` (fixed 1024).
-- Batch: array input, **max 64 items**, ~3072 tokens/input. Usage block returned (`prompt_tokens`/`total_tokens`). Auth: plain `Authorization: Bearer <key>` (the historical Zhipu JWT-minting quirk does **not** apply to the current v4 / international endpoint).
-- **Scope caveat (important):** embeddings are fully documented and priced only on the **China platform** (`open.bigmodel.cn`, `embedding-3` at **¥0.5 CNY/1M**). On the **international `api.z.ai`** endpoint — the one AgentKit uses — the official SDKs expose `embeddings.create`, **but** the international docs list no embeddings page (API-ref URL 404s) and the international pricing page lists **no embedding model in USD**. So embeddings *probably* route through `api.z.ai`, but it is **not doc-confirmed**. **Action before committing Z.ai embeddings: run a live smoke test** (`POST https://api.z.ai/api/paas/v4/embeddings`, `model:"embedding-3"`, bearer z.ai key). Treat international availability and USD pricing as unconfirmed until then.
+**Z.ai and OpenRouter — evaluated, excluded.** Z.ai is OpenAI-compatible in shape (`POST /api/paas/v4/embeddings`, `{model,input,dimensions}` → `{data[],usage}`, model `embedding-3` at native 2048 dims, batch max 64), **but embeddings are fully documented and priced only on the China platform** (`open.bigmodel.cn`, `embedding-3` at ¥0.5 CNY/1M). On the international `api.z.ai` endpoint — the one AgentKit uses — the official SDKs expose `embeddings.create`, yet the international docs carry no embeddings page and the international pricing page lists no embedding model in USD. Availability and USD pricing are therefore unconfirmed on the endpoint AgentKit actually calls, and Z.ai ships **no** `Embedder`. OpenRouter is excluded on the same grounds. Both remain first-class chat providers; embeddings for them are deferred, not rejected, should first-class endpoints be confirmed.
 
 ### 12.3 Where "config-only swap" holds, needs a caveat, or fails
 
@@ -636,39 +648,27 @@ The "config-only swap" promise is **mostly honest, but only if AgentKit's adapte
 
 Embeddings bill **input tokens only**; there are no output tokens, no reasoning, and (in practice) no cache tiers. The chat `Usage` (`usage.go`: `Output`, `ReasoningOutput`, `CacheWrite5m/1h`, …) and `Pricing.Cost` (`pricing.go`: multiplies `(Output+ReasoningOutput)·tier.Output`, selects context tiers) are structurally wrong here — reusing them carries ~six always-zero fields and an output term that shouldn't exist.
 
-**Recommendation: a separate, smaller pair of types**, e.g. `EmbeddingUsage{InputTokens, Total}` (Total == InputTokens for all three) and a **flat single-rate** `EmbeddingPricing{InputTokens nanoUSD/token}` — no tiers, no output. None of the three tier embeddings by context length, so a flat rate is both sufficient and accurate, and it keeps every supported embedding model priced by construction (mirroring the chat cost-always-available promise). Verified rates to bake: OpenAI 3-small $0.02 / 3-large $0.13 / ada-002 $0.10; Google `gemini-embedding-001` $0.15 (all /1M input tokens); Z.ai `embedding-3` ¥0.5/1M (no confirmed USD — resolve via the smoke test, see §12.2).
+Embeddings therefore carry **their own small pair of types** rather than reusing chat's: `EmbeddingUsage{InputTokens, Total}` (Total == InputTokens for both providers) and a **flat single-rate** `EmbeddingPricing{InputToken}` in nano-USD per token — no tiers, no output term. Neither provider tiers embeddings by context length, so a flat rate is both sufficient and accurate. They reuse the root `Cost` type so dollar accounting stays one currency. Rates: OpenAI `text-embedding-3-small` $0.02/1M (20), `text-embedding-3-large` $0.13/1M (130); Google `gemini-embedding-001` $0.15/1M (150).
 
-### 12.5 Codebase fit — reuse vs. new
+### 12.5 Codebase fit — the shipped shape
 
-The repo has **no embeddings code today**. The embeddings surface plugs into the existing rails with a clear reuse/new split (anchors: `orchestration.go:32` Provider interface, `orchestration.go:159` Conversation, `pricing.go`, `usage.go`, `error.go`, `retry.go`, `internal/httpx`, `internal/openaicompat`).
+The embeddings surface plugs into the existing rails with a clear reuse/new split (anchors: `orchestration.go` Provider interface and `Conversation`, `pricing.go`, `usage.go`, `error.go`, `retry.go`, `internal/httpx`, `internal/openaicompat`).
 
-**Reuse directly:** the `Error` taxonomy + sentinel categories, `RetryPolicy` + `isRetryable` + backoff, `internal/httpx` (`JSONRequest`/`RetryAfter`/`Client`), the per-provider credential injection (`New(apiKey, opts…)` + provider-specific auth header), and the **registry pattern** (`map[string]entry` looked up before each call).
+**Reused directly:** the `Error` taxonomy and sentinel categories, `RetryPolicy` + backoff, `internal/httpx`, and per-provider credential injection (`New(apiKey, opts…)` plus the provider's auth header).
 
-**New, parallel to chat (don't overload chat types):**
-- A separate **`EmbeddingProvider` SPI** — `Embed(ctx, *EmbeddingRequest) *EmbeddingResult` + `Name()` + an embeddings `Pricing(model)` — kept distinct from the chat `Provider` because embeddings have no System/Tools/History/Reasoning. (A provider package can implement both interfaces.)
-- A consumer-held **embeddings state object** (provider, model, target dimension, retry, log) — the embeddings analogue of `Conversation`, minus the conversational machinery. A single call returns vectors + usage; **no streaming/`Stream`, no tool loop.**
-- **Request/result types:** `EmbeddingRequest{Model, Inputs []string, InputType, Dimensions}` and `EmbeddingResult{Vectors [][]float32, Usage EmbeddingUsage, Warnings, Err}`.
-- An **embeddings registry entry** per model carrying `Dimension` (native), supported-dimension set/range, `MaxInputTokens`, and the flat `EmbeddingPricing` — every model priced by construction.
-- An **`internal/openaicompat` embeddings variant** (`/v1/embeddings` shape) shared by OpenAI and Z.ai; Google needs its own `embedContent`/`batchEmbedContents` adapter (different shape, `task_type`, normalization fix-up).
-- **Adapter-owned behaviors** that make the promise honest: client-side L2-normalization (always, or whenever dims are reduced), batch auto-chunking + order-preserving reassembly, and fail-loud over-length handling (`autoTruncate:false` on Google).
+**Parallel to chat, deliberately not overloading chat types:**
+- A separate **`EmbeddingProvider` SPI** — `Embed(ctx, *EmbedRequest) *EmbedRoundTrip` plus `Name()` — kept distinct from the chat `Provider` because embeddings have no System/Tools/History/Reasoning. A provider package implements both interfaces (`openai.New(...)` exposes `NewEmbedder`, as does `google.New(...)`).
+- A consumer-held **`Embedder`** (provider, model, target dimension, role, retry, log, optional `Pricing`) — the embeddings analogue of `Conversation`, minus the conversational machinery. One call returns vectors + usage; **no streaming, no tool loop.**
+- **Request/result types:** `EmbedRequest{Model, Inputs []string, Role InputType, Dimensions, Retry}` and `EmbedResult{Vectors [][]float32, Warnings}`, with usage and cost read through accessors.
+- **Advisory catalog metadata** per embedding model — `EmbeddingInfo{Pricing, NativeDimension, MinDimension, MaxDimension, MaxInputTokens}` — for up-front display and consumer-side validation. It is advisory: the `Embedder` does not consult it, and an uncataloged embedding model runs.
+- An **`internal/openaicompat` embeddings variant** (`/v1/embeddings` shape) used by OpenAI; Google has its own `embedContent`/`batchEmbedContents` adapter (different shape, `task_type`, normalization fix-up).
+- **Adapter-owned behaviors** that make the promise honest: unconditional client-side L2-normalization, batch auto-chunking with order-preserving reassembly (2048 inputs per request on the OpenAI-compatible path, 100 on Google), and fail-loud over-length handling (`autoTruncate:false` on Google).
 
-### 12.6 Recommendations carried into design (embeddings)
+**Fail-loud on dimensions is a post-response check, not a pre-flight table lookup.** `Embedder` compares the *returned* vector length against the requested `Dimensions` and returns `ErrInvalidConfig` on mismatch. Dimension bounds live in the advisory catalog and are never enforced in the request path — the provider is the enforcer, consistent with free-flow models.
 
-1. **Separate, parallel surface** — an `EmbeddingProvider` SPI and a small embeddings state object; reuse error/retry/httpx/registry rails, but **do not** reuse chat `Usage`/`Pricing` or the `Stream`/tool-loop machinery.
-2. **Providers: OpenAI, Google, Z.ai; Anthropic excluded** (grounded — no first-party embeddings). Use Google's **Gemini API key** path, not Vertex/OAuth. **Smoke-test Z.ai international** before committing it; if `api.z.ai` doesn't serve `embedding-3`, Z.ai drops from the embeddings set.
-3. **Closed curated embedding-model registry**, mirroring chat: baseline `text-embedding-3-small`/`-3-large`, `gemini-embedding-001`, `embedding-3`; each entry carries native dim, supported-dim set/range, max input tokens, and flat input-only pricing.
-4. **Config knobs:** provider, model, optional **target `Dimensions`** — strictly per-model (validated against that model's capability table; **fail loud** when unsupported — never silently return native dims). AgentKit promises no cross-provider dimension parity; matching dims across models is a consumer storage-schema choice, not an AgentKit concern.
-5. **One per-call input:** **`InputType` (Query | Document | Unspecified)** → Google task_type; ignored by OpenAI/Z.ai. Exposed from day one.
-6. **Adapter guarantees that make "config-only" honest:** AgentKit **L2-normalizes** returned vectors (promise the library's normalization, not the provider's); **auto-chunks** batches to per-provider limits and reassembles in order; **fails loud on over-length** input (`autoTruncate:false` on Google) with a uniform error.
-7. **Usage/cost:** flat input-tokens-only `EmbeddingUsage`/`EmbeddingPricing`; cost always available (every model priced by construction).
-8. **Document the two permanent caveats** in the promise: vectors from different models are incomparable (a switch ⇒ re-embed the corpus), and for best retrieval quality inputs should be tagged query vs document (Google uses it; others ignore it).
+**Cost is consumer-supplied and optional.** `Embedder.Pricing` is a `*EmbeddingPricing` the consumer sets, typically from one catalog lookup. When it is nil the call still succeeds and reports zero cost with a `WarnCostUnknown` warning — the same warned-zero contract chat uses. There is no "priced by construction" guarantee, because there is no closed model set to guarantee it over.
 
-### 12.7 Unverified / open items (resolve at design or build time)
-
-- **Z.ai international embeddings on `api.z.ai`** — existence + USD pricing **not doc-confirmed**; smoke-test required (the one scope-critical unknown).
-- OpenAI `text-embedding-3-large` price showed a $0.13-vs-$0.065 page discrepancy (likely standard-vs-batch); confirm at build. OpenAI per-request total-token cap (~300k) is community-observed, not official.
-- `gemini-embedding-2` GA-vs-preview status and exact `batchEmbedContents` array max on the Gemini API (vs the documented Vertex 5/250-text limits).
-- ada-002 / embedding-2 are legacy and dimension-fixed — likely **out** of the curated set unless a consumer need surfaces.
+**The permanent caveats**, documented in the promise rather than hidden: vectors from different models are incomparable, so a model switch means re-embedding the corpus; and tagging inputs query-vs-document is what lets a switched-in provider reach full retrieval quality (Google uses `task_type`; OpenAI ignores the distinction).
 
 ### 12.8 Provider doc URLs (embeddings)
 
@@ -677,7 +677,7 @@ The repo has **no embeddings code today**. The embeddings surface plugs into the
 - Z.ai: China (authoritative) `docs.bigmodel.cn/cn/guide/models/embedding/embedding-3`; international `docs.z.ai` (no embeddings page); SDKs `github.com/zai-org/z-ai-sdk-python` / `…-java`.
 - Anthropic (no first-party embeddings): `platform.claude.com/project/en/project/build-with-claude/embeddings` ("Anthropic does not offer its own embedding model").
 
-## 13. Progressive tool discovery — deferred tools (design-informing)
+## 13. Progressive tool discovery — deferred tools
 
 The context cost of a large tool set is front-loaded: every registered tool's full description + input JSON Schema is serialized into the provider `tools` array on **every** round-trip, resident for the life of the conversation whether or not the model ever calls it. A measured real-world example (the ikigenba suite's `prompts` service, which exposes its sibling services' MCP tools to an in-run agent): 6 services, 79 tools, ~31 KB of serialized descriptions+schemas ≈ 8k tokens; a full deployment (~11 services, ~120 tools) lands around 15–18k tokens per round-trip. Beyond raw cost there is tool-choice dilution — models pick worse when offered ~120 tools than when offered the relevant dozen.
 
@@ -692,11 +692,15 @@ The context cost of a large tool set is front-loaded: every registered tool's fu
 - **The provider contract is per-request.** Every provider (Anthropic, OpenAI Responses, Gemini, Z.ai) treats the `tools` array as free to differ between calls; a tools array that *grows between round-trips of one turn* is accepted — this is exactly what harnesses like Claude Code already do in production. Still a real-substrate claim: a mock accepts anything, so only a live call proves it.
 - **History references constrain removal, not addition.** Replayed `tool_use` blocks referencing a tool absent from the current `tools` array are rejected or degraded by some providers — so *unloading* is hazardous while *loading* is safe. Monotonic growth is the safe shape.
 - **Prompt-cache interaction (Anthropic explicit caching).** The cache matches byte-identical prefixes at breakpoints. Appending new tools at the **tail** of the tools array preserves the previously cached prefix (old prefix re-read from cache, fresh write for the tail only); inserting into the middle — e.g. by re-sorting the merged set alphabetically — invalidates everything after the insertion point on every subsequent round-trip. Gemini/OpenAI implicit caching is prefix-based too, but Gemini's dialect conversion re-sorts tool declarations anyway (adapter-owned), so the append guarantee is meaningful chiefly where the explicit breakpoint lives.
-- **Catalog placement.** The blurb+names index must be resident for the model to know what exists. Two candidate homes: the system prompt (requires the library to mutate consumer prose) or the *description of the search/load meta-tool itself* (rides the tools block, cache-eligible, owned by the tool surface). Harness practice varies; for a library the meta-tool description is the non-invasive spot.
+- **Catalog placement.** The blurb+names index must be resident for the model to know what exists. Two candidate homes exist: the system prompt (requires the library to mutate consumer prose) or the *description of the search/load meta-tool itself* (rides the tools block, cache-eligible, owned by the tool surface). AgentKit uses the meta-tool description — the non-invasive spot for a library, since `Request.System` stays verbatim consumer prose.
 
-## 14. OpenRouter — the aggregator wire, cost reporting, and routing (design-informing)
+### 13.3 What AgentKit built
 
-Verified against OpenRouter's live documentation 2026-07-17 (docs/use-cases/usage-accounting, docs/features/provider-routing, docs/use-cases/oauth-pkce).
+One synthesized `load_tools` meta-tool whose description carries the generated catalog (per-group blurb + bare tool names). It takes **exact tool or group names, batched** — deliberately *not* the fuzzy search Claude Code's `ToolSearch` offers, because the full catalog is always visible, so the model never needs to *find* a tool, only to *load* it. A group name loads every tool in that group; a name matching neither yields a per-name error line while the other names in the same call still load. The result text carries each loaded tool's description and input schema, so the model can compose a correct call before the next round-trip's tools array even arrives.
+
+## 14. OpenRouter — the aggregator wire, cost reporting, and routing
+
+Sources: OpenRouter's docs/use-cases/usage-accounting, docs/features/provider-routing, and docs/use-cases/oauth-pkce.
 
 ### 14.1 The wire
 
@@ -706,7 +710,7 @@ Verified against OpenRouter's live documentation 2026-07-17 (docs/use-cases/usag
 
 ### 14.2 Cost reporting (the fact the cost seam leans on)
 
-- **Every response carries usage + cost automatically** — no request parameter needed. The former opt-ins (`usage: {include: true}`, `stream_options: {include_usage: true}`) are deprecated no-ops.
+- **Every response carries usage + cost automatically** — no request parameter needed; `usage: {include: true}` and `stream_options: {include_usage: true}` are no-ops.
 - Response `usage` carries: `prompt_tokens`, `completion_tokens`, `total_tokens`, plus detail breakdowns (`cached_tokens`, `reasoning_tokens`, `cache_write_tokens`, …) and **`cost`** — the total charged, denominated in OpenRouter credits (USD-pegged) — plus `cost_details.upstream_inference_cost`.
 - **Streaming**: the usage/cost object arrives in the **final SSE frame** — the same place `openaicompat` already reads usage from.
 - **BYOK**: with a vendor key attached to the OpenRouter account, `cost` holds OpenRouter's fee and `cost_details.upstream_inference_cost` holds the vendor-side spend (populated only for BYOK; otherwise 0/null). Effective total = `cost + upstream_inference_cost` — correct on both payment paths with zero client configuration.
@@ -718,26 +722,32 @@ A top-level request-body object `provider: {…}` steers routing: `order` (provi
 
 ### 14.4 Reasoning parameter
 
-OpenRouter normalizes reasoning across models via a top-level `reasoning` request object: `{"effort": "high"}` (effort-enum models), `{"max_tokens": N}` (budget models), `{"enabled": false}` (disable). This is a *different encoding* than Z.ai's `thinking`/`reasoning_effort` fields on the same chat-completions wire — the openrouter adapter needs its own reasoning lowering. (Exact accepted values are model-dependent; OpenRouter passes through and the upstream judges — re-verify the object shape before release.)
+OpenRouter normalizes reasoning across models via a top-level `reasoning` request object: `{"effort": "high"}` (effort-enum models), `{"max_tokens": N}` (budget models), `{"enabled": false}` (disable). This is a *different encoding* than Z.ai's `thinking`/`reasoning_effort` fields on the same chat-completions wire, so the openrouter adapter has its own reasoning lowering: `{"reasoning":{"effort":…}}` for a level, `{"reasoning":{"max_tokens":N}}` for a budget, `{"reasoning":{"enabled":false}}` to disable, and nothing at all when unset. Accepted values are model-dependent; OpenRouter passes through and the upstream judges.
+
+### 14.6 Vendors reachable only through OpenRouter
+
+xAI (Grok), DeepSeek, and Moonshot (Kimi) have **no native AgentKit adapter**, so the aggregator is their only route. Their catalog entries therefore differ in kind from GLM's: the default provider **is** `openrouter` and the wire id is the vendor-namespaced slug, whereas GLM defaults to `zai` and lists OpenRouter as an alternate route. A cataloged entry that named a bare vendor id with no route would resolve to a slug OpenRouter does not serve, so the route entry is load-bearing rather than decorative.
+
+Because §14.2's reported cost overrides table rates on this path, the rates recorded for these vendors in §6.5 are advisory display data. The slugs themselves are the part that must be right, and a golden test cannot falsify them — only a live call can.
 
 ### 14.5 Auth acquisition
 
 API keys are created in the dashboard, or minted programmatically via **OAuth PKCE** (`https://openrouter.ai/auth` → callback `code` → POST `https://openrouter.ai/api/v1/auth/keys` → an ordinary API key). The PKCE flow's end product is a static key — construction-time credential handling is unaffected by how the key was obtained. Usage bills to the authenticating user's account.
 
-## 15. OpenAI ChatGPT-subscription auth — the Codex-backend path (design-informing)
+## 15. OpenAI ChatGPT-subscription auth — the Codex-backend path
 
-Gathered from the working notes in `openai-auth.md` (2026-07) and verified locally against a real `~/.codex/auth.json` (structure only): OpenAI permits and endorses using a ChatGPT Plus/Pro subscription from third-party harnesses (OpenCode et al. do this in production). Not contractually guaranteed — Anthropic's and Google's equivalents were later restricted — a risk noted, not a blocker.
+Verified against a real Codex CLI `~/.codex/auth.json` (structure only): OpenAI permits and endorses using a ChatGPT Plus/Pro subscription from third-party harnesses (OpenCode et al. do this in production). Not contractually guaranteed — Anthropic's and Google's equivalents are restricted — a risk noted, not a blocker.
 
 ### 15.1 The credential store
 
-The credential file AgentKit consumes is the **raw RFC 6749 token-endpoint response, verbatim** — exactly the bytes a generic OAuth login tool (the standalone `oauth-login` CLI) prints to stdout, saved to a file. Observed shape of a real `auth.openai.com/oauth/token` response (login verified 2026-07-18):
+The credential file AgentKit consumes is the **raw RFC 6749 token-endpoint response, verbatim** — exactly the bytes a generic OAuth login tool (the standalone `oauth-login` CLI) prints to stdout, saved to a file. Observed shape of a real `auth.openai.com/oauth/token` response:
 
 - `access_token` — short-lived JWT bearer, carries `exp`
 - `refresh_token` — opaque, long-lived; rotates on refresh
 - `id_token` — OIDC JWT
 - plus standard fields AgentKit ignores: `token_type`, `expires_in`, `scope`
 
-**There is no top-level `account_id` in the token response.** The ChatGPT account id lives *inside* the JWTs, as `chatgpt_account_id` under the `https://api.openai.com/auth` claim — present in the `id_token` and in login-time `access_token`s. Empirically (2026-07-18 real login, corroborated by third-party harness reports), access tokens returned by *refresh* can lack the claim, so the id must be extracted at load from `id_token` first, `access_token` as fallback, and any file rewrite must preserve the `id_token` so the file stays self-sufficient.
+**There is no top-level `account_id` in the token response.** The ChatGPT account id lives *inside* the JWTs, as `chatgpt_account_id` under the `https://api.openai.com/auth` claim — present in the `id_token` and in login-time `access_token`s. Empirically, corroborated by third-party harness reports, access tokens returned by *refresh* can lack the claim, so the id must be extracted at load from `id_token` first, `access_token` as fallback, and any file rewrite must preserve the `id_token` so the file stays self-sufficient.
 
 The official codex CLI's `~/.codex/auth.json` is a **different wrapper shape** (`tokens.{access_token,refresh_token,id_token,account_id}`, `last_refresh`, `auth_mode`) with the account id duplicated as a plain field. AgentKit no longer reads that shape; its earlier expectation of a top-level `account_id` in the token response was the confirmed cause of every real login failing at the exchange step. Sessions go stale after ~8 days without a successful refresh.
 
@@ -750,10 +760,10 @@ The official codex CLI's `~/.codex/auth.json` is a **different wrapper shape** (
 
 ### 15.3 Login (external) & refresh (AgentKit's job)
 
-- **Login is outside AgentKit.** The one-time OAuth 2.0 PKCE login against `auth.openai.com` (public client id `app_EMoamEEZ73f0CkXaXp7hrann`, registered redirect `http://localhost:1455/auth/callback`, scope `openid profile email offline_access` — confirmed from a real 2026-07-18 login) is performed by the standalone generic `oauth-login` CLI, which serves the loopback callback itself and prints the token response verbatim to stdout; the consumer saves that output as the credential file AgentKit loads. AgentKit ships no login flow.
-- Refresh: `POST auth.openai.com/oauth/token` (`grant_type=refresh_token`, same client id); rotated tokens are written back atomically, in the same raw token-response shape, carrying forward the prior `refresh_token` and `id_token` when the response omits them (refresh responses can omit both the `id_token` and the account claim — §15.1). Refresh proactively before `exp` and reactively on 401.
+- **Login is outside AgentKit.** The one-time OAuth 2.0 PKCE login against `auth.openai.com` (public client id `app_EMoamEEZ73f0CkXaXp7hrann`, registered redirect `http://localhost:1455/auth/callback`, scope `openid profile email offline_access`) is performed by the standalone generic `oauth-login` CLI, which serves the loopback callback itself and prints the token response verbatim to stdout; the consumer saves that output as the credential file AgentKit loads. AgentKit ships no login flow.
+- Refresh: `POST auth.openai.com/oauth/token` (`grant_type=refresh_token`, same client id); rotated tokens are written back atomically, in the same raw token-response shape, carrying forward the prior `refresh_token` and `id_token` when the response omits them (refresh responses can omit both the `id_token` and the account claim — §15.1). Refresh proactively before `exp` — a 5-minute skew ahead of expiry. There is deliberately **no** reactive refresh-on-401 path: a 401 from the backend maps straight to `ErrAuthentication` and the turn fails loudly rather than silently retrying with a new token.
 - **Refresh-token lineages are per-login.** Copying one credential file to two machines shares a lineage — rotation on one invalidates the other. Two independent logins coexist fine (like two signed-in devices), sharing only the account-level rate-limit pool. Consequence for testing: live tests against a shared-lineage file must read/use only; refresh-and-rewrite is exercised only against fakes or a file whose lineage is expendable.
 
 ### 15.4 Cost
 
-The backend reports **no cost** and the subscription is flat-rate; the only computable per-call figure is API-rate-equivalent pricing. Decision: subscription-mode turns are costed exactly like API-key turns (catalog/consumer-supplied rates), documented as **notional API-rate-equivalent, not actual spend**. No flag distinguishes it — documentation only (operator decision, 2026-07-17).
+The backend reports **no cost** and the subscription is flat-rate; the only computable per-call figure is API-rate-equivalent pricing. Decision: subscription-mode turns are costed exactly like API-key turns (catalog/consumer-supplied rates), documented as **notional API-rate-equivalent, not actual spend**. No flag distinguishes it — documentation only.

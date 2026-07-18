@@ -18,15 +18,15 @@ phase appended), then the loop implements it.
 
 | folder | what's in it | written by |
 |---|---|---|
-| `product/` | `README.md` — the *why*: problem, users, scope, user-facing promises, success criteria | `$author-ikispec` (rewritten in place) |
-| `research/` | `research.md` — the design-informing background; non-contractual, nothing downstream reads it | `$author-ikispec` (rewritten in place) |
-| `design/` | `README.md` (spine) + `INDEX.md` (manifest + sorted `R-id → Decision` map) + `DNN.md` (one per Decision) | `$author-ikispec` (rewritten in place) |
-| `plan/` | `README.md` (rules) + `STATUS.md` (the manifest: `Next phase` counter + the only home of each pending phase's `⬜` marker) + `phase-NN.md` (one per **pending** phase) | `$author-ikispec` (appends); the build loop deletes completed phases |
+| `product/` | `README.md` — the *why*: problem, users, scope, user-facing promises, success criteria | `$seal-spec` (rewritten in place) |
+| `research/` | `research.md` — the design-informing background; non-contractual, nothing downstream reads it | `$seal-spec` (rewritten in place) |
+| `design/` | `README.md` (spine) + `INDEX.md` (manifest + sorted `R-id → Decision` map) + `DNN.md` (one per Decision) | `$seal-spec` (rewritten in place) |
+| `plan/` | `README.md` (rules) + `STATUS.md` (the manifest: `Next phase` counter + the only home of each pending phase's `⬜` marker) + `phase-NN.md` (one per **pending** phase) | `$seal-spec` (appends); the build loop deletes completed phases |
 | `loops/` | the installed `ralph` build-loop prompts `gather.md`, `build.md`, `verify.md` (+ the ephemeral `brief.md`), and `README.md` describing the loop | the prompt-generator workflow (`create-gather-build-verify-prompts`) |
 
 The four **spine documents** (`product/README.md`, `research/research.md`,
 `design/README.md`, `plan/README.md`) are each singular and authored by
-`$author-ikispec` — that is the sanctioned way to change them. Product, research,
+`$seal-spec` — that is the sanctioned way to change them. Product, research,
 and design are the single *current* statement, rewritten in place; the plan is
 a work **queue** of pending phases only — completed phases are deleted, and
 construction history lives in git. Don't add ad-hoc documents to the spine

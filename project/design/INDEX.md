@@ -51,7 +51,7 @@ One line per Decision, in number order — file, label, and the Verification ids
 - **D25** `project/design/D25.md` — OpenAI credentials: API key and ChatGPT subscription
   - ids: R-DG9Z-8KYU, R-PV6N-URM6, R-PWEK-8JCV, R-DHHV-MCPJ, R-PXMG-MB3K, R-DL5K-RNXM, R-DJXO-DW6X
 - **D26** `project/design/D26.md` — The advisory model catalog: `agentkit/catalog`
-  - ids: R-DMDH-5FOB, R-DNLD-J7F0, R-DOT9-WZ5P, R-DQ16-AQWE, R-DR92-OIN3, R-DSGZ-2ADS
+  - ids: R-4MB8-ERDC, R-4NJ4-SJ41, R-DMDH-5FOB, R-DNLD-J7F0, R-DOT9-WZ5P, R-DQ16-AQWE, R-DR92-OIN3, R-DSGZ-2ADS
 
 ## Verification ids → Decision
 Every minted id, sorted, mapped to its Decision and file (grep target for id lookup).
@@ -60,6 +60,8 @@ R-01HL-I6TM  D9  project/design/D09.md
 R-02PH-VYKB  D9  project/design/D09.md
 R-03XE-9QB0  D9  project/design/D09.md
 R-055A-NI1P  D9  project/design/D09.md
+R-4MB8-ERDC  D26  project/design/D26.md
+R-4NJ4-SJ41  D26  project/design/D26.md
 R-4YSE-6YBS  D9  project/design/D09.md
 R-6GBE-J3SV  D17  project/design/D17.md
 R-6HJA-WVJK  D17  project/design/D17.md
