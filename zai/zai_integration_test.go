@@ -21,7 +21,7 @@ func TestZAIIntegrationPlainRoundTrip(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
-	stream := (&agentkit.Conversation{Provider: New(APIKey(key)), Model: "glm-5.2"}).Send(ctx, "Reply with one short sentence.")
+	stream := (&agentkit.Conversation{Provider: New(APIKey(key)), Model: "glm-4.7-flash"}).Send(ctx, "Reply with one short sentence.")
 	var text strings.Builder
 	for event := range stream.Events() {
 		if done, ok := event.(agentkit.MessageDone); ok {
@@ -47,7 +47,7 @@ func TestZAIIntegrationToolRoundTrip(t *testing.T) {
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
-	stream := (&agentkit.Conversation{Provider: New(APIKey(key)), Model: "glm-5.2", Tools: []agentkit.Tool{tool}}).Send(ctx, "Call integration_echo with value test, then report its result.")
+	stream := (&agentkit.Conversation{Provider: New(APIKey(key)), Model: "glm-4.7-flash", Tools: []agentkit.Tool{tool}}).Send(ctx, "Call integration_echo with value test, then report its result.")
 	var sawUse, sawResult, sawFinal bool
 	for event := range stream.Events() {
 		switch event := event.(type) {
