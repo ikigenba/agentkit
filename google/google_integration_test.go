@@ -73,8 +73,8 @@ func TestGoogleIntegrationAcceptsRefOneOfToolSchemaAndRoundTripsToolCall(t *test
 	defer cancel()
 
 	conv := &agentkit.Conversation{
-		Provider: New(key),
-		Model:    ModelFlash25,
+		Provider: New(APIKey(key)),
+		Model:    "gemini-2.5-flash",
 		Tools:    []agentkit.Tool{tool},
 	}
 	stream := conv.Send(ctx, "Call select_shipping exactly once with destination city Austin, country US, and delivery overnight. After the tool result, reply with only the exact tool output string.")

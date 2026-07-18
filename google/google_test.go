@@ -40,13 +40,15 @@ func TestGoogleSendBuildsRequestParsesToolTurnAndUsage(t *testing.T) {
 		switch call {
 		case 1:
 			// R-H3PK-QFG3
+			// R-CQO3-7EE9
 			if r.Header.Get("X-Goog-Api-Key") != "test-key" {
 				t.Fatalf("missing Gemini API key header: %q", r.Header.Get("X-Goog-Api-Key"))
 			}
 			sawAuth = true
-			if r.URL.Path != "/v1beta/models/gemini-2.5-flash:streamGenerateContent" || r.URL.Query().Get("alt") != "sse" {
+			if r.URL.Path != "/v1beta/models/gemini-never-cataloged-2099:streamGenerateContent" || r.URL.Query().Get("alt") != "sse" {
 				t.Fatalf("unexpected endpoint: path=%s rawQuery=%s", r.URL.Path, r.URL.RawQuery)
 			}
+			// R-CT3V-YXVN
 
 			gen := field[map[string]any](t, body, "generationConfig")
 			// R-P5U3-5CFZ
@@ -116,8 +118,8 @@ func TestGoogleSendBuildsRequestParsesToolTurnAndUsage(t *testing.T) {
 	})
 
 	conv := &agentkit.Conversation{
-		Provider: New("test-key", WithBaseURL(server.URL), WithHTTPClient(server.Client())),
-		Model:    ModelFlash25,
+		Provider: New(APIKey("test-key"), WithBaseURL(server.URL), WithHTTPClient(server.Client())),
+		Model:    "gemini-never-cataloged-2099",
 		Gen: agentkit.GenSettings{
 			Temperature: &temp,
 			TopP:        &topP,
@@ -199,9 +201,9 @@ func TestGoogleSendBuildsRequestParsesToolTurnAndUsage(t *testing.T) {
 
 func TestGoogleRequestBodyPanicsOnUnknownOutboundBlockType(t *testing.T) {
 	// R-4YSE-6YBS
-	provider := New("test-key")
+	provider := New(APIKey("test-key"))
 	req := &agentkit.Request{
-		Model: ModelFlash25,
+		Model: "gemini-test",
 		Messages: []agentkit.Message{{
 			Role:   agentkit.RoleUser,
 			Blocks: []agentkit.Block{unknownBlock{}},
@@ -209,12 +211,12 @@ func TestGoogleRequestBodyPanicsOnUnknownOutboundBlockType(t *testing.T) {
 	}
 
 	assertUnknownBlockPanic(t, func() {
-		_, _ = provider.requestBody(req)
+		_, _, _ = provider.requestBody(req)
 	})
 }
 
 func TestGoogleUntranslatableSchemaConstructs(t *testing.T) {
-	translator := New("test-key")
+	translator := New(APIKey("test-key"))
 	faithful := json.RawMessage(`{
 		"type":"object",
 		"properties":{
@@ -276,7 +278,7 @@ func TestGoogleConvertsRefsAndOneOfFaithfully(t *testing.T) {
 	if first["type"] != "STRING" || first["description"] != "text" || second["type"] != "NUMBER" || second["description"] != "count" {
 		t.Fatalf("oneOf branches were not converted faithfully: %#v", anyOf)
 	}
-	if got := New("test-key").UntranslatableSchemaConstructs(schema); len(got) != 0 {
+	if got := New(APIKey("test-key")).UntranslatableSchemaConstructs(schema); len(got) != 0 {
 		t.Fatalf("converted schema had residue: %#v", got)
 	}
 }
@@ -299,33 +301,158 @@ func assertUnknownBlockPanic(t *testing.T, fn func()) {
 	fn()
 }
 
-func TestGoogleReasoningOffDegradesWithWarningOnPro(t *testing.T) {
-	var sawClamped bool
+func TestGoogleReasoningOffIsSentWithoutSubstitutionOrWarning(t *testing.T) {
+	var sawDisabled bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]any
 		decodeRequest(t, r, &body)
 		gen := field[map[string]any](t, body, "generationConfig")
 		thinking := field[map[string]any](t, gen, "thinkingConfig")
-		if thinking["thinkingBudget"] != float64(-1) || thinking["thinkingLevel"] != nil || thinking["includeThoughts"] != true {
-			t.Fatalf("DisableReasoning was not defaulted to dynamic thinking on Gemini Pro: %#v", thinking)
+		// R-CUBS-CPMC
+		// R-CVJO-QHD1
+		if thinking["thinkingBudget"] != float64(0) || thinking["thinkingLevel"] != nil || thinking["includeThoughts"] != false {
+			t.Fatalf("DisableReasoning was not sent in Gemini's native off form: %#v", thinking)
 		}
-		sawClamped = true
+		sawDisabled = true
 		writeSSE(t, w, `{"candidates":[{"content":{"role":"model","parts":[{"text":"ok"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":1,"totalTokenCount":2}}`)
 	}))
 	defer server.Close()
 
 	conv := &agentkit.Conversation{
-		Provider: New("key", WithBaseURL(server.URL), WithHTTPClient(server.Client())),
-		Model:    ModelPro25,
+		Provider: New(APIKey("key"), WithBaseURL(server.URL), WithHTTPClient(server.Client())),
+		Model:    "gemini-arbitrary-pro",
 		Pricing:  &agentkit.Pricing{},
 		Gen:      agentkit.GenSettings{Reasoning: agentkit.DisableReasoning()},
 	}
 	stream := conv.Send(context.Background(), "hello")
 	drainStream(t, stream)
-	// R-P89V-WVXD
 	warnings := stream.Warnings()
-	if !sawClamped || len(warnings) != 1 || warnings[0].Setting != "reasoning" || warnings[0].Code != agentkit.WarnReasoningCannotDisable {
-		t.Fatalf("DisableReasoning on Gemini Pro did not degrade with warning: %#v", warnings)
+	if !sawDisabled || len(warnings) != 0 {
+		t.Fatalf("DisableReasoning was substituted or warned: %#v", warnings)
+	}
+}
+
+func TestGoogleReasoningShapesMapDirectly(t *testing.T) {
+	tests := []struct {
+		name      string
+		reasoning agentkit.ReasoningValue
+		want      map[string]any
+		wantOmit  bool
+	}{
+		{name: "unset", wantOmit: true},
+		{name: "level", reasoning: agentkit.Level("vendor-native-ultra"), want: map[string]any{"thinkingLevel": "vendor-native-ultra", "includeThoughts": true}},
+		{name: "budget", reasoning: agentkit.Budget(7123), want: map[string]any{"thinkingBudget": 7123, "includeThoughts": true}},
+		{name: "disabled", reasoning: agentkit.DisableReasoning(), want: map[string]any{"thinkingBudget": 0, "includeThoughts": false}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			body, warnings, err := New(APIKey("key")).requestBody(&agentkit.Request{
+				Model: "same-arbitrary-model-for-every-shape",
+				Gen:   agentkit.GenSettings{Reasoning: tc.reasoning},
+			})
+			if err != nil {
+				t.Fatalf("requestBody() error = %v", err)
+			}
+			// R-CUBS-CPMC
+			if len(warnings) != 0 {
+				t.Fatalf("reasoning shape emitted warnings: %#v", warnings)
+			}
+			gen, hasGen := body["generationConfig"].(map[string]any)
+			thinking, hasThinking := gen["thinkingConfig"].(map[string]any)
+			// R-CVJO-QHD1
+			if tc.wantOmit {
+				if hasGen || hasThinking {
+					t.Fatalf("unset reasoning emitted generation config: %#v", body)
+				}
+				return
+			}
+			if !hasThinking || !reflect.DeepEqual(thinking, tc.want) {
+				t.Fatalf("thinkingConfig = %#v, want %#v", thinking, tc.want)
+			}
+			if _, budget := thinking["thinkingBudget"]; budget {
+				if _, level := thinking["thinkingLevel"]; level {
+					t.Fatalf("Gemini request carried both thinking shapes: %#v", thinking)
+				}
+			}
+		})
+	}
+}
+
+func TestGoogleVendorRejectsNativeReasoningWithoutSubstitution(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		decodeRequest(t, r, &body)
+		gen := field[map[string]any](t, body, "generationConfig")
+		thinking := field[map[string]any](t, gen, "thinkingConfig")
+		if thinking["thinkingLevel"] != "future-level" {
+			t.Fatalf("native reasoning value was substituted: %#v", thinking)
+		}
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = io.WriteString(w, `{"error":{"code":400,"message":"unsupported thinking level","status":"INVALID_ARGUMENT"}}`)
+	}))
+	defer server.Close()
+
+	rt := New(APIKey("key"), WithBaseURL(server.URL), WithHTTPClient(server.Client())).RoundTrip(context.Background(), &agentkit.Request{
+		Model: "never-cataloged-model",
+		Gen:   agentkit.GenSettings{Reasoning: agentkit.Level("future-level")},
+	})
+	// R-CUBS-CPMC
+	var providerErr *agentkit.Error
+	if !errors.As(rt.Err(), &providerErr) || providerErr.Provider != "google" || !errors.Is(rt.Err(), agentkit.ErrInvalidRequest) {
+		t.Fatalf("vendor rejection = %#v, want typed google invalid-request error", rt.Err())
+	}
+	if len(rt.Warnings()) != 0 {
+		t.Fatalf("vendor-rejected reasoning emitted warnings: %#v", rt.Warnings())
+	}
+}
+
+func TestGoogleProviderOptionsAreShallowMergedOnWire(t *testing.T) {
+	var calls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		var body map[string]any
+		decodeRequest(t, r, &body)
+		// R-CXZH-I0UF
+		if calls == 1 {
+			if body["vendorPreview"] != "verbatim" || !reflect.DeepEqual(body["routing"], map[string]any{"tier": "fast"}) {
+				t.Fatalf("provider options were not shallow-merged verbatim: %#v", body)
+			}
+		} else if _, ok := body["vendorPreview"]; ok {
+			t.Fatalf("empty provider options merged an extra key: %#v", body)
+		}
+		writeSSE(t, w, `{"candidates":[{"content":{"role":"model","parts":[{"text":"ok"}]},"finishReason":"STOP"}]}`)
+	}))
+	defer server.Close()
+
+	p := New(APIKey("key"), WithBaseURL(server.URL), WithHTTPClient(server.Client()))
+	for _, options := range []json.RawMessage{json.RawMessage(`{"vendorPreview":"verbatim","routing":{"tier":"fast"}}`), nil} {
+		rt := p.RoundTrip(context.Background(), &agentkit.Request{Model: "gemini-test", ProviderOptions: options})
+		if err := rt.Err(); err != nil {
+			t.Fatalf("RoundTrip() error = %v", err)
+		}
+	}
+	if calls != 2 {
+		t.Fatalf("requests = %d, want 2", calls)
+	}
+}
+
+func TestGoogleUnknownModelVendorErrorIsTyped(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1beta/models/not-in-any-agentkit-catalog:streamGenerateContent" {
+			t.Fatalf("arbitrary model did not reach endpoint verbatim: %s", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = io.WriteString(w, `{"error":{"code":404,"message":"model missing","status":"NOT_FOUND"}}`)
+	}))
+	defer server.Close()
+
+	var provider agentkit.Provider = New(APIKey("key"), WithBaseURL(server.URL), WithHTTPClient(server.Client()))
+	rt := provider.RoundTrip(context.Background(), &agentkit.Request{Model: "not-in-any-agentkit-catalog"})
+	// R-CT3V-YXVN
+	var providerErr *agentkit.Error
+	if !errors.As(rt.Err(), &providerErr) || providerErr.Provider != "google" || !errors.Is(rt.Err(), agentkit.ErrNotFound) {
+		t.Fatalf("unknown-model rejection = %#v, want typed google not-found error", rt.Err())
 	}
 }
 
@@ -335,7 +462,7 @@ func TestGoogleSignatureOnFunctionCallPartPreservesToolUse(t *testing.T) {
 	}))
 	defer server.Close()
 
-	rt := New("key", WithBaseURL(server.URL), WithHTTPClient(server.Client())).RoundTrip(context.Background(), &agentkit.Request{Model: ModelFlash25})
+	rt := New(APIKey("key"), WithBaseURL(server.URL), WithHTTPClient(server.Client())).RoundTrip(context.Background(), &agentkit.Request{Model: "gemini-test"})
 	if err := rt.Err(); err != nil {
 		t.Fatalf("RoundTrip error: %v", err)
 	}
@@ -370,7 +497,7 @@ func TestGoogleParallelReasoningBindsPositionallyToToolCalls(t *testing.T) {
 	}))
 	defer server.Close()
 
-	rt := New("key", WithBaseURL(server.URL), WithHTTPClient(server.Client())).RoundTrip(context.Background(), &agentkit.Request{Model: ModelFlash25})
+	rt := New(APIKey("key"), WithBaseURL(server.URL), WithHTTPClient(server.Client())).RoundTrip(context.Background(), &agentkit.Request{Model: "gemini-test"})
 	if err := rt.Err(); err != nil {
 		t.Fatalf("RoundTrip error: %v", err)
 	}
@@ -410,7 +537,7 @@ func TestGoogleSignatureOnTextPartPreservesVisibleText(t *testing.T) {
 	}))
 	defer server.Close()
 
-	rt := New("key", WithBaseURL(server.URL), WithHTTPClient(server.Client())).RoundTrip(context.Background(), &agentkit.Request{Model: ModelFlash25})
+	rt := New(APIKey("key"), WithBaseURL(server.URL), WithHTTPClient(server.Client())).RoundTrip(context.Background(), &agentkit.Request{Model: "gemini-test"})
 	if err := rt.Err(); err != nil {
 		t.Fatalf("RoundTrip error: %v", err)
 	}
@@ -474,8 +601,8 @@ func TestGoogleReplayedToolUsePlacesThoughtSignatureOnPart(t *testing.T) {
 		return "sunny", nil
 	})
 	conv := &agentkit.Conversation{
-		Provider: New("key", WithBaseURL(server.URL), WithHTTPClient(server.Client())),
-		Model:    ModelFlash25,
+		Provider: New(APIKey("key"), WithBaseURL(server.URL), WithHTTPClient(server.Client())),
+		Model:    "gemini-test",
 		Tools:    []agentkit.Tool{tool},
 	}
 	drainStream(t, conv.Send(context.Background(), "weather"))
@@ -513,7 +640,7 @@ func TestGoogleErrorClassificationRawAndRetryInfo(t *testing.T) {
 			}))
 			defer server.Close()
 
-			rt := New("key", WithBaseURL(server.URL), WithHTTPClient(server.Client())).RoundTrip(context.Background(), &agentkit.Request{Model: ModelFlash25})
+			rt := New(APIKey("key"), WithBaseURL(server.URL), WithHTTPClient(server.Client())).RoundTrip(context.Background(), &agentkit.Request{Model: "gemini-test"})
 			err := rt.Err()
 			// R-BUR1-XAK8
 			if !errors.Is(err, tc.want) {
@@ -829,8 +956,8 @@ func TestGoogleDropsForeignReasoningFromWireRequest(t *testing.T) {
 	}))
 	defer server.Close()
 
-	rt := New("key", WithBaseURL(server.URL), WithHTTPClient(server.Client())).RoundTrip(context.Background(), &agentkit.Request{
-		Model: ModelFlash25,
+	rt := New(APIKey("key"), WithBaseURL(server.URL), WithHTTPClient(server.Client())).RoundTrip(context.Background(), &agentkit.Request{
+		Model: "gemini-test",
 		Messages: []agentkit.Message{{
 			Role: agentkit.RoleAssistant,
 			Blocks: []agentkit.Block{
@@ -890,8 +1017,8 @@ func TestGoogleSerializesPortableHistoryAfterProviderSwitch(t *testing.T) {
 		t.Fatalf("scripted first provider calls = %d, want 2", first.calls)
 	}
 
-	conv.Provider = New("key", WithBaseURL(server.URL), WithHTTPClient(server.Client()))
-	conv.Model = ModelFlash25
+	conv.Provider = New(APIKey("key"), WithBaseURL(server.URL), WithHTTPClient(server.Client()))
+	conv.Model = "gemini-test"
 	drainStream(t, conv.Send(context.Background(), "second"))
 	if !sawPriorToolBlocks || !sawNoForeignReasoning {
 		t.Fatalf("switch assertions did not run")

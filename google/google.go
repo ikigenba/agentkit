@@ -21,29 +21,12 @@ import (
 	"github.com/ikigenba/agentkit/internal/sse"
 )
 
-const (
-	ModelFlash25 = "gemini-2.5-flash"
-	ModelPro25   = "gemini-2.5-pro"
-	ModelFlash35 = "gemini-3.5-flash"
-	ModelLite31  = "gemini-3.1-flash-lite"
-	// ModelPro31Preview is Google's preview-channel 3.x Pro reasoning model.
-	ModelPro31Preview = "gemini-3.1-pro-preview"
-
-	EmbedModelGemini001 = "gemini-embedding-001"
-)
+const EmbedModelGemini001 = "gemini-embedding-001"
 
 const defaultBaseURL = "https://generativelanguage.googleapis.com"
 
-// Reasoning exposes Gemini's static native reasoning vocabulary.
-var Reasoning agentkit.ReasoningInspector = reasoningInspector{}
-
 // Embeddings exposes Gemini's static embedding model vocabulary.
 var Embeddings agentkit.EmbeddingInspector = embeddingInspector{}
-
-type modelEntry struct {
-	Pricing   agentkit.Pricing
-	Reasoning agentkit.ReasoningSpec
-}
 
 var googleEmbeddingPricing = map[string]agentkit.EmbeddingPricing{
 	EmbedModelGemini001: {InputToken: 150},
@@ -56,87 +39,6 @@ var googleEmbeddingSpecs = map[string]agentkit.EmbeddingSpec{
 		MaxDimension:    3072,
 		MaxInputTokens:  2048,
 	},
-}
-
-var modelRegistry = map[string]modelEntry{
-	ModelFlash25: {
-		Pricing: agentkit.Pricing{Tiers: []agentkit.RateTier{{
-			MinInputTokens: 0, InputUncached: 300, CacheReadInput: 30, Output: 2500,
-		}}},
-		Reasoning: agentkit.ReasoningSpec{
-			Term: "thinking budget", Kind: agentkit.ReasoningRange,
-			Min: 0, Max: 24576,
-			Sentinels:  []agentkit.Sentinel{{Value: 0, Meaning: "off"}, {Value: -1, Meaning: "dynamic"}},
-			Default:    agentkit.Budget(-1),
-			CanDisable: true,
-		},
-	},
-	ModelPro25: {
-		Pricing: agentkit.Pricing{Tiers: []agentkit.RateTier{{
-			MinInputTokens: 0, InputUncached: 1250, CacheReadInput: 125, Output: 10000,
-		}, {
-			MinInputTokens: 200001, InputUncached: 2500, CacheReadInput: 250, Output: 15000,
-		}}},
-		Reasoning: agentkit.ReasoningSpec{
-			Term: "thinking budget", Kind: agentkit.ReasoningRange,
-			Min: 128, Max: 32768,
-			Sentinels: []agentkit.Sentinel{{Value: -1, Meaning: "dynamic"}},
-			Default:   agentkit.Budget(-1),
-		},
-	},
-	ModelFlash35: {
-		Pricing: agentkit.Pricing{Tiers: []agentkit.RateTier{{
-			MinInputTokens: 0, InputUncached: 1500, CacheReadInput: 150, Output: 9000,
-		}}},
-		Reasoning: agentkit.ReasoningSpec{
-			Term: "thinking level", Kind: agentkit.ReasoningEnum,
-			Levels: []string{"minimal", "low", "medium", "high"}, Default: agentkit.Level("medium"),
-		},
-	},
-	ModelLite31: {
-		Pricing: agentkit.Pricing{Tiers: []agentkit.RateTier{{
-			MinInputTokens: 0, InputUncached: 250, CacheReadInput: 25, Output: 1500,
-		}}},
-		Reasoning: agentkit.ReasoningSpec{
-			Term: "thinking level", Kind: agentkit.ReasoningEnum,
-			Levels: []string{"minimal", "low", "medium", "high"}, Default: agentkit.Level("medium"),
-		},
-	},
-	ModelPro31Preview: {
-		Pricing: agentkit.Pricing{Tiers: []agentkit.RateTier{{
-			MinInputTokens: 0, InputUncached: 2000, CacheReadInput: 200, Output: 12000,
-		}, {
-			MinInputTokens: 200001, InputUncached: 4000, CacheReadInput: 400, Output: 18000,
-		}}},
-		Reasoning: agentkit.ReasoningSpec{
-			Term: "thinking level", Kind: agentkit.ReasoningEnum,
-			Levels: []string{"low", "medium", "high"}, Default: agentkit.Level("high"),
-		},
-	},
-}
-
-type reasoningInspector struct{}
-
-func (reasoningInspector) ReasoningSpec(model string) (agentkit.ReasoningSpec, bool) {
-	entry, ok := modelRegistry[model]
-	if !ok {
-		return agentkit.ReasoningSpec{}, false
-	}
-	return cloneReasoningSpec(entry.Reasoning), true
-}
-
-func (reasoningInspector) SupportedReasoning() map[string]agentkit.ReasoningSpec {
-	out := make(map[string]agentkit.ReasoningSpec, len(modelRegistry))
-	for model, entry := range modelRegistry {
-		out[model] = cloneReasoningSpec(entry.Reasoning)
-	}
-	return out
-}
-
-func cloneReasoningSpec(spec agentkit.ReasoningSpec) agentkit.ReasoningSpec {
-	spec.Levels = append([]string(nil), spec.Levels...)
-	spec.Sentinels = append([]agentkit.Sentinel(nil), spec.Sentinels...)
-	return spec
 }
 
 type embeddingInspector struct{}
@@ -153,6 +55,16 @@ func (embeddingInspector) SupportedEmbeddings() map[string]agentkit.EmbeddingSpe
 	}
 	return out
 }
+
+// Credential is the closed set of credentials accepted by New.
+type Credential interface {
+	googleCredential()
+}
+
+// APIKey authenticates with a Google API key.
+type APIKey string
+
+func (APIKey) googleCredential() {}
 
 // Option configures a Gemini provider.
 type Option func(*Provider)
@@ -179,7 +91,11 @@ type Provider struct {
 }
 
 // New constructs a Gemini provider handle.
-func New(apiKey string, opts ...Option) *Provider {
+func New(cred Credential, opts ...Option) *Provider {
+	var apiKey string
+	if key, ok := cred.(APIKey); ok {
+		apiKey = string(key)
+	}
 	p := &Provider{
 		apiKey:  apiKey,
 		baseURL: defaultBaseURL,
@@ -192,7 +108,7 @@ func New(apiKey string, opts ...Option) *Provider {
 
 // NewEmbedder constructs a Google embeddings provider.
 func NewEmbedder(apiKey string, opts ...Option) agentkit.EmbeddingProvider {
-	p := New(apiKey, opts...)
+	p := New(APIKey(apiKey), opts...)
 	return &embeddingProvider{
 		apiKey:  p.apiKey,
 		baseURL: p.baseURL,
@@ -214,7 +130,10 @@ func (p *Provider) RoundTrip(ctx context.Context, req *agentkit.Request) *agentk
 		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, nil, agentkit.ErrInvalidConfig, 0, false)
 	}
 
-	body, warnings := p.requestBody(req)
+	body, warnings, err := p.requestBody(req)
+	if err != nil {
+		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, warnings, err, 0, false)
+	}
 	httpReq, err := httpx.JSONRequest(ctx, http.MethodPost, p.url(req.Model), body)
 	if err != nil {
 		return roundTripError(providerError(0, nil, "", "", "", err, 0))
@@ -247,7 +166,7 @@ func (p *Provider) url(model string) string {
 	return p.baseURL + "/v1beta/models/" + url.PathEscape(model) + ":streamGenerateContent?alt=sse"
 }
 
-func (p *Provider) requestBody(req *agentkit.Request) (map[string]any, []agentkit.Warning) {
+func (p *Provider) requestBody(req *agentkit.Request) (map[string]any, []agentkit.Warning, error) {
 	body := map[string]any{
 		"contents": contentsFromMessages(req.Messages),
 	}
@@ -262,11 +181,23 @@ func (p *Provider) requestBody(req *agentkit.Request) (map[string]any, []agentki
 		}}
 	}
 
-	gen, warnings := generationConfig(req.Model, req.Gen)
+	gen := generationConfig(req.Gen)
 	if len(gen) > 0 {
 		body["generationConfig"] = gen
 	}
-	return body, warnings
+	if len(req.ProviderOptions) != 0 {
+		var extra map[string]json.RawMessage
+		if err := json.Unmarshal(req.ProviderOptions, &extra); err != nil || extra == nil {
+			if err == nil {
+				err = agentkit.ErrInvalidConfig
+			}
+			return nil, nil, fmt.Errorf("google provider options: %w", err)
+		}
+		for key, value := range extra {
+			body[key] = value
+		}
+	}
+	return body, nil, nil
 }
 
 func contentsFromMessages(messages []agentkit.Message) []map[string]any {
@@ -542,7 +473,7 @@ func stringSlice(v any) ([]string, bool) {
 	return out, true
 }
 
-func generationConfig(model string, gen agentkit.GenSettings) (map[string]any, []agentkit.Warning) {
+func generationConfig(gen agentkit.GenSettings) map[string]any {
 	cfg := make(map[string]any)
 	if gen.Temperature != nil {
 		cfg["temperature"] = *gen.Temperature
@@ -553,11 +484,10 @@ func generationConfig(model string, gen agentkit.GenSettings) (map[string]any, [
 	if gen.MaxTokens > 0 {
 		cfg["maxOutputTokens"] = gen.MaxTokens
 	}
-	value, warnings := checkedReasoning(model, gen.Reasoning)
-	if !value.IsUnset() {
-		cfg["thinkingConfig"] = thinkingConfig(value)
+	if !gen.Reasoning.IsUnset() {
+		cfg["thinkingConfig"] = thinkingConfig(gen.Reasoning)
 	}
-	return cfg, warnings
+	return cfg
 }
 
 func thinkingConfig(value agentkit.ReasoningValue) map[string]any {
@@ -571,41 +501,6 @@ func thinkingConfig(value agentkit.ReasoningValue) map[string]any {
 		return map[string]any{"thinkingBudget": budget, "includeThoughts": budget != 0}
 	}
 	return nil
-}
-
-func checkedReasoning(model string, value agentkit.ReasoningValue) (agentkit.ReasoningValue, []agentkit.Warning) {
-	if value.IsUnset() {
-		return value, nil
-	}
-	entry, ok := modelRegistry[model]
-	if !ok || entry.Reasoning.Accepts(value) {
-		return value, nil
-	}
-	code := agentkit.WarnReasoningUnsupported
-	if value.Disabled() && !entry.Reasoning.CanDisable {
-		code = agentkit.WarnReasoningCannotDisable
-	}
-	return entry.Reasoning.Default, []agentkit.Warning{{
-		Setting: "reasoning",
-		Code:    code,
-		Detail:  "requested " + describeReasoning(value) + "; applied " + describeReasoning(entry.Reasoning.Default),
-	}}
-}
-
-func describeReasoning(value agentkit.ReasoningValue) string {
-	if value.IsUnset() {
-		return "unset"
-	}
-	if value.Disabled() {
-		return "disabled"
-	}
-	if level, ok := value.Level(); ok {
-		return "level " + level
-	}
-	if budget, ok := value.Budget(); ok {
-		return fmt.Sprintf("budget %d", budget)
-	}
-	return "unknown"
 }
 
 type generateContentResponse struct {

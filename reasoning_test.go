@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/ikigenba/agentkit"
-	"github.com/ikigenba/agentkit/google"
 	"github.com/ikigenba/agentkit/openai"
 	"github.com/ikigenba/agentkit/zai"
 )
@@ -52,38 +51,6 @@ func TestProviderReasoningInspectorsExposeDesignSpecs(t *testing.T) {
 		inspector agentkit.ReasoningInspector
 		specs     map[string]agentkit.ReasoningSpec
 	}{
-		"google": {
-			inspector: google.Reasoning,
-			specs: map[string]agentkit.ReasoningSpec{
-				google.ModelFlash25: {
-					Term: "thinking budget", Kind: agentkit.ReasoningRange,
-					Min:        0,
-					Max:        24576,
-					Sentinels:  []agentkit.Sentinel{{Value: 0, Meaning: "off"}, {Value: -1, Meaning: "dynamic"}},
-					Default:    agentkit.Budget(-1),
-					CanDisable: true,
-				},
-				google.ModelPro25: {
-					Term: "thinking budget", Kind: agentkit.ReasoningRange,
-					Min:       128,
-					Max:       32768,
-					Sentinels: []agentkit.Sentinel{{Value: -1, Meaning: "dynamic"}},
-					Default:   agentkit.Budget(-1),
-				},
-				google.ModelFlash35: {
-					Term: "thinking level", Kind: agentkit.ReasoningEnum,
-					Levels: []string{"minimal", "low", "medium", "high"}, Default: agentkit.Level("medium"),
-				},
-				google.ModelLite31: {
-					Term: "thinking level", Kind: agentkit.ReasoningEnum,
-					Levels: []string{"minimal", "low", "medium", "high"}, Default: agentkit.Level("medium"),
-				},
-				google.ModelPro31Preview: {
-					Term: "thinking level", Kind: agentkit.ReasoningEnum,
-					Levels: []string{"low", "medium", "high"}, Default: agentkit.Level("high"),
-				},
-			},
-		},
 		"openai": {
 			inspector: openai.Reasoning,
 			specs: map[string]agentkit.ReasoningSpec{
