@@ -41,8 +41,8 @@ func TestAnthropicLiveDeferredToolsLoadsAndCallsNativeTool(t *testing.T) {
 
 	zero := 0.0
 	conv := &agentkit.Conversation{
-		Provider: anthropic.New(key),
-		Model:    anthropic.ModelHaiku45,
+		Provider: anthropic.New(anthropic.APIKey(key)),
+		Model:    "claude-haiku-4-5",
 		System: "Use tools exactly as requested. For deferred tools, first call load_tools with the requested tool name. " +
 			"After a tool result, answer with only the exact returned token.",
 		Gen: agentkit.GenSettings{

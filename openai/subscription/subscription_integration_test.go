@@ -1,0 +1,61 @@
+//go:build integration
+
+package subscription
+
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/ikigenba/agentkit"
+	"github.com/ikigenba/agentkit/openai"
+)
+
+func TestSubscriptionIntegrationRoundTrip(t *testing.T) {
+	// R-DJXO-DW6X
+	path := os.Getenv("OPENAI_SUBSCRIPTION_AUTH_FILE")
+	if path == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			t.Skip("cannot locate a codex-compatible auth file")
+		}
+		path = filepath.Join(home, ".codex", "auth.json")
+	}
+	if _, err := os.Stat(path); err != nil {
+		if os.IsNotExist(err) {
+			t.Skip("codex-compatible auth file is not present")
+		}
+		t.Fatalf("stat auth file: %v", err)
+	}
+	store, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() = %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	stream := (&agentkit.Conversation{
+		Provider: openai.New(openai.Subscription(store)),
+		Model:    "gpt-5.4",
+		System:   "Answer concisely.",
+	}).Send(ctx, "Reply with one short sentence.")
+	var text strings.Builder
+	for event := range stream.Events() {
+		if done, ok := event.(agentkit.MessageDone); ok {
+			for _, block := range done.Message.Blocks {
+				if block, ok := block.(agentkit.TextBlock); ok {
+					text.WriteString(block.Text)
+				}
+			}
+		}
+	}
+	if err := stream.Err(); err != nil {
+		t.Fatalf("Err() = %v", err)
+	}
+	if strings.TrimSpace(text.String()) == "" {
+		t.Fatal("completed stream has no assistant text")
+	}
+}
