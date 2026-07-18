@@ -2,7 +2,19 @@
 
 All notable changes to this project are documented in this file.
 
-## v0.5.0
+## v0.6.0 — 2026-07-18
+
+- Added catalog entries for the vendors reachable only through OpenRouter: xAI
+  Grok (`grok-4.5`, `grok-4.3`, `grok-4.20`, `grok-4.20-multi-agent`), DeepSeek
+  (`deepseek-v4-flash`, `deepseek-v4-pro`), and Moonshot Kimi (`kimi-k3`,
+  `kimi-k2.7-code`, `kimi-k2.6`). Each defaults to the `openrouter` provider and
+  carries its vendor-namespaced wire slug, rates, context size, and reasoning
+  spec.
+- Fixed the `glm-5.1` reasoning spec, which incorrectly carried GLM-5.2's
+  `reasoning_effort` enum. Z.ai scopes that parameter to GLM-5.2; `glm-5.1` has
+  the `thinking` toggle only.
+
+## v0.5.0 — 2026-07-18
 
 - Removed the `openai/subscription` `BeginLogin`, `Flow`, `AuthorizeURL`, and
   `Complete` login flow. OAuth login is now the responsibility of an external
