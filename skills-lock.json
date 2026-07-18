@@ -35,13 +35,13 @@
       "source": "ikigenba/skills",
       "sourceType": "github",
       "skillPath": "ralph/SKILL.md",
-      "computedHash": "6f562ada1c220d027d05d4146c04cc4be2df80e4af42ba278bd8593ed0feefdd"
+      "computedHash": "6d25e5418ef1a2176d14a01946594f2238a9bb928dc59e04a27421073cea52bd"
     },
     "seal-spec": {
       "source": "ikigenba/skills",
       "sourceType": "github",
       "skillPath": "seal-spec/SKILL.md",
-      "computedHash": "38007c67c3d75dc8601652312cca7595c548a7ae747549ff4d78a7408b3c3ab0"
+      "computedHash": "b731344955ae07daba3267b2bbecb0967ad6777e04cf685da4ee927f4f53912b"
     }
   }
 }

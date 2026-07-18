@@ -85,8 +85,16 @@ operator-invoked step after the spec exists.)
    design no longer mints is stale — fix it now, in this pass.
 6. **Workspace map.** If the structure changed (greenfield, or a folder
    added/removed), write/update the thin `project/README.md` to match.
-7. **Report.** List every path written, the Decisions added/changed with their
-   minted ids, and the appended phase numbers. Then **stop**.
+7. **Commit.** Stage every modified/new/deleted path under `project/**` and
+   commit them (`git add project/ && git commit -m ...`) so the spec is fully
+   committed before any `ralph` run starts against it. Commit only
+   `project/**` — never sweep in unrelated working-tree changes outside it.
+   If there is nothing under `project/` to commit (a sealing pass that made no
+   changes), skip this step. Skip it too if `project/` is not inside a git
+   repository — note that in the report rather than failing the run.
+8. **Report.** List every path written, the Decisions added/changed with their
+   minted ids, the appended phase numbers, and the commit made (or why it was
+   skipped). Then **stop**.
 
 ## Boundaries
 

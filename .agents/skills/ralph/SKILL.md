@@ -52,7 +52,7 @@ $open-spec            open the session: scope to project/*, converse (user story
    │
 $grill-me             interrogate to shared understanding
    │
-$seal-spec            one pass: product · research · design (mint ids) · plan (append phases)
+$seal-spec            one pass: product · research · design (mint ids) · plan (append phases) · commit
    │
 $create-gather-build-verify-prompts     (once per project, or when the loop design changes)
    │
