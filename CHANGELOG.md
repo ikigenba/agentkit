@@ -2,7 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
-## v0.3.0 — 2026-07-17
+## v0.4.1 — 2026-07-17
+
+- Removed the interactive `Login` and `LoginIO` surface in favor of the
+  value-in/value-out `BeginLogin`, `Flow.AuthorizeURL`, and `Flow.Complete`
+  flow. The library performs no terminal I/O, and empty or unparsable pasted
+  redirect URLs now return a clearer error.
+
+## v0.4.0 — 2026-07-17
 
 - Added credential constructors for configuring provider clients without exposing
   authentication details through the provider interface.
