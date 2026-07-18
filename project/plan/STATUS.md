@@ -4,7 +4,6 @@ The manifest, and a work **queue**: one line per **pending** phase, in build ord
 
 Next phase: 65
 
-- Phase 59  ⬜  realizes D25                          — openai subscription auth + openai/subscription (R-DG9Z-8KYU, R-DHHV-MCPJ, R-DIPS-04G8, R-DL5K-RNXM)
 - Phase 60  ⬜  realizes D26                          — the advisory catalog package (R-DMDH-5FOB, R-DNLD-J7F0, R-DOT9-WZ5P, R-DQ16-AQWE, R-DR92-OIN3, R-DSGZ-2ADS)
 - Phase 61  ⬜  realizes D18,D20                      — embeddings root seam: free-flow, supplied pricing, dimension verification (R-D5AV-SNAL, R-D6IS-6F1A, R-D2V3-13T7, R-D42Z-EVJW, R-D8YK-XYIO)
 - Phase 62  ⬜  realizes D19                          — embedding adapters to the dumb layer (R-D7QO-K6RZ)
