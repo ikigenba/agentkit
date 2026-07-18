@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.5.0
+
+- Removed the `openai/subscription` `BeginLogin`, `Flow`, `AuthorizeURL`, and
+  `Complete` login flow. OAuth login is now the responsibility of an external
+  login tool.
+- Changed the subscription credential file format from the codex CLI wrapper
+  shape to the raw token-endpoint response. The account ID is now derived from
+  the `https://api.openai.com/auth` JWT claim.
+- Changed subscription token refreshes to preserve the existing `refresh_token`
+  and `id_token` when the refresh response omits them.
+
 ## v0.4.1 — 2026-07-17
 
 - Removed the interactive `Login` and `LoginIO` surface in favor of the
