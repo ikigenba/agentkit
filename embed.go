@@ -2,6 +2,7 @@ package agentkit
 
 import (
 	"context"
+	"fmt"
 	"math"
 )
 
@@ -11,6 +12,7 @@ import (
 type Embedder struct {
 	Provider   EmbeddingProvider
 	Model      string
+	Pricing    *EmbeddingPricing
 	Dimensions int
 	Retry      RetryPolicy
 
@@ -34,11 +36,6 @@ func (e *Embedder) Embed(ctx context.Context, inputs []string, role InputType) (
 			return nil, ErrInvalidInput
 		}
 	}
-	pricing, ok := e.Provider.Pricing(e.Model)
-	if !ok {
-		return nil, ErrInvalidConfig
-	}
-
 	rt := e.Provider.Embed(ctx, &EmbedRequest{
 		Model:      e.Model,
 		Inputs:     append([]string(nil), inputs...),
@@ -53,12 +50,31 @@ func (e *Embedder) Embed(ctx context.Context, inputs []string, role InputType) (
 		return nil, err
 	}
 
+	vectors := rt.Vectors()
+	if e.Dimensions != 0 {
+		for _, vector := range vectors {
+			if len(vector) != e.Dimensions {
+				return nil, fmt.Errorf("%w: requested embedding dimension %d, returned %d", ErrInvalidConfig, e.Dimensions, len(vector))
+			}
+		}
+	}
+
 	usage := rt.Usage()
-	cost := pricing.Cost(usage)
+	warnings := rt.Warnings()
+	var cost Cost
+	if e.Pricing != nil {
+		cost = e.Pricing.Cost(usage)
+	} else {
+		warnings = append(warnings, Warning{
+			Setting: "cost",
+			Code:    WarnCostUnknown,
+			Detail:  "no consumer-supplied cost; applied 0",
+		})
+	}
 
 	result := &EmbedResult{
-		Vectors:  normalizeFloat32Vectors(rt.Vectors()),
-		Warnings: rt.Warnings(),
+		Vectors:  normalizeFloat32Vectors(vectors),
+		Warnings: warnings,
 		usage:    usage,
 		cost:     cost,
 	}

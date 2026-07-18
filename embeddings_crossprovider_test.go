@@ -147,7 +147,7 @@ func newCrossOpenAIEmbeddingServer(t *testing.T) *crossEmbeddingServer {
 		data := make([]map[string]any, len(inputs))
 		for i, input := range inputs {
 			n := crossInputNumber(fmt.Sprint(input))
-			data[i] = map[string]any{"index": i, "embedding": []float32{float32(n + 1), 1}}
+			data[i] = map[string]any{"index": i, "embedding": crossEmbeddingVector(state.lastDimensions, n)}
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"data": data,
@@ -183,7 +183,7 @@ func newCrossGoogleEmbeddingServer(t *testing.T) *crossEmbeddingServer {
 			parts := content["parts"].([]any)
 			input := parts[0].(map[string]any)["text"].(string)
 			n := crossInputNumber(input)
-			embeddings[i] = map[string]any{"values": []float32{float32(n + 1), 1}}
+			embeddings[i] = map[string]any{"values": crossEmbeddingVector(state.lastDimensions, n)}
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"embeddings": embeddings,
@@ -201,6 +201,16 @@ func crossInputNumber(input string) int {
 		return 0
 	}
 	return n
+}
+
+func crossEmbeddingVector(dimensions, inputNumber int) []float32 {
+	if dimensions < 2 {
+		dimensions = 2
+	}
+	vector := make([]float32, dimensions)
+	vector[0] = float32(inputNumber + 1)
+	vector[1] = 1
+	return vector
 }
 
 func crossL2(vector []float32) float64 {

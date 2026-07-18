@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -13,20 +14,17 @@ const testEmbeddingModel = "test-embedding-model"
 var testEmbeddingPricing = EmbeddingPricing{InputToken: 11}
 
 type fakeEmbeddingProvider struct {
-	name       string
-	models     map[string]EmbeddingPricing
-	trips      []*EmbedRoundTrip
-	embedFn    func(context.Context, *EmbedRequest) *EmbedRoundTrip
-	calls      []EmbedRequest
-	nameCalls  int
-	priceCalls []string
+	name      string
+	trips     []*EmbedRoundTrip
+	embedFn   func(context.Context, *EmbedRequest) *EmbedRoundTrip
+	calls     []EmbedRequest
+	nameCalls int
 }
 
 func newFakeEmbeddingProvider(trips ...*EmbedRoundTrip) *fakeEmbeddingProvider {
 	return &fakeEmbeddingProvider{
-		name:   "fake-embeddings",
-		models: map[string]EmbeddingPricing{testEmbeddingModel: testEmbeddingPricing},
-		trips:  trips,
+		name:  "fake-embeddings",
+		trips: trips,
 	}
 }
 
@@ -48,17 +46,11 @@ func (p *fakeEmbeddingProvider) Name() string {
 	return p.name
 }
 
-func (p *fakeEmbeddingProvider) Pricing(model string) (EmbeddingPricing, bool) {
-	p.priceCalls = append(p.priceCalls, model)
-	pricing, ok := p.models[model]
-	return pricing, ok
-}
-
 func TestEmbedRejectsMissingConfigWithoutProviderCall(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("missing provider", func(t *testing.T) {
-		// R-Y87O-NUL7
+		// R-D5AV-SNAL
 		_, err := (&Embedder{Model: testEmbeddingModel}).Embed(ctx, []string{"hello"}, InputQuery)
 		if !errors.Is(err, ErrInvalidConfig) {
 			t.Fatalf("Embed() error = %v, want ErrInvalidConfig", err)
@@ -66,7 +58,7 @@ func TestEmbedRejectsMissingConfigWithoutProviderCall(t *testing.T) {
 	})
 
 	t.Run("missing model", func(t *testing.T) {
-		// R-Y87O-NUL7
+		// R-D5AV-SNAL
 		provider := newFakeEmbeddingProvider()
 		_, err := (&Embedder{Provider: provider}).Embed(ctx, []string{"hello"}, InputQuery)
 		if !errors.Is(err, ErrInvalidConfig) {
@@ -75,23 +67,20 @@ func TestEmbedRejectsMissingConfigWithoutProviderCall(t *testing.T) {
 		if len(provider.calls) != 0 {
 			t.Fatalf("provider calls = %d, want 0", len(provider.calls))
 		}
-		if len(provider.priceCalls) != 0 {
-			t.Fatalf("pricing calls = %d, want 0", len(provider.priceCalls))
-		}
 	})
 
-	t.Run("unknown model", func(t *testing.T) {
-		// R-Y87O-NUL7
+	t.Run("uncataloged model reaches provider", func(t *testing.T) {
+		// R-D5AV-SNAL
 		provider := newFakeEmbeddingProvider()
-		_, err := (&Embedder{Provider: provider, Model: "unknown-model"}).Embed(ctx, []string{"hello"}, InputQuery)
-		if !errors.Is(err, ErrInvalidConfig) {
-			t.Fatalf("Embed() error = %v, want ErrInvalidConfig", err)
+		result, err := (&Embedder{Provider: provider, Model: "uncataloged-model"}).Embed(ctx, []string{"hello"}, InputQuery)
+		if err != nil {
+			t.Fatalf("Embed() error = %v, want nil", err)
 		}
-		if len(provider.calls) != 0 {
-			t.Fatalf("provider calls = %d, want 0", len(provider.calls))
+		if result == nil {
+			t.Fatal("Embed() result = nil, want non-nil")
 		}
-		if got, want := provider.priceCalls, []string{"unknown-model"}; !reflect.DeepEqual(got, want) {
-			t.Fatalf("pricing calls = %#v, want %#v", got, want)
+		if len(provider.calls) != 1 || provider.calls[0].Model != "uncataloged-model" {
+			t.Fatalf("provider calls = %#v, want one call with uncataloged model", provider.calls)
 		}
 	})
 }
@@ -117,14 +106,37 @@ func TestEmbedRejectsEmptyInputsWithoutProviderCall(t *testing.T) {
 			if len(provider.calls) != 0 {
 				t.Fatalf("provider calls = %d, want 0", len(provider.calls))
 			}
-			if len(provider.priceCalls) != 0 {
-				t.Fatalf("pricing calls = %d, want 0", len(provider.priceCalls))
-			}
 		})
 	}
 }
 
+func TestEmbedRejectsMismatchedReturnedDimensions(t *testing.T) {
+	// R-D6IS-6F1A
+	provider := newFakeEmbeddingProvider(NewEmbedRoundTrip(
+		[][]float32{{1, 2, 3}},
+		EmbeddingUsage{InputTokens: 1, Total: 1},
+		nil,
+		nil,
+	))
+	embedder := &Embedder{Provider: provider, Model: testEmbeddingModel, Dimensions: 2}
+
+	result, err := embedder.Embed(context.Background(), []string{"hello"}, InputQuery)
+	if result != nil {
+		t.Fatalf("Embed() result = %#v, want nil", result)
+	}
+	if !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("Embed() error = %v, want ErrInvalidConfig", err)
+	}
+	if got := err.Error(); !strings.Contains(got, "requested embedding dimension 2") || !strings.Contains(got, "returned 3") {
+		t.Fatalf("Embed() error = %q, want requested and returned dimensions", got)
+	}
+	if embedder.TotalUsage() != (EmbeddingUsage{}) || embedder.TotalCost() != 0 {
+		t.Fatalf("failed call updated totals to %#v/%d", embedder.TotalUsage(), embedder.TotalCost())
+	}
+}
+
 func TestEmbedAccountsUsageAndCostAcrossSuccessfulCalls(t *testing.T) {
+	// R-D2V3-13T7
 	// R-YFJ2-YH1D
 	// R-YQI6-EEPM
 	firstUsage := EmbeddingUsage{InputTokens: 3, Total: 5}
@@ -144,7 +156,8 @@ func TestEmbedAccountsUsageAndCostAcrossSuccessfulCalls(t *testing.T) {
 	embedder := &Embedder{
 		Provider:   provider,
 		Model:      testEmbeddingModel,
-		Dimensions: 256,
+		Pricing:    &testEmbeddingPricing,
+		Dimensions: 2,
 		Retry:      retry,
 	}
 
@@ -168,7 +181,7 @@ func TestEmbedAccountsUsageAndCostAcrossSuccessfulCalls(t *testing.T) {
 		Model:      testEmbeddingModel,
 		Inputs:     []string{"hello", "world"},
 		Role:       InputQuery,
-		Dimensions: 256,
+		Dimensions: 2,
 		Retry:      retry,
 	}); !reflect.DeepEqual(got, want) {
 		t.Fatalf("first request = %#v, want %#v", got, want)
@@ -194,12 +207,50 @@ func TestEmbedAccountsUsageAndCostAcrossSuccessfulCalls(t *testing.T) {
 	}
 }
 
+func TestEmbedWarnsForUnknownCostOnEveryUnpricedCall(t *testing.T) {
+	// R-D42Z-EVJW
+	usage := EmbeddingUsage{InputTokens: 3, Total: 3}
+	provider := newFakeEmbeddingProvider(
+		NewEmbedRoundTrip([][]float32{{1, 0}}, usage, nil, nil),
+		NewEmbedRoundTrip([][]float32{{0, 1}}, usage, nil, nil),
+		NewEmbedRoundTrip([][]float32{{1, 1}}, usage, nil, nil),
+	)
+	embedder := &Embedder{Provider: provider, Model: testEmbeddingModel}
+
+	for call := 1; call <= 2; call++ {
+		result, err := embedder.Embed(context.Background(), []string{"hello"}, InputDocument)
+		if err != nil {
+			t.Fatalf("unpriced Embed() call %d error = %v", call, err)
+		}
+		if result.Cost() != 0 {
+			t.Fatalf("unpriced Embed() call %d Cost() = %d, want 0", call, result.Cost())
+		}
+		if got, want := result.Warnings, []Warning{{Setting: "cost", Code: WarnCostUnknown, Detail: "no consumer-supplied cost; applied 0"}}; !reflect.DeepEqual(got, want) {
+			t.Fatalf("unpriced Embed() call %d warnings = %#v, want %#v", call, got, want)
+		}
+	}
+
+	embedder.Pricing = &testEmbeddingPricing
+	result, err := embedder.Embed(context.Background(), []string{"priced"}, InputDocument)
+	if err != nil {
+		t.Fatalf("priced Embed() error = %v", err)
+	}
+	if len(result.Warnings) != 0 {
+		t.Fatalf("priced Embed() warnings = %#v, want none", result.Warnings)
+	}
+	if result.Cost() != testEmbeddingPricing.Cost(usage) {
+		t.Fatalf("priced Embed() Cost() = %d, want %d", result.Cost(), testEmbeddingPricing.Cost(usage))
+	}
+}
+
 func TestEmbeddingPricingCostUsesInputTokensOnly(t *testing.T) {
+	// R-D8YK-XYIO
 	// R-YQI6-EEPM
 	pricing := EmbeddingPricing{InputToken: 13}
 	usage := EmbeddingUsage{InputTokens: 17, Total: 999}
 	want := Cost(17 * 13)
-	if got := pricing.Cost(usage); got != want {
+	var got Cost = pricing.Cost(usage)
+	if got != want {
 		t.Fatalf("EmbeddingPricing.Cost() = %d, want %d", got, want)
 	}
 }

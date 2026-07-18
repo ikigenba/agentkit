@@ -1083,7 +1083,13 @@ func TestOpenAIEmbeddingRegistryGoldens(t *testing.T) {
 		if !ok || spec != wantSpecs[model] {
 			t.Fatalf("EmbeddingSpec(%q) = %#v/%v, want %#v/true", model, spec, ok, wantSpecs[model])
 		}
-		pricing, ok := provider.Pricing(model)
+		pricingProvider, ok := provider.(interface {
+			Pricing(string) (agentkit.EmbeddingPricing, bool)
+		})
+		if !ok {
+			t.Fatal("NewEmbedder() concrete provider has no transitional Pricing method")
+		}
+		pricing, ok := pricingProvider.Pricing(model)
 		// R-YU5V-JPXP, R-YWLO-B9F3
 		if !ok || pricing != wantPricing[model] {
 			t.Fatalf("Pricing(%q) = %#v/%v, want %#v/true", model, pricing, ok, wantPricing[model])

@@ -687,7 +687,9 @@ func TestGoogleEmbedderBatchesUsageOrderAndRequestShape(t *testing.T) {
 			parts := field[[]any](t, content, "parts")
 			input := field[string](t, parts[0].(map[string]any), "text")
 			n := googleEmbeddingInputNumber(input)
-			embeddings[i] = map[string]any{"values": []float32{float32(n + 1), 1}}
+			vector := make([]float32, 128)
+			vector[0], vector[1] = float32(n+1), 1
+			embeddings[i] = map[string]any{"values": vector}
 		}
 		writeGoogleEmbeddingResponse(t, w, embeddings, int64(len(items)))
 	}))
@@ -734,7 +736,9 @@ func TestGoogleEmbeddingInputTypes(t *testing.T) {
 		decodeRequest(t, r, &body)
 		item := field[[]any](t, body, "requests")[0].(map[string]any)
 		taskTypes = append(taskTypes, item["taskType"])
-		writeGoogleEmbeddingResponse(t, w, []map[string]any{{"values": []float32{3, 4}}}, 1)
+		vector := make([]float32, 128)
+		vector[0], vector[1] = 3, 4
+		writeGoogleEmbeddingResponse(t, w, []map[string]any{{"values": vector}}, 1)
 	}))
 	defer server.Close()
 
@@ -933,7 +937,13 @@ func TestGoogleEmbeddingRegistryGoldens(t *testing.T) {
 	if !ok || spec != (agentkit.EmbeddingSpec{NativeDimension: 3072, MinDimension: 128, MaxDimension: 3072, MaxInputTokens: 2048}) {
 		t.Fatalf("EmbeddingSpec(%q) = %#v/%v, want D20 spec", EmbedModelGemini001, spec, ok)
 	}
-	pricing, ok := provider.Pricing(EmbedModelGemini001)
+	pricingProvider, ok := provider.(interface {
+		Pricing(string) (agentkit.EmbeddingPricing, bool)
+	})
+	if !ok {
+		t.Fatal("NewEmbedder() concrete provider has no transitional Pricing method")
+	}
+	pricing, ok := pricingProvider.Pricing(EmbedModelGemini001)
 	// R-YU5V-JPXP, R-YWLO-B9F3
 	if !ok || pricing != (agentkit.EmbeddingPricing{InputToken: 150}) {
 		t.Fatalf("Pricing(%q) = %#v/%v, want InputToken=150", EmbedModelGemini001, pricing, ok)

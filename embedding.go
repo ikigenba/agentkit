@@ -16,7 +16,6 @@ const (
 type EmbeddingProvider interface {
 	Embed(ctx context.Context, req *EmbedRequest) *EmbedRoundTrip
 	Name() string
-	Pricing(model string) (EmbeddingPricing, bool)
 }
 
 // EmbedRequest is one embedding provider call's input, built by Embedder.
