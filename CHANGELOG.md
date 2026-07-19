@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.7.0
+
+- Added the `toolkit` subpackage with six standard coding tools—`Bash`, `Read`,
+  `Write`, `Edit`, `Glob`, and `Grep`—as ready-made `agentkit.Tool` values via
+  per-tool constructors and `All(root)`.
+- Confined file operations to their configured root with symlink-aware path
+  checks. `Bash` remains a shell-command escape hatch and does not provide the
+  same filesystem confinement.
+- Capped tool results at 30,000 characters, made `Edit` refuse ambiguous
+  matches, and gave `Bash` timeout handling that kills the command's process
+  group.
+- Added recursive `**` globbing and made search skip `.git` contents and binary
+  files.
+
 ## v0.6.0 — 2026-07-18
 
 - Added catalog entries for the vendors reachable only through OpenRouter: xAI
