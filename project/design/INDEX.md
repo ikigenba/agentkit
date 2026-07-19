@@ -52,6 +52,14 @@ One line per Decision, in number order — file, label, and the Verification ids
   - ids: R-DG9Z-8KYU, R-PV6N-URM6, R-PWEK-8JCV, R-DHHV-MCPJ, R-PXMG-MB3K, R-DL5K-RNXM, R-DJXO-DW6X
 - **D26** `project/design/D26.md` — The advisory model catalog: `agentkit/catalog`
   - ids: R-4MB8-ERDC, R-4NJ4-SJ41, R-DMDH-5FOB, R-DNLD-J7F0, R-DOT9-WZ5P, R-DQ16-AQWE, R-DR92-OIN3, R-DSGZ-2ADS
+- **D27** `project/design/D27.md` — The `toolkit` subpackage: standard coding tools, root confinement, output cap
+  - ids: R-LQ1Y-XASG, R-LR9V-B2J5, R-LSHR-OU9U, R-LTPO-2M0J, R-LUXK-GDR8, R-LW5G-U5HX
+- **D28** `project/design/D28.md` — `toolkit`: `Read`, `Write`, `Edit` semantics
+  - ids: R-LXDD-7X8M, R-LYL9-LOZB, R-LZT5-ZGQ0, R-M28Y-R07E, R-M3GV-4RY3, R-M4OR-IJOS, R-M5WN-WBFH, R-M74K-A366
+- **D29** `project/design/D29.md` — `toolkit`: `Bash` semantics
+  - ids: R-M8CG-NUWV, R-M9KD-1MNK, R-MAS9-FEE9, R-MC05-T64Y, R-MD82-6XVN
+- **D30** `project/design/D30.md` — `toolkit`: `Glob` and `Grep` semantics
+  - ids: R-MEFY-KPMC, R-MFNU-YHD1, R-MGVR-C93Q, R-MJBK-3SL4, R-MKJG-HKBT, R-MLRC-VC2I, R-MMZ9-93T7, R-MO75-MVJW, R-MPF2-0NAL
 
 ## Verification ids → Decision
 Every minted id, sorted, mapped to its Decision and file (grep target for id lookup).
@@ -163,6 +171,34 @@ R-IWR9-0OTQ  D21  project/design/D21.md
 R-IXZ5-EGKF  D21  project/design/D21.md
 R-IZ71-S8B4  D21  project/design/D21.md
 R-J0EY-601T  D21  project/design/D21.md
+R-LQ1Y-XASG  D27  project/design/D27.md
+R-LR9V-B2J5  D27  project/design/D27.md
+R-LSHR-OU9U  D27  project/design/D27.md
+R-LTPO-2M0J  D27  project/design/D27.md
+R-LUXK-GDR8  D27  project/design/D27.md
+R-LW5G-U5HX  D27  project/design/D27.md
+R-LXDD-7X8M  D28  project/design/D28.md
+R-LYL9-LOZB  D28  project/design/D28.md
+R-LZT5-ZGQ0  D28  project/design/D28.md
+R-M28Y-R07E  D28  project/design/D28.md
+R-M3GV-4RY3  D28  project/design/D28.md
+R-M4OR-IJOS  D28  project/design/D28.md
+R-M5WN-WBFH  D28  project/design/D28.md
+R-M74K-A366  D28  project/design/D28.md
+R-M8CG-NUWV  D29  project/design/D29.md
+R-M9KD-1MNK  D29  project/design/D29.md
+R-MAS9-FEE9  D29  project/design/D29.md
+R-MC05-T64Y  D29  project/design/D29.md
+R-MD82-6XVN  D29  project/design/D29.md
+R-MEFY-KPMC  D30  project/design/D30.md
+R-MFNU-YHD1  D30  project/design/D30.md
+R-MGVR-C93Q  D30  project/design/D30.md
+R-MJBK-3SL4  D30  project/design/D30.md
+R-MKJG-HKBT  D30  project/design/D30.md
+R-MLRC-VC2I  D30  project/design/D30.md
+R-MMZ9-93T7  D30  project/design/D30.md
+R-MO75-MVJW  D30  project/design/D30.md
+R-MPF2-0NAL  D30  project/design/D30.md
 R-OMKB-AY19  D9  project/design/D09.md
 R-OUE3-L8VS  D9  project/design/D09.md
 R-P3LQ-QY2X  D11  project/design/D11.md

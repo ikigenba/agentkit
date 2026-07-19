@@ -22,7 +22,7 @@ Go developers building applications that talk to LLMs. AgentKit's first and most
 
 ## Scope
 
-AgentKit covers **two capabilities — a chat surface and an embeddings surface** — sharing one set of foundations (explicit credentials, uniform errors, automatic retry, uniform usage, dollar-cost accounting, and an advisory model catalog).
+AgentKit covers **two capabilities — a chat surface and an embeddings surface** — sharing one set of foundations (explicit credentials, uniform errors, automatic retry, uniform usage, dollar-cost accounting, and an advisory model catalog), plus one bundled convenience: a **coding toolkit** of ready-made local tools for consumers building coding agents.
 
 ### Chat
 
@@ -48,6 +48,14 @@ AgentKit covers **two capabilities — a chat surface and an embeddings surface*
 - **Target dimension, optional.** A consumer may request a target vector dimension; AgentKit returns vectors of exactly that size or **fails loudly** — it never silently returns a different size, whether the provider rejected the request or quietly ignored it. The default is the model's native dimension. This is **per-model** configuration; AgentKit promises no cross-provider dimension parity — vectors from different models are not comparable regardless of dimension, and matching dimensions across models is a consumer storage-schema choice AgentKit neither knows nor promises.
 - **Normalized vectors.** The vectors AgentKit returns are **unit-normalized**, uniformly across providers and dimensions, so similarity math behaves identically regardless of which provider or dimension produced them.
 - **Inspectable model capabilities via the catalog.** For embedding models the advisory catalog covers, a consumer can obtain the model's native dimension, the dimensions it can produce, and its maximum input size — so a consumer can present and validate a choice up front, without embedding provider knowledge of its own. An uncataloged model carries no such metadata; its constraints are judged by the provider at call time.
+
+### Coding toolkit
+
+- **The standard local coding tool set, ready-made.** The tools a coding agent needs — running shell commands, reading, writing, and editing files, finding files by pattern, and searching file contents — available as a bundled set the consumer hands to a conversation instead of writing them itself. Every consumer building a coding agent on AgentKit today rewrites these same tools; the toolkit exists so they stop.
+- **Rooted where the consumer says.** The consumer names a working directory; the tools operate there. The file tools refuse to reach outside it — including sneaky routes — so an agent's accidents stay inside the directory it was given.
+- **Honest about the shell.** A shell command can inherently reach anywhere the process can; the toolkit says so plainly rather than pretending the root confines it. The confinement promise is protection against agent accidents, not a security sandbox.
+- **Bounded output.** No tool floods the conversation: oversized results come back cut to a bounded size with a visible notice saying so, and the agent can narrow its request to see more.
+- **Edits fail loudly on ambiguity.** A text edit that could land in more than one place is refused rather than applied to a guessed location, so an unattended agent never silently corrupts a file it meant to change elsewhere.
 
 ### Shared foundations (both capabilities)
 
@@ -110,6 +118,15 @@ These fixed, promised values the design must use verbatim and never re-declare:
 - **Over-long input fails loud.** An input that exceeds the model's size limit produces a clear error; AgentKit never silently truncates an input and returns a vector as if the whole text had been embedded. Dividing an over-long text into pieces is the consumer's deliberate choice.
 - **Inspectable model capabilities for cataloged models.** For embedding models the catalog covers, the consumer can obtain the model's native dimension, producible dimensions, and maximum input size up front, without provider-specific knowledge of its own.
 
+### Coding toolkit
+
+- **One call equips an agent.** A consumer hands the toolkit's tool set, rooted at a directory of their choice, to a conversation, and the model can run commands, read, write, and edit files, find files by pattern, and search contents within that directory — without the consumer implementing any tool itself.
+- **Escapes are refused.** A file operation that would land outside the consumer's chosen directory — by relative path or by symlink — is refused with a clear error instead of touching anything outside.
+- **Ambiguous edits are refused.** An edit whose target text appears in more than one place is rejected (unless the consumer's agent explicitly asked to replace them all), never applied to a guessed occurrence.
+- **Output stays bounded.** A command or search producing outsized output reaches the model cut to a bounded size with a visible truncation notice — never silently dropped, never unbounded.
+- **Hung commands do not hang the agent.** A shell command that never finishes is stopped after a time limit (adjustable per call), together with anything it spawned, and the agent sees what happened.
+- **Searches skip the noise.** Content searches skip version-control internals and binary files, so results reflect the code the agent actually works on.
+
 ### Shared (both capabilities)
 
 - **Uniform, inspectable errors.** Failures arrive as a uniform, classifiable set of errors so the consumer never needs provider-specific error knowledge, and each error carries the raw provider error response inside it for inspection.
@@ -154,6 +171,15 @@ These fixed, promised values the design must use verbatim and never re-declare:
 - Every returned vector is unit-normalized, regardless of provider or requested dimension.
 - An input that exceeds the selected model's size limit produces a clear error; AgentKit never silently truncates the input.
 - For an embedding model the catalog covers, a consumer can obtain that model's native dimension, producible dimensions, and maximum input size — without provider-specific knowledge of its own.
+
+### Coding toolkit
+
+- A consumer can equip a conversation with the bundled tool set rooted at a directory of their choice, and the model can run shell commands, read, write, and edit files, find files by pattern, and search file contents there — with the consumer having written no tool code.
+- A file operation aimed outside the chosen directory — directly or through a symlink — is refused with a clear error and nothing outside is touched.
+- An edit whose target text is ambiguous in the file is refused rather than applied to a guessed location; an explicit replace-everywhere request replaces every occurrence.
+- A command or search with outsized output reaches the model bounded, carrying a visible notice that it was cut.
+- A shell command that never finishes is stopped after its time limit along with the processes it spawned, and the agent sees that it timed out.
+- Content searches return matches from the working code, not from version-control internals or binary files.
 
 ### Shared
 

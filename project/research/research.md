@@ -767,3 +767,24 @@ The official codex CLI's `~/.codex/auth.json` is a **different wrapper shape** (
 ### 15.4 Cost
 
 The backend reports **no cost** and the subscription is flat-rate; the only computable per-call figure is API-rate-equivalent pricing. Decision: subscription-mode turns are costed exactly like API-key turns (catalog/consumer-supplied rates), documented as **notional API-rate-equivalent, not actual spend**. No flag distinguishes it — documentation only.
+
+## 16. Local coding tools — prior art for the `toolkit` subpackage
+
+Three implementations of the same "coding agent" tool family already exist and inform the toolkit's semantics; the toolkit exists so consumers stop re-writing this set.
+
+### 16.1 The two in-family implementations
+
+- **agent-repl** (`github.com/ikigenba/agentrepl`, `internal/tools`, ~95 lines): the minimal four — `bash`, `read`, `write`, `edit` (lowercase names) — cwd-relative, no path confinement, `edit` replaces **all** occurrences unconditionally, `bash -lc`, nonzero exit rendered as a trailing `[exit status N]` on a **normal** result (nil error).
+- **prompts service** (`ikigenba/main/prompts`, `internal/tools`, ~694 lines): the full six with **TitleCase names** (`Bash`, `Read`, `Write`, `Edit`, `Glob`, `Grep`), rooted at a sandbox dir with symlink-aware escape rejection (`confinePath` resolves the existing prefix of a path via `EvalSymlinks` before the containment check), `Read` with 1-based `offset`/`limit` line slicing, `Edit` with `old_string`/`new_string`/`replace_all` (first-occurrence when unset — no uniqueness guard), `Glob` via `filepath.Glob` returning a sorted JSON array of base-relative slash paths, `Grep` walking with `regexp` returning sorted `file:line:text` JSON, `bash -c` with cwd = root and a **Go error** on nonzero exit. No output caps, no `.git`/binary skipping, no timeout.
+
+### 16.2 Field conventions models are trained on (Claude Code)
+
+- Tool names are TitleCase: `Bash`, `Read`, `Write`, `Edit`, `Glob`, `Grep`; input fields `file_path`, `old_string`, `new_string`, `replace_all`, `offset`, `limit`, `command`, `timeout`.
+- Bash output is truncated at **30,000 characters** by default (`BASH_MAX_OUTPUT_LENGTH`); `timeout` is an optional per-call input in **milliseconds** with a 120,000 ms default.
+- `Edit` **errors when `old_string` is not unique** unless `replace_all` — the guard that prevents silent wrong-location edits.
+- `Glob` supports `**` recursive patterns; models use `**/*.go` reflexively.
+
+### 16.3 Stdlib constraints
+
+- `filepath.Glob`/`fs.Glob` implement plain `path.Match` semantics — **no `**` support**; `**` degrades to a single `*` segment silently. Recursive matching therefore needs a hand-rolled `WalkDir` + per-segment match (the no-new-dependencies rule excludes `doublestar`).
+- The classic git binary heuristic — a NUL byte in the first 8 KB — is trivially implementable with stdlib and matches user expectations for "grep skips binaries".
