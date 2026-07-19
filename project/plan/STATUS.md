@@ -4,6 +4,5 @@ The manifest, and a work **queue**: one line per **pending** phase, in build ord
 
 Next phase: 73
 
-- Phase 70 ⬜ realizes D27, D28 — `toolkit` package: skeleton, confinement, output cap, and the `Read`/`Write`/`Edit` file tools
 - Phase 71 ⬜ realizes D29, D30 — `toolkit`: `Bash`, `Glob`, and `Grep`
 - Phase 72 ⬜ realizes — — release: minor version bump to v0.7.0
