@@ -4,5 +4,4 @@ The manifest, and a work **queue**: one line per **pending** phase, in build ord
 
 Next phase: 73
 
-- Phase 71 ⬜ realizes D29, D30 — `toolkit`: `Bash`, `Glob`, and `Grep`
 - Phase 72 ⬜ realizes — — release: minor version bump to v0.7.0
