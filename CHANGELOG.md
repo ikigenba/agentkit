@@ -2,6 +2,26 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.8.0
+
+- Added the `ocr` subpackage with an `OCR` tool that extracts text from scanned
+  PDFs and raster images using OpenRouter's `file-parser` plugin. Consumers
+  construct it with `ocr.New(ocr.APIKey(key), opts...)` and wire it into an
+  agent with `ocr.Tool(root, cacheDir, backend)`.
+- Wrote extraction artifacts—the raw provider response and a derived
+  `transcript.md`—to the consumer-named cache directory. Repeated calls for
+  unchanged input are served without a new provider request, and results return
+  a bounded preview plus the transcript path so large documents do not flood
+  the conversation.
+- Normalized images to one-page PDFs so PDFs and images follow the same
+  extraction path.
+- Surfaced failed or empty extractions as errors without caching them, including
+  provider errors returned with a `200` status.
+- Changed `toolkit.Read` to refuse non-text files with an error that names the
+  detected content type, rather than decoding binary data as text. Detection is
+  based on content rather than the file extension; this change can affect
+  existing consumers that used `Read` with binary files.
+
 ## v0.7.0
 
 - Added the `toolkit` subpackage with six standard coding tools—`Bash`, `Read`,
