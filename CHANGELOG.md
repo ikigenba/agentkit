@@ -2,6 +2,24 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.9.0
+
+- Changed `ocr.Tool` to return a transcript path under `<root>/ocr/` instead of
+  under the consumer's cache directory. Consumers that stored, logged, or
+  post-processed the returned path now receive the new location.
+- Changed the cache layout to one `<stem>-<hash8>.json` file per document,
+  replacing each `<stem>-<hash8>/` directory that contained `response.json` and
+  `transcript.md`. This invalidates every existing cache entry: old entries are
+  neither read nor migrated, so the first call for each document after upgrading
+  re-extracts the document and incurs the provider charge again.
+- Allowed the cache directory to live outside the agent's working directory and
+  remain durable across runs while keeping the transcript under the root where
+  the agent's file tools can open it. The previous layout could not provide both
+  behaviors at once.
+- Changed cached responses whose transcript can no longer be derived to return
+  an error instead of silently re-extracting and re-billing the document.
+  Corrupt or unreadable cache entries now surface to the consumer.
+
 ## v0.8.0
 
 - Added the `ocr` subpackage with an `OCR` tool that extracts text from scanned
