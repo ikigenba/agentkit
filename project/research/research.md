@@ -877,13 +877,15 @@ All four returned identical prompt-token counts, meaning the image was tokenized
 
 ### 17.8 Cost and scale reference (measured)
 
+"Transcript chars" below is the **sum of the `type == "text"` items only** — what actually reaches a transcript. Do not confuse it with the JSON-encoded size of `file.content`, which is dominated by base64 `image_url` payloads and runs far larger (for the 114-page book, 920k encoded versus 560k of actual text).
+
 | pages | transcript chars | prompt tokens | cost | wall time |
 |---|---|---|---|---|
 | 1 (wrapped image) | 1,508 | 1,682 | $0.0048 | 4.2s |
-| 2 | 2,403 | 1,991 | $0.0072 | 4.1s |
-| 8 (dense tables) | 22,968 | 11,390 | $0.0333 | 5.9s |
+| 2 | 2,399 | 1,991 | $0.0072 | 4.1s |
+| 8 (dense tables) | 22,957 | 11,390 | $0.0333 | 5.9s |
 | 38 | 77,902 | 23,644 | $0.0784 | 7.4s |
 | 88 | 397,833 | 118,426 | $0.1878 | 16.0s |
-| 114 | ~920,000 | 158,051 | $0.2438 | 20.2s |
+| 114 | 559,805 | 158,051 | $0.2438 | 20.2s |
 
-Steady at roughly **$0.002 per page**. Note the scale gap between typical and tail: a bank statement is 2–8 pages and ~5–23k characters, while a scanned book is ~900k characters — about 30× any sane single tool-result cap. That gap is what forces extraction to disk rather than an inline return, and makes caching load-bearing rather than a nicety.
+Steady at roughly **$0.002 per page**. Note the scale gap between typical and tail: a bank statement is 2–8 pages and ~2–23k characters, while a scanned book is ~560k characters — roughly 19× any sane single tool-result cap. That gap is what forces extraction to disk rather than an inline return, and makes caching load-bearing rather than a nicety.
