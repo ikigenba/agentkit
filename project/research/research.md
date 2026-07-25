@@ -869,7 +869,7 @@ All four returned identical prompt-token counts, meaning the image was tokenized
 
 ### 17.7 Fidelity characteristics (measured, not defects to fix)
 
-- **Tables come back as Markdown pipe tables**, and transaction tables extracted cleanly: `| Mar 03 | Mar 04 | EXAMPLE MERCHANTANYTOWNXX | $12.34 |`.
+- **Tables come back as Markdown pipe tables**, and transaction tables extracted cleanly: `| Mar 03 | Mar 04 | EXAMPLE MERCHANTANYTOWNXX | $12.34 |` (figures here and below are synthetic; real statements were used for the measurements but are not reproduced).
 - **Values can land in the wrong column.** Reproduced in three separate runs on the same statement: `| Average Balance (Ledger) | 1,234.56+ |   |` puts the figure under *Number* instead of *Amount*. The engine is faithful to where ink sits, not to what a column means. Mitigation is to validate figures against the document's own totals, never column position.
 - **Whitespace inside a cell is unreliable** — `EXAMPLE STOREANYTOWNXX` runs merchant, city, and state together. Never split a cell on spaces.
 - Logos degrade to their word mark; photographs become `![img-0.jpeg]` references; advertising copy is extracted in full as ordinary headings, so a classifier must expect to ignore it.
