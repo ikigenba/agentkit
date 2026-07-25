@@ -27,6 +27,14 @@ type APIKey string
 // Option configures a Client.
 type Option func(*Client)
 
+// WithModel sets the inexpensive chat model charged for receiving the parser's
+// output. The model does not perform the OCR.
+func WithModel(model string) Option {
+	return func(c *Client) {
+		c.model = model
+	}
+}
+
 // WithBaseURL points the client at an alternate API root.
 func WithBaseURL(baseURL string) Option {
 	return func(c *Client) {
@@ -43,11 +51,8 @@ func WithHTTPClient(client *http.Client) Option {
 
 // Client sends documents to OpenRouter's file-parser plugin.
 type Client struct {
-	// Model is the inexpensive chat model charged for receiving the parser's
-	// output. It does not perform the OCR.
-	Model string
-
 	apiKey     string
+	model      string
 	baseURL    string
 	httpClient *http.Client
 	clock      retry.Clock
@@ -107,7 +112,7 @@ func (c *Client) Do(ctx context.Context, filename string, document []byte) ([]by
 	if err != nil {
 		return nil, fmt.Errorf("ocr: normalize document: %w", err)
 	}
-	model := c.Model
+	model := c.model
 	if model == "" {
 		model = defaultModel
 	}

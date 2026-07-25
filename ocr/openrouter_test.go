@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -83,17 +84,36 @@ func TestOpenRouterRequestModelDefaultAndOverride(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := New(APIKey("test-key"), WithBaseURL(server.URL), WithHTTPClient(server.Client()))
 	pdf := []byte("%PDF-1.4\nfixture")
-	if _, err := client.Do(context.Background(), "default.pdf", pdf); err != nil {
+	defaultClient := New(APIKey("test-key"), WithBaseURL(server.URL), WithHTTPClient(server.Client()))
+	if _, err := defaultClient.Do(context.Background(), "default.pdf", pdf); err != nil {
 		t.Fatal(err)
 	}
-	client.Model = "vendor/set-verbatim"
-	if _, err := client.Do(context.Background(), "override.pdf", pdf); err != nil {
+	overrideClient := New(
+		APIKey("test-key"),
+		WithModel("vendor/x"),
+		WithBaseURL(server.URL),
+		WithHTTPClient(server.Client()),
+	)
+	if _, err := overrideClient.Do(context.Background(), "override.pdf", pdf); err != nil {
 		t.Fatal(err)
 	}
-	want := []string{defaultModel, "vendor/set-verbatim"}
+	want := []string{defaultModel, "vendor/x"}
 	if len(models) != len(want) || models[0] != want[0] || models[1] != want[1] {
 		t.Fatalf("models = %q, want %q", models, want)
+	}
+}
+
+func TestClientHasNoExportedFields(t *testing.T) {
+	// R-GMLN-XC8W
+	clientType := reflect.TypeOf(Client{})
+	exported := 0
+	for i := 0; i < clientType.NumField(); i++ {
+		if clientType.Field(i).IsExported() {
+			exported++
+		}
+	}
+	if exported != 0 {
+		t.Fatalf("Client has %d exported fields, want zero", exported)
 	}
 }
