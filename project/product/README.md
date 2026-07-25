@@ -66,7 +66,8 @@ AgentKit covers **two capabilities — a chat surface and an embeddings surface*
 - **Not part of the coding toolkit, deliberately.** The coding tools are free, offline, instant, and confined to a directory; this one costs money per page, needs a credential, and sends the document to a third-party service. Keeping it separate is what keeps the toolkit's confinement promise honest — a tool that refuses to read outside your directory while uploading a file inside it would make that promise misleading.
 - **Text out, tables preserved.** The extracted text keeps the document's structure — headings and tables — rather than being flattened into an undifferentiated wall.
 - **Big documents do not flood the conversation.** The consumer names a directory where extractions are kept; the agent gets the document's text back directly when it is small enough, and otherwise gets the beginning of it plus a path to the whole thing, which it can then search and page through with the ordinary file tools.
-- **Extraction is paid for once.** Re-reading the same unchanged document does not re-run (or re-bill) the extraction. Changing the document does.
+- **Where extractions are kept is the consumer's choice, and never limits the agent.** The kept-extraction directory is independent of the agent's working directory and may sit outside it, so a consumer can keep extractions somewhere durable that outlives any one agent's working directory. Whatever the consumer chooses, the text the agent is pointed at is always somewhere the agent's own file tools can open.
+- **Extraction is paid for once.** Re-reading the same unchanged document does not re-run (or re-bill) the extraction, including on a later run against a fresh working directory. Changing the document does.
 
 ### Shared foundations (both capabilities)
 
@@ -144,7 +145,7 @@ These fixed, promised values the design must use verbatim and never re-declare:
 ### Document text extraction
 
 - **One call turns a scan into text.** A consumer hands the extraction tool a working directory and a directory to keep extractions in; the model then names a scanned PDF or an image and gets that document's text back, with its headings and tables intact.
-- **The whole document is always available.** Small documents come back complete in the tool's reply. Larger ones come back as their opening pages plus the path to the full text, and the agent reads or searches the rest with the ordinary file tools. Nothing is silently cut: a shortened reply says so and states how much was shown against the total.
+- **The whole document is always available.** Small documents come back complete in the tool's reply. Larger ones come back as their opening pages plus the path to the full text, and the agent reads or searches the rest with the ordinary file tools. That path is always one the agent's own file tools can open, whichever directory the consumer chose to keep extractions in. Nothing is silently cut: a shortened reply says so and states how much was shown against the total.
 - **The text is the document's, not a model's retelling.** What comes back is the extraction itself, never a summary or a paraphrase of it.
 - **Reading the same document twice costs once.** An unchanged document is served from the kept extraction with no new charge; a changed one is extracted again.
 - **Escapes are refused before anything is spent.** A document path pointing outside the consumer's chosen directory is refused without contacting the service, so a rejected path never costs money.
@@ -212,6 +213,7 @@ These fixed, promised values the design must use verbatim and never re-declare:
 - A document small enough to fit comes back complete in the reply; a large one comes back as its opening pages plus a path, and the model can read and search the rest of the text at that path with the ordinary file tools.
 - A shortened reply states that it was shortened and how much was shown against the document's total; a complete one states that it is complete.
 - Extracting the same unchanged document a second time returns the same text without contacting the service again; modifying the document causes a fresh extraction.
+- With the extraction directory placed outside the agent's working directory, the model can still read and search the full text it is pointed at using the ordinary file tools, and a second run using a fresh working directory but the same extraction directory extracts (and bills) nothing again.
 - A document path outside the consumer's chosen directory is refused without any call being made to the service.
 - A failed extraction surfaces the service's own explanation as an error, leaves nothing behind to be re-served later, and never presents an empty result as a successfully-read document.
 

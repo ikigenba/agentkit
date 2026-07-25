@@ -62,8 +62,8 @@ One line per Decision, in number order — file, label, and the Verification ids
   - ids: R-M8CG-NUWV, R-M9KD-1MNK, R-MAS9-FEE9, R-MC05-T64Y, R-MD82-6XVN
 - **D30** `project/design/D30.md` — `toolkit`: `Glob` and `Grep` semantics
   - ids: R-MEFY-KPMC, R-MFNU-YHD1, R-MGVR-C93Q, R-MJBK-3SL4, R-MKJG-HKBT, R-MLRC-VC2I, R-MMZ9-93T7, R-MO75-MVJW, R-MPF2-0NAL
-- **D31** `project/design/D31.md` — The `ocr` package: the document-text tool, its cache, and its preview
-  - ids: R-V1UC-V54E, R-V329-8WV3, R-V4A5-MOLS, R-V6PY-E836, R-V7XU-RZTV, R-V95R-5RKK, R-VADN-JJB9, R-VBLJ-XB1Y, R-VCTG-B2SN, R-VE1C-OUJC, R-VF99-2MA1
+- **D31** `project/design/D31.md` — The `ocr` package: the document-text tool, its cache, and its transcript
+  - ids: R-V1UC-V54E, R-V329-8WV3, R-V4A5-MOLS, R-UTL6-Q86Y, R-V6PY-E836, R-V7XU-RZTV, R-V95R-5RKK, R-UW0Z-HROC, R-UX8V-VJF1, R-VADN-JJB9, R-VBLJ-XB1Y, R-VCTG-B2SN, R-VE1C-OUJC, R-VF99-2MA1
 - **D32** `project/design/D32.md` — OpenRouter document parsing: the request, the response contract, and `Transcript`
   - ids: R-UQV9-F7G5, R-US35-SZ6U, R-GMLN-XC8W, R-UTB2-6QXJ, R-UUIY-KIO8, R-UVQU-YAEX, R-UWYR-C25M, R-UY6N-PTWB, R-UZEK-3LN0, R-V0MG-HDDP
 - **D33** `project/design/D33.md` — Raster normalization: images become one-page PDFs
@@ -250,9 +250,12 @@ R-UPND-1FPG  D33  project/design/D33.md
 R-UQV9-F7G5  D32  project/design/D32.md
 R-US35-SZ6U  D32  project/design/D32.md
 R-UTB2-6QXJ  D32  project/design/D32.md
+R-UTL6-Q86Y  D31  project/design/D31.md
 R-UUIY-KIO8  D32  project/design/D32.md
 R-UVQU-YAEX  D32  project/design/D32.md
+R-UW0Z-HROC  D31  project/design/D31.md
 R-UWYR-C25M  D32  project/design/D32.md
+R-UX8V-VJF1  D31  project/design/D31.md
 R-UY6N-PTWB  D32  project/design/D32.md
 R-UZEK-3LN0  D32  project/design/D32.md
 R-V0MG-HDDP  D32  project/design/D32.md
