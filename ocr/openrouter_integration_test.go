@@ -22,7 +22,7 @@ func TestOpenRouterLiveScannedPDF(t *testing.T) {
 	client := New(APIKey(apiKey))
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	response, err := client.Do(ctx, "scanned-specimen-4242.pdf", source)
+	response, err := client.Do(ctx, "scanned-specimen.pdf", source)
 	if err != nil {
 		t.Fatal(err)
 	}
