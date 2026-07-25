@@ -4,5 +4,4 @@ The manifest, and a work **queue**: one line per **pending** phase, in build ord
 
 Next phase: 81
 
-- Phase 79 ⬜ realizes D31 — split the OCR cache from the OCR transcript
 - Phase 80 ⬜ realizes — — release v0.9.0
