@@ -18,13 +18,32 @@ instead.
 2. Before asking, check whether the answer is discoverable. If exploring the
    codebase or associated documents can settle it, do that instead of asking,
    then report what you found.
-3. When a question genuinely needs my input, state your recommendation and the
+3. **Before recommending any shape, check how this codebase already does it.**
+   Whenever a question touches a surface the project has solved before — how a
+   thing is constructed, named, configured, laid out on disk, how errors are
+   shaped, how a seam is tested, how a fixture is built — read the neighbouring
+   components that already solve it, and match them. Report what you found as
+   part of the recommendation. If you are proposing a *departure* from the
+   established pattern, say so explicitly and justify why this case earns the
+   inconsistency; never present a departure as though it were the house style.
+   Taste is not evidence here; reading the neighbours is.
+4. When a question genuinely needs my input, state your recommendation and the
    reasoning behind it, then ask.
-4. Keep going relentlessly until every aspect of the plan is resolved and we
+5. Keep going relentlessly until every aspect of the plan is resolved and we
    have a shared understanding. Do not stop early because the plan "seems good
    enough."
-5. When there are no unresolved questions left, stop asking questions. Say
+6. When there are no unresolved questions left, stop asking questions. Say
    plainly that the grilling is complete and ask how the operator wants to
    proceed. Do not frame the next workflow step as another grill question, do
    not recommend a next step unless asked, and do not offer direct
    implementation as an option during spec authoring.
+
+## Why step 3 exists
+
+A grilling can interrogate *what* to build exhaustively and still produce a
+defective spec, because "is this how we already do it?" is a different question
+from "is this a good idea?", and only the second comes up naturally in
+conversation. When a spec invents a shape the codebase already has, the build
+loop tends to follow the codebase — leaving the spec describing something that
+was never built. That drift reads like an implementation error but originated
+in authoring. Reading the neighbours is cheap and removes the whole class.
