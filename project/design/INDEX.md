@@ -65,7 +65,7 @@ One line per Decision, in number order — file, label, and the Verification ids
 - **D31** `project/design/D31.md` — The `ocr` package: the document-text tool, its cache, and its preview
   - ids: R-V1UC-V54E, R-V329-8WV3, R-V4A5-MOLS, R-V6PY-E836, R-V7XU-RZTV, R-V95R-5RKK, R-VADN-JJB9, R-VBLJ-XB1Y, R-VCTG-B2SN, R-VE1C-OUJC, R-VF99-2MA1
 - **D32** `project/design/D32.md` — OpenRouter document parsing: the request, the response contract, and `Transcript`
-  - ids: R-UQV9-F7G5, R-US35-SZ6U, R-UTB2-6QXJ, R-UUIY-KIO8, R-UVQU-YAEX, R-UWYR-C25M, R-UY6N-PTWB, R-UZEK-3LN0, R-V0MG-HDDP
+  - ids: R-UQV9-F7G5, R-US35-SZ6U, R-GMLN-XC8W, R-UTB2-6QXJ, R-UUIY-KIO8, R-UVQU-YAEX, R-UWYR-C25M, R-UY6N-PTWB, R-UZEK-3LN0, R-V0MG-HDDP
 - **D33** `project/design/D33.md` — Raster normalization: images become one-page PDFs
   - ids: R-UJJV-4KZZ, R-UKRR-ICQO, R-ULZN-W4HD, R-UOFG-NNYR, R-UPND-1FPG
 
@@ -165,6 +165,7 @@ R-DRFX-VNF2  D9  project/design/D09.md
 R-DSGZ-2ADS  D26  project/design/D26.md
 R-DTVQ-N6WG  D9  project/design/D09.md
 R-FR35-46U7  D7  project/design/D07.md
+R-GMLN-XC8W  D32  project/design/D32.md
 R-GSIG-PT07  D9  project/design/D09.md
 R-H65D-HYXH  D5  project/design/D05.md
 R-HUZX-7N2W  D2  project/design/D02.md
