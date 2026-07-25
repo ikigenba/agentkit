@@ -54,6 +54,100 @@ func TestReadMissingFileReturnsError(t *testing.T) {
 	}
 }
 
+func TestReadRejectsPDFWithDetectedContentType(t *testing.T) {
+	// R-VGH5-GE0Q
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "document.pdf"), []byte("%PDF-1.7\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := callTool(t, Read(root), map[string]any{"file_path": "document.pdf"})
+	if err == nil {
+		t.Fatalf("Read = %q, want error", got)
+	}
+	if got != "" {
+		t.Fatalf("Read returned file content %q with error", got)
+	}
+	if !strings.Contains(err.Error(), "application/pdf") {
+		t.Fatalf("error = %q, want detected type application/pdf", err)
+	}
+}
+
+func TestReadRejectsImagesWithDetectedContentType(t *testing.T) {
+	// R-VHP1-U5RF
+	tests := []struct {
+		name        string
+		fileName    string
+		content     []byte
+		contentType string
+	}{
+		{
+			name:        "PNG",
+			fileName:    "image.png",
+			content:     []byte("\x89PNG\r\n\x1a\n"),
+			contentType: "image/png",
+		},
+		{
+			name:        "JPEG",
+			fileName:    "image.jpg",
+			content:     []byte("\xff\xd8\xff\xe0\x00\x10JFIF\x00"),
+			contentType: "image/jpeg",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			if err := os.WriteFile(filepath.Join(root, tt.fileName), tt.content, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			got, err := callTool(t, Read(root), map[string]any{"file_path": tt.fileName})
+			if err == nil {
+				t.Fatalf("Read = %q, want error", got)
+			}
+			if got != "" {
+				t.Fatalf("Read returned file content %q with error", got)
+			}
+			if !strings.Contains(err.Error(), tt.contentType) {
+				t.Fatalf("error = %q, want detected type %s", err, tt.contentType)
+			}
+		})
+	}
+}
+
+func TestReadAcceptsExtensionlessUTF8Text(t *testing.T) {
+	// R-VIWY-7XI4
+	root := t.TempDir()
+	want := "extensionless UTF-8: café\n日本語\n"
+	if err := os.WriteFile(filepath.Join(root, "README"), []byte(want), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := callTool(t, Read(root), map[string]any{"file_path": "README"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Fatalf("Read = %q, want %q", got, want)
+	}
+}
+
+func TestReadRejectsBinaryContentWithTextExtension(t *testing.T) {
+	// R-VK4U-LP8T
+	root := t.TempDir()
+	content := []byte("\x89PNG\r\n\x1a\n")
+	if err := os.WriteFile(filepath.Join(root, "not-text.txt"), content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := callTool(t, Read(root), map[string]any{"file_path": "not-text.txt"})
+	if err == nil {
+		t.Fatalf("Read = %q, want error", got)
+	}
+	if got != "" {
+		t.Fatalf("Read returned binary content %q with error", got)
+	}
+	if !strings.Contains(err.Error(), "image/png") {
+		t.Fatalf("error = %q, want detected type image/png", err)
+	}
+}
+
 func TestReadCapsLongOutputAndMarksTruncation(t *testing.T) {
 	// R-LW5G-U5HX
 	root := t.TempDir()

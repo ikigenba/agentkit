@@ -3,6 +3,7 @@ package toolkit
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 	"unicode/utf8"
@@ -29,6 +30,10 @@ func Read(root string) agentkit.Tool {
 		content, err := os.ReadFile(path)
 		if err != nil {
 			return "", fmt.Errorf("read %q: %w", in.FilePath, err)
+		}
+		contentType := http.DetectContentType(content)
+		if !strings.HasPrefix(contentType, "text/") {
+			return "", fmt.Errorf("read %q: detected non-text content type %s", in.FilePath, contentType)
 		}
 		result := string(content)
 		if in.Offset != 0 || in.Limit != 0 {
