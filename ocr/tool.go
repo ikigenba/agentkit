@@ -23,7 +23,8 @@ type ocrInput struct {
 }
 
 // Tool returns a model-callable OCR tool whose source paths are confined to
-// root and whose extraction artifacts are stored below cacheDir.
+// root. Raw provider responses are cached below cacheDir, while readable
+// transcripts are derived below root/ocr.
 func Tool(root, cacheDir string, backend *Client) agentkit.Tool {
 	return agentkit.NewTool("OCR", "Extract text from a scanned PDF or image.", func(ctx context.Context, in ocrInput) (string, error) {
 		return callTool(ctx, root, cacheDir, backend, in)
@@ -50,27 +51,33 @@ func callTool(ctx context.Context, root, cacheDir string, backend *Client, in oc
 	sum := sha256.Sum256(document)
 	sourceName := filepath.Base(filepath.Clean(in.FilePath))
 	stem := strings.TrimSuffix(sourceName, filepath.Ext(sourceName))
-	entryPath := filepath.Join(cacheDir, stem+"-"+hex.EncodeToString(sum[:4]))
-	responsePath := filepath.Join(entryPath, "response.json")
-	transcriptPath := filepath.Join(entryPath, "transcript.md")
+	key := stem + "-" + hex.EncodeToString(sum[:4])
+	responsePath := filepath.Join(cacheDir, key+".json")
+	transcriptPath := filepath.Join(root, "ocr", key+".md")
 
-	transcript, hit, err := readCache(responsePath, transcriptPath)
+	response, hit, err := readCache(responsePath)
 	if err != nil {
 		return "", err
 	}
-	if hit {
-		return toolResult(transcriptPath, transcript), nil
+	if !hit {
+		response, err = backend.Do(ctx, sourceName, document)
+		if err != nil {
+			return "", fmt.Errorf("ocr: extract document: %w", err)
+		}
 	}
-
-	response, err := backend.Do(ctx, sourceName, document)
+	transcript, err := Transcript(response)
 	if err != nil {
-		return "", fmt.Errorf("ocr: extract document: %w", err)
-	}
-	transcript, err = Transcript(response)
-	if err != nil {
+		if hit {
+			return "", fmt.Errorf("ocr: derive cached transcript: %w", err)
+		}
 		return "", fmt.Errorf("ocr: derive transcript: %w", err)
 	}
-	if err := writeCache(cacheDir, entryPath, response, transcript); err != nil {
+	if !hit {
+		if err := writeResponseCache(cacheDir, responsePath, response); err != nil {
+			return "", err
+		}
+	}
+	if err := writeTranscript(transcriptPath, transcript); err != nil {
 		return "", err
 	}
 	return toolResult(transcriptPath, transcript), nil
@@ -115,57 +122,33 @@ func confinedSource(root, requested string) (string, error) {
 	return resolvedSource, nil
 }
 
-func readCache(responsePath, transcriptPath string) (string, bool, error) {
-	transcript, err := os.ReadFile(transcriptPath)
-	if err == nil {
-		return string(transcript), true, nil
-	}
-	if !errors.Is(err, os.ErrNotExist) {
-		return "", false, fmt.Errorf("ocr: read cached transcript: %w", err)
-	}
-
+func readCache(responsePath string) ([]byte, bool, error) {
 	response, err := os.ReadFile(responsePath)
 	if errors.Is(err, os.ErrNotExist) {
-		return "", false, nil
+		return nil, false, nil
 	}
 	if err != nil {
-		return "", false, fmt.Errorf("ocr: read cached response: %w", err)
+		return nil, false, fmt.Errorf("ocr: read cached response: %w", err)
 	}
-	derived, err := Transcript(response)
-	if err != nil {
-		return "", false, fmt.Errorf("ocr: derive cached transcript: %w", err)
-	}
-	if err := writeFileAtomically(transcriptPath, []byte(derived)); err != nil {
-		return "", false, fmt.Errorf("ocr: repair cached transcript: %w", err)
-	}
-	return derived, true, nil
+	return response, true, nil
 }
 
-func writeCache(cacheDir, entryPath string, response []byte, transcript string) (err error) {
+func writeResponseCache(cacheDir, responsePath string, response []byte) error {
 	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
 		return fmt.Errorf("ocr: create cache directory: %w", err)
 	}
-	temporary, err := os.MkdirTemp(cacheDir, ".ocr-*")
-	if err != nil {
-		return fmt.Errorf("ocr: create cache entry: %w", err)
-	}
-	defer func() {
-		if cleanupErr := os.RemoveAll(temporary); err == nil && cleanupErr != nil {
-			err = fmt.Errorf("ocr: clean temporary cache entry: %w", cleanupErr)
-		}
-	}()
-
-	if err := os.WriteFile(filepath.Join(temporary, "response.json"), response, 0o600); err != nil {
+	if err := writeFileAtomically(responsePath, response); err != nil {
 		return fmt.Errorf("ocr: write response cache: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(temporary, "transcript.md"), []byte(transcript), 0o600); err != nil {
-		return fmt.Errorf("ocr: write transcript cache: %w", err)
+	return nil
+}
+
+func writeTranscript(transcriptPath, transcript string) error {
+	if err := os.MkdirAll(filepath.Dir(transcriptPath), 0o755); err != nil {
+		return fmt.Errorf("ocr: create transcript directory: %w", err)
 	}
-	if err := os.Rename(temporary, entryPath); err != nil {
-		if _, statErr := os.Stat(entryPath); statErr == nil {
-			return nil
-		}
-		return fmt.Errorf("ocr: install cache entry: %w", err)
+	if err := writeFileAtomically(transcriptPath, []byte(transcript)); err != nil {
+		return fmt.Errorf("ocr: write transcript: %w", err)
 	}
 	return nil
 }

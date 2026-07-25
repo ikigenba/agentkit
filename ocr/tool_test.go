@@ -76,20 +76,69 @@ func TestToolWritesContentAddressedArtifacts(t *testing.T) {
 	}
 
 	sum := sha256.Sum256(document)
-	entry := filepath.Join(cacheDir, "scan-"+hex.EncodeToString(sum[:4]))
-	names := directoryNames(t, entry)
-	if strings.Join(names, ",") != "response.json,transcript.md" {
-		t.Fatalf("cache artifacts = %v, want response.json and transcript.md", names)
+	key := "scan-" + hex.EncodeToString(sum[:4])
+	cachePath := filepath.Join(cacheDir, key+".json")
+	transcriptPath := filepath.Join(root, "ocr", key+".md")
+	if names := directoryNames(t, cacheDir); strings.Join(names, ",") != key+".json" {
+		t.Fatalf("cache artifacts = %v, want only %s.json", names, key)
 	}
-	if got := string(readFile(t, filepath.Join(entry, "response.json"))); got != rawResponse {
-		t.Fatalf("response.json differs from provider response:\n%s", got)
+	if got := string(readFile(t, cachePath)); got != rawResponse {
+		t.Fatalf("cached response differs from provider response:\n%s", got)
 	}
 	wantTranscript, err := Transcript([]byte(rawResponse))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := string(readFile(t, filepath.Join(entry, "transcript.md"))); got != wantTranscript {
-		t.Fatalf("transcript.md = %q, want %q", got, wantTranscript)
+	if got := string(readFile(t, transcriptPath)); got != wantTranscript {
+		t.Fatalf("transcript = %q, want %q", got, wantTranscript)
+	}
+}
+
+func TestToolSeparatesDurableCacheFromReachableTranscript(t *testing.T) {
+	// R-UTL6-Q86Y
+	root, cacheDir, source, _ := toolPaths(t)
+	var requests atomic.Int32
+	server := newOCRServer(t, &requests, func(int32) (int, string) {
+		return http.StatusOK, responseWithPages("separate artifacts")
+	})
+	tool := Tool(root, cacheDir, New(APIKey("test"), WithBaseURL(server.URL), WithHTTPClient(server.Client())))
+	result, err := tool.Call(context.Background(), inputJSON(t, filepath.Base(source)))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	path, err := filepath.EvalSymlinks(transcriptPath(result))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolvedRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	relative, err := filepath.Rel(resolvedRoot, path)
+	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		t.Fatalf("transcript path %q is not inside root %q", path, root)
+	}
+	rootToCache, err := filepath.Rel(root, cacheDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cacheToRoot, err := filepath.Rel(cacheDir, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(rootToCache, ".."+string(filepath.Separator)) ||
+		!strings.HasPrefix(cacheToRoot, ".."+string(filepath.Separator)) {
+		t.Fatalf("test directories are not disjoint: root=%q cacheDir=%q", root, cacheDir)
+	}
+	err = filepath.WalkDir(cacheDir, func(path string, entry os.DirEntry, err error) error {
+		if err == nil && !entry.IsDir() && filepath.Ext(path) == ".md" {
+			t.Errorf("Markdown file exists under cacheDir: %s", path)
+		}
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -140,6 +189,34 @@ func TestToolUnchangedSourceUsesCache(t *testing.T) {
 	}
 }
 
+func TestToolOverwritesModifiedTranscriptFromCache(t *testing.T) {
+	// R-UW0Z-HROC
+	root, cacheDir, source, _ := toolPaths(t)
+	var requests atomic.Int32
+	server := newOCRServer(t, &requests, func(int32) (int, string) {
+		return http.StatusOK, responseWithPages("provider text")
+	})
+	tool := Tool(root, cacheDir, New(APIKey("test"), WithBaseURL(server.URL), WithHTTPClient(server.Client())))
+	first, err := tool.Call(context.Background(), inputJSON(t, filepath.Base(source)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := transcriptPath(first)
+	want := readFile(t, path)
+	if err := os.WriteFile(path, []byte("agent edit"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tool.Call(context.Background(), inputJSON(t, filepath.Base(source))); err != nil {
+		t.Fatal(err)
+	}
+	if got := requests.Load(); got != 1 {
+		t.Fatalf("HTTP requests = %d, want 1", got)
+	}
+	if got := readFile(t, path); string(got) != string(want) {
+		t.Fatalf("rewritten transcript = %q, want derived text %q", got, want)
+	}
+}
+
 func TestToolRepairsMissingTranscriptFromRawResponse(t *testing.T) {
 	// R-V95R-5RKK
 	root, cacheDir, source, _ := toolPaths(t)
@@ -172,10 +249,35 @@ func TestToolRepairsMissingTranscriptFromRawResponse(t *testing.T) {
 	}
 }
 
+func TestToolRejectsCorruptCachedResponseWithoutNetwork(t *testing.T) {
+	// R-UX8V-VJF1
+	root, cacheDir, source, document := toolPaths(t)
+	sum := sha256.Sum256(document)
+	cachePath := filepath.Join(cacheDir, "scan-"+hex.EncodeToString(sum[:4])+".json")
+	corrupt := []byte(`{"not":"an OCR response"}`)
+	if err := os.WriteFile(cachePath, corrupt, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var requests atomic.Int32
+	server := newOCRServer(t, &requests, func(int32) (int, string) {
+		return http.StatusOK, responseWithPages("must not be requested")
+	})
+	tool := Tool(root, cacheDir, New(APIKey("test"), WithBaseURL(server.URL), WithHTTPClient(server.Client())))
+	if _, err := tool.Call(context.Background(), inputJSON(t, filepath.Base(source))); err == nil {
+		t.Fatal("Call succeeded with corrupt cached response")
+	}
+	if got := requests.Load(); got != 0 {
+		t.Fatalf("HTTP requests = %d, want 0", got)
+	}
+	if got := readFile(t, cachePath); string(got) != string(corrupt) {
+		t.Fatalf("corrupt cache was changed: %q", got)
+	}
+}
+
 func TestToolReturnsCompletePreview(t *testing.T) {
 	// R-VADN-JJB9
 	transcript := "<!-- page 1 -->\nshort transcript"
-	result := toolResult("/cache/transcript.md", transcript)
+	result := toolResult("/workspace/ocr/document-abcd1234.md", transcript)
 	if !strings.Contains(result, "Status: complete") || !strings.HasSuffix(result, transcript) {
 		t.Fatalf("result does not mark and include complete transcript:\n%s", result)
 	}
@@ -239,6 +341,11 @@ func TestToolFailedExtractionLeavesNoEntryAndRetriesFresh(t *testing.T) {
 	} else if err != nil && !os.IsNotExist(err) {
 		t.Fatal(err)
 	}
+	if entries, err := os.ReadDir(filepath.Join(root, "ocr")); err == nil && len(entries) != 0 {
+		t.Fatalf("failed extraction left transcripts: %v", entries)
+	} else if err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
 	if _, err := tool.Call(context.Background(), inputJSON(t, filepath.Base(source))); err != nil {
 		t.Fatal(err)
 	}
@@ -252,12 +359,25 @@ func TestToolFailedExtractionLeavesNoEntryAndRetriesFresh(t *testing.T) {
 
 func TestToolResultNamesOnlyTranscriptArtifact(t *testing.T) {
 	// R-VF99-2MA1
-	result := toolResult("/cache/example/transcript.md", "text")
-	if !strings.Contains(result, "/cache/example/transcript.md") {
-		t.Fatalf("result does not name transcript.md: %q", result)
+	root, cacheDir, source, document := toolPaths(t)
+	var requests atomic.Int32
+	server := newOCRServer(t, &requests, func(int32) (int, string) {
+		return http.StatusOK, responseWithPages("result text")
+	})
+	tool := Tool(root, cacheDir, New(APIKey("test"), WithBaseURL(server.URL), WithHTTPClient(server.Client())))
+	result, err := tool.Call(context.Background(), inputJSON(t, filepath.Base(source)))
+	if err != nil {
+		t.Fatal(err)
 	}
-	if strings.Contains(result, "response.json") {
-		t.Fatalf("result names private response artifact: %q", result)
+	sum := sha256.Sum256(document)
+	key := "scan-" + hex.EncodeToString(sum[:4])
+	wantTranscript := filepath.Join(root, "ocr", key+".md")
+	privateCache := filepath.Join(cacheDir, key+".json")
+	if !strings.Contains(result, wantTranscript) {
+		t.Fatalf("result does not name transcript %q: %q", wantTranscript, result)
+	}
+	if strings.Contains(result, privateCache) || strings.Contains(result, cacheDir) {
+		t.Fatalf("result names private cache artifact or directory: %q", result)
 	}
 }
 
