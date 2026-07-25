@@ -22,7 +22,9 @@ Go developers building applications that talk to LLMs. AgentKit's first and most
 
 ## Scope
 
-AgentKit covers **two capabilities — a chat surface and an embeddings surface** — sharing one set of foundations (explicit credentials, uniform errors, automatic retry, uniform usage, dollar-cost accounting, and an advisory model catalog), plus one bundled convenience: a **coding toolkit** of ready-made local tools for consumers building coding agents.
+AgentKit covers **two capabilities — a chat surface and an embeddings surface** — sharing one set of foundations (explicit credentials, uniform errors, automatic retry, uniform usage, dollar-cost accounting, and an advisory model catalog), plus two bundled conveniences for consumers building agents: a **coding toolkit** of ready-made local tools, and a **document text extraction** tool that turns scans into text.
+
+**How a capability picks its auth path.** AgentKit supports two ways of paying for a provider call, and which one a capability uses is a per-capability judgment on two axes. **Subscription auth** (a ChatGPT subscription today; others if and when their vendors permit it) gives flat-rate, subsidized usage and is preferred whenever it is adequate. **API-key auth goes through OpenRouter**, which reaches nearly every model and service, and is chosen when a capability exists only there or is materially better served there. Neither is "the" path, and the answer can change as prices and availability move. The standing boundary: **a new capability does not bring a new vendor account.** If something is unavailable on either existing path, that is a design problem to solve, not a reason to mint another credential — account proliferation is a cost we decline to pay.
 
 ### Chat
 
@@ -56,6 +58,15 @@ AgentKit covers **two capabilities — a chat surface and an embeddings surface*
 - **Honest about the shell.** A shell command can inherently reach anywhere the process can; the toolkit says so plainly rather than pretending the root confines it. The confinement promise is protection against agent accidents, not a security sandbox.
 - **Bounded output.** No tool floods the conversation: oversized results come back cut to a bounded size with a visible notice saying so, and the agent can narrow its request to see more.
 - **Edits fail loudly on ambiguity.** A text edit that could land in more than one place is refused rather than applied to a guessed location, so an unattended agent never silently corrupts a file it meant to change elsewhere.
+- **Reading a non-text file is refused, not garbled.** Asking to read a scan, an image, or any other binary gets a clear refusal naming what the file actually is, instead of megabytes of decoded gibberish flooding the conversation.
+
+### Document text extraction
+
+- **Scans become text.** A separate ready-made tool takes a scanned PDF or an image and returns the document's text, so an agent can read paper the same way it reads a file. It is what makes the toolkit's refusal to read binaries actionable rather than a dead end.
+- **Not part of the coding toolkit, deliberately.** The coding tools are free, offline, instant, and confined to a directory; this one costs money per page, needs a credential, and sends the document to a third-party service. Keeping it separate is what keeps the toolkit's confinement promise honest — a tool that refuses to read outside your directory while uploading a file inside it would make that promise misleading.
+- **Text out, tables preserved.** The extracted text keeps the document's structure — headings and tables — rather than being flattened into an undifferentiated wall.
+- **Big documents do not flood the conversation.** The consumer names a directory where extractions are kept; the agent gets the document's text back directly when it is small enough, and otherwise gets the beginning of it plus a path to the whole thing, which it can then search and page through with the ordinary file tools.
+- **Extraction is paid for once.** Re-reading the same unchanged document does not re-run (or re-bill) the extraction. Changing the document does.
 
 ### Shared foundations (both capabilities)
 
@@ -65,7 +76,9 @@ AgentKit covers **two capabilities — a chat surface and an embeddings surface*
 
 It deliberately does **nothing else.** In particular:
 
-- **No image or audio, input or output.** Chat messages and embedding inputs are text only; vision, multimodal embeddings, and image/audio generation are out.
+- **No image or audio, input or output.** Chat messages and embedding inputs are text only; vision, multimodal embeddings, and image/audio generation are out. The document text extraction tool is not an exception to this: it converts a scan to text *before* anything reaches the conversation, so what a model receives is still only text. AgentKit has no image content in its messages, and does not use a model's vision to read documents.
+- **Extraction is text only, with no page geometry.** The extraction tool returns the document's text and tables; it does not report where on the page something sat, how confident it was, or what type of block it was. A value that visually straddles two columns can therefore land under the wrong heading, so a consumer that needs certainty validates figures against the document's own totals rather than trusting position.
+- **No audio transcription.** Extraction covers scanned documents and images; speech is out.
 - **No batch/asynchronous bulk processing or fine-tuning.** AgentKit is about live, interactive requests only.
 - **No durable persistence.** State objects live in memory for the life of the object; saving and restoring conversations or embedder state across process restarts is not promised (a consumer may serialize the object itself). The one deliberate exception: the opt-in ChatGPT-subscription helper maintains its own credential file (below).
 - **No ambient credential sourcing.** AgentKit never reads environment variables or any credential store on its own. The one scoped exception is the **opt-in** ChatGPT-subscription helper, which reads and maintains exactly the credential file the consumer explicitly names — never a path discovered on its own initiative.
@@ -126,6 +139,16 @@ These fixed, promised values the design must use verbatim and never re-declare:
 - **Output stays bounded.** A command or search producing outsized output reaches the model cut to a bounded size with a visible truncation notice — never silently dropped, never unbounded.
 - **Hung commands do not hang the agent.** A shell command that never finishes is stopped after a time limit (adjustable per call), together with anything it spawned, and the agent sees what happened.
 - **Searches skip the noise.** Content searches skip version-control internals and binary files, so results reflect the code the agent actually works on.
+- **Non-text files are refused with a clear reason.** Reading a PDF, an image, or any other binary produces an error saying what the file actually is, rather than decoding it as text. What counts as text is judged from the file's contents, not its name, so an extensionless text file reads normally and a binary named `.txt` is still refused.
+
+### Document text extraction
+
+- **One call turns a scan into text.** A consumer hands the extraction tool a working directory and a directory to keep extractions in; the model then names a scanned PDF or an image and gets that document's text back, with its headings and tables intact.
+- **The whole document is always available.** Small documents come back complete in the tool's reply. Larger ones come back as their opening pages plus the path to the full text, and the agent reads or searches the rest with the ordinary file tools. Nothing is silently cut: a shortened reply says so and states how much was shown against the total.
+- **The text is the document's, not a model's retelling.** What comes back is the extraction itself, never a summary or a paraphrase of it.
+- **Reading the same document twice costs once.** An unchanged document is served from the kept extraction with no new charge; a changed one is extracted again.
+- **Escapes are refused before anything is spent.** A document path pointing outside the consumer's chosen directory is refused without contacting the service, so a rejected path never costs money.
+- **Failures are refusals, not empty documents.** When extraction fails, the consumer gets an error explaining what the service said. An empty result is never presented as a successfully-read blank document, and a failure is never kept and re-served as if it had worked.
 
 ### Shared (both capabilities)
 
@@ -180,6 +203,17 @@ These fixed, promised values the design must use verbatim and never re-declare:
 - A command or search with outsized output reaches the model bounded, carrying a visible notice that it was cut.
 - A shell command that never finishes is stopped after its time limit along with the processes it spawned, and the agent sees that it timed out.
 - Content searches return matches from the working code, not from version-control internals or binary files.
+- Asking to read a PDF or an image returns a clear error naming what the file is, with no file content returned; an extensionless text file still reads normally, and a binary named `.txt` is still refused.
+
+### Document text extraction
+
+- A consumer can equip a conversation with the extraction tool and an extraction directory, and the model can hand it a scanned PDF and receive that document's text, including its tables.
+- The same works for a scanned image (PNG or JPEG), producing text of the same kind and quality as a PDF of the same page.
+- A document small enough to fit comes back complete in the reply; a large one comes back as its opening pages plus a path, and the model can read and search the rest of the text at that path with the ordinary file tools.
+- A shortened reply states that it was shortened and how much was shown against the document's total; a complete one states that it is complete.
+- Extracting the same unchanged document a second time returns the same text without contacting the service again; modifying the document causes a fresh extraction.
+- A document path outside the consumer's chosen directory is refused without any call being made to the service.
+- A failed extraction surfaces the service's own explanation as an error, leaves nothing behind to be re-served later, and never presents an empty result as a successfully-read document.
 
 ### Shared
 

@@ -1,5 +1,7 @@
 # AgentKit — Design Index
+
 The manifest for the split design. Each Decision lives in its own `project/design/DNN.md` (zero-padded filename; referenced in prose and the plan as `D<N>`, e.g. `D5`). `project/design/README.md` holds only the invariant spine — Authority, the *Requirement ids* convention, and *Conventions*. This index maps every Decision **and** every `R-XXXX-XXXX` Verification id to its file, so the build loop (and any reader) jumps straight to the one Decision a phase realizes without loading the whole design for `github.com/ikigenba/agentkit`. Resolve a Decision by its number below; resolve an id either by grepping this index (`grep -n R-ZWV0-CY54 project/design/INDEX.md`) or the files directly (`grep -rl R-ZWV0-CY54 project/design/`). Rewrite-in-place authority is unchanged: when a Decision changes it is rewritten in its `DNN.md`; this index is regenerated alongside. Decision numbering is not contiguous — there is no Decision 14 (a real gap; numbers are never reused).
+
 ## Decisions
 One line per Decision, in number order — file, label, and the Verification ids it owns.
 - **D1** `project/design/D01.md` — The consumer surface: the conversation object and the turn verb
@@ -51,15 +53,21 @@ One line per Decision, in number order — file, label, and the Verification ids
 - **D25** `project/design/D25.md` — OpenAI credentials: API key and ChatGPT subscription
   - ids: R-DG9Z-8KYU, R-PV6N-URM6, R-PWEK-8JCV, R-DHHV-MCPJ, R-PXMG-MB3K, R-DL5K-RNXM, R-DJXO-DW6X
 - **D26** `project/design/D26.md` — The advisory model catalog: `agentkit/catalog`
-  - ids: R-4MB8-ERDC, R-4NJ4-SJ41, R-DMDH-5FOB, R-DNLD-J7F0, R-DOT9-WZ5P, R-DQ16-AQWE, R-DR92-OIN3, R-DSGZ-2ADS
+  - ids: R-DMDH-5FOB, R-DNLD-J7F0, R-DOT9-WZ5P, R-DQ16-AQWE, R-DR92-OIN3, R-4MB8-ERDC, R-4NJ4-SJ41, R-DSGZ-2ADS
 - **D27** `project/design/D27.md` — The `toolkit` subpackage: standard coding tools, root confinement, output cap
   - ids: R-LQ1Y-XASG, R-LR9V-B2J5, R-LSHR-OU9U, R-LTPO-2M0J, R-LUXK-GDR8, R-LW5G-U5HX
 - **D28** `project/design/D28.md` — `toolkit`: `Read`, `Write`, `Edit` semantics
-  - ids: R-LXDD-7X8M, R-LYL9-LOZB, R-LZT5-ZGQ0, R-M28Y-R07E, R-M3GV-4RY3, R-M4OR-IJOS, R-M5WN-WBFH, R-M74K-A366
+  - ids: R-LXDD-7X8M, R-LYL9-LOZB, R-LZT5-ZGQ0, R-M28Y-R07E, R-M3GV-4RY3, R-M4OR-IJOS, R-M5WN-WBFH, R-M74K-A366, R-VGH5-GE0Q, R-VHP1-U5RF, R-VIWY-7XI4, R-VK4U-LP8T
 - **D29** `project/design/D29.md` — `toolkit`: `Bash` semantics
   - ids: R-M8CG-NUWV, R-M9KD-1MNK, R-MAS9-FEE9, R-MC05-T64Y, R-MD82-6XVN
 - **D30** `project/design/D30.md` — `toolkit`: `Glob` and `Grep` semantics
   - ids: R-MEFY-KPMC, R-MFNU-YHD1, R-MGVR-C93Q, R-MJBK-3SL4, R-MKJG-HKBT, R-MLRC-VC2I, R-MMZ9-93T7, R-MO75-MVJW, R-MPF2-0NAL
+- **D31** `project/design/D31.md` — The `ocr` package: the document-text tool, its cache, and its preview
+  - ids: R-V1UC-V54E, R-V329-8WV3, R-V4A5-MOLS, R-V6PY-E836, R-V7XU-RZTV, R-V95R-5RKK, R-VADN-JJB9, R-VBLJ-XB1Y, R-VCTG-B2SN, R-VE1C-OUJC, R-VF99-2MA1
+- **D32** `project/design/D32.md` — OpenRouter document parsing: the request, the response contract, and `Transcript`
+  - ids: R-UQV9-F7G5, R-US35-SZ6U, R-UTB2-6QXJ, R-UUIY-KIO8, R-UVQU-YAEX, R-UWYR-C25M, R-UY6N-PTWB, R-UZEK-3LN0, R-V0MG-HDDP
+- **D33** `project/design/D33.md` — Raster normalization: images become one-page PDFs
+  - ids: R-UJJV-4KZZ, R-UKRR-ICQO, R-ULZN-W4HD, R-UOFG-NNYR, R-UPND-1FPG
 
 ## Verification ids → Decision
 Every minted id, sorted, mapped to its Decision and file (grep target for id lookup).
@@ -232,8 +240,37 @@ R-T40A-VZQ7  D6  project/design/D06.md
 R-T587-9RGW  D6  project/design/D06.md
 R-T6G3-NJ7L  D6  project/design/D06.md
 R-TQ77-6QLK  D9  project/design/D09.md
+R-UJJV-4KZZ  D33  project/design/D33.md
 R-UJNS-PFLL  D9  project/design/D09.md
+R-UKRR-ICQO  D33  project/design/D33.md
+R-ULZN-W4HD  D33  project/design/D33.md
+R-UOFG-NNYR  D33  project/design/D33.md
+R-UPND-1FPG  D33  project/design/D33.md
+R-UQV9-F7G5  D32  project/design/D32.md
+R-US35-SZ6U  D32  project/design/D32.md
+R-UTB2-6QXJ  D32  project/design/D32.md
+R-UUIY-KIO8  D32  project/design/D32.md
+R-UVQU-YAEX  D32  project/design/D32.md
+R-UWYR-C25M  D32  project/design/D32.md
+R-UY6N-PTWB  D32  project/design/D32.md
+R-UZEK-3LN0  D32  project/design/D32.md
+R-V0MG-HDDP  D32  project/design/D32.md
+R-V1UC-V54E  D31  project/design/D31.md
 R-V2SM-WC8V  D16  project/design/D16.md
+R-V329-8WV3  D31  project/design/D31.md
+R-V4A5-MOLS  D31  project/design/D31.md
+R-V6PY-E836  D31  project/design/D31.md
+R-V7XU-RZTV  D31  project/design/D31.md
+R-V95R-5RKK  D31  project/design/D31.md
+R-VADN-JJB9  D31  project/design/D31.md
+R-VBLJ-XB1Y  D31  project/design/D31.md
+R-VCTG-B2SN  D31  project/design/D31.md
+R-VE1C-OUJC  D31  project/design/D31.md
+R-VF99-2MA1  D31  project/design/D31.md
+R-VGH5-GE0Q  D28  project/design/D28.md
+R-VHP1-U5RF  D28  project/design/D28.md
+R-VIWY-7XI4  D28  project/design/D28.md
+R-VK4U-LP8T  D28  project/design/D28.md
 R-VV9Y-GMKH  D10  project/design/D10.md
 R-VWHU-UEB6  D10  project/design/D10.md
 R-VXPR-861V  D10  project/design/D10.md

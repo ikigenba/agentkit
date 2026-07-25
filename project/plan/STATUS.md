@@ -2,4 +2,9 @@
 
 The manifest, and a work **queue**: one line per **pending** phase, in build order — the only place a phase's status marker lives. Each phase line is a Markdown bullet beginning with `- Phase` and carries the pending-marker (U+2B1C); there is no done-marker, because **completion is deletion** — when a phase passes, the build loop removes its line here and `git rm`s its `project/plan/phase-NN.md` in the completion commit, so the plan never holds finished work and the record of what was built lives in git. The build loop finds the next work with `grep -nE '^- Phase .* ⬜' project/plan/STATUS.md | head -1` and reads only that phase's `project/plan/phase-NN.md`. The `Next phase` counter below is the number the next appended phase takes; `$seal-spec` bumps it on every append, it is never decremented, and a number is never reused — so a phase number names one phase forever, even after its files are gone. (This paragraph and the counter line deliberately carry no bare status glyph, so the anchored grep matches only phase lines.)
 
-Next phase: 73
+Next phase: 77
+
+- Phase 73 ⬜ realizes D33 — `ocr`: raster normalization to a one-page PDF
+- Phase 74 ⬜ realizes D32 — `ocr`: the OpenRouter request and the `Transcript` deriver
+- Phase 75 ⬜ realizes D31 — `ocr`: the `OCR` tool, its cache, and its preview
+- Phase 76 ⬜ realizes D28 (content-sniffing slice) — `toolkit`: `Read` refuses non-text files

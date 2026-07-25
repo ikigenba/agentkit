@@ -788,3 +788,102 @@ Three implementations of the same "coding agent" tool family already exist and i
 
 - `filepath.Glob`/`fs.Glob` implement plain `path.Match` semantics — **no `**` support**; `**` degrades to a single `*` segment silently. Recursive matching therefore needs a hand-rolled `WalkDir` + per-segment match (the no-new-dependencies rule excludes `doublestar`).
 - The classic git binary heuristic — a NUL byte in the first 8 KB — is trivially implementable with stdlib and matches user expectations for "grep skips binaries".
+
+---
+
+## 17. Document text extraction — OpenRouter's `file-parser`, measured
+
+Everything in this section was measured directly against the live OpenRouter API in July 2026, using real scanned documents (bank statements and scanned books, 1 to 385 pages). Where a figure is quoted it was observed, not read off a vendor page.
+
+**The headline:** OpenRouter's `file-parser` plugin with `engine: mistral-ocr` extracts scanned PDFs into structured Markdown at roughly **$0.002 per page**, and the parsed text is returned in `choices[0].message.annotations` — *beside* the chat model's reply, produced before the model sees it. The model contributes nothing to it.
+
+### 17.1 The request that works
+
+```
+POST https://openrouter.ai/api/v1/chat/completions
+{ "model": "<any model that accepts a file block>",
+  "messages": [{"role":"user","content":[
+      {"type":"file","file":{"filename":"x.pdf","file_data":"data:application/pdf;base64,…"}}]}],
+  "max_tokens": 1,
+  "plugins": [{"id":"file-parser","pdf":{"engine":"mistral-ocr"}}] }
+```
+
+- **No text content part is required.** A request carrying *only* the file block returned the complete transcript. There is no prompt to engineer; instructions are irrelevant because the extraction happens before the model.
+- **`max_tokens: 1` is sufficient** and does not truncate the extraction: a 1-token budget still returned the full 2,403-byte transcript.
+- Engines: `mistral-ocr`, `native` (the model's own vision), and `pdf-text` (deprecated, text-layer only, useless for scans). With no engine specified OpenRouter tries native first and falls back.
+- OpenRouter bills the OCR against its own Mistral relationship, so the per-page fee lands on the OpenRouter account.
+
+### 17.2 The chat model contributes nothing (measured)
+
+The `model` field is required only because `file-parser` is a plugin on `/chat/completions`. It is a **billing knob with no effect on output**:
+
+| model | transcript bytes | sha256 (first 8) |
+|---|---|---|
+| `google/gemini-3.5-flash` | 2403 | `a7a84dc0` |
+| `openai/gpt-5-nano` | 2403 | `a7a84dc0` |
+| `google/gemini-2.5-flash-lite` | 2403 | `11ff77f3` |
+
+Two unrelated model families produced **byte-identical** transcripts. The single difference (`Continued\n8/2498/1` vs `Continued 8/2498/1`) also appeared between two runs on the *same* model, so it is **mistral-ocr's own run-to-run nondeterminism** at the line-break level, not a model effect. Consequence for testing: live assertions must use substrings, never hashes or exact equality.
+
+**The model tax is real and scales with the document.** OpenRouter injects the full extraction into the chat model's prompt, so input tokens are billed over the whole document on every call — 1,142 prompt tokens for 2 pages *with an empty prompt*, 158,051 for 114 pages. It cannot be avoided on this path and cannot be routed to subscription auth, because the plugin exists only on the API-key path.
+
+**`openai/gpt-5-nano` returned no `usage` block at all** (no `prompt_tokens`, no `cost`), which would silently degrade cost accounting (§ dollar-cost). A default model should be one that reports usage.
+
+### 17.3 The response contract
+
+Parsed text lives at `choices[0].message.annotations[0].file.content`. Verified invariants from 1 to 114 pages:
+
+- **`annotations` is always exactly one entry**, `type: "file"`, `name` = the uploaded filename. Everything scales inside `file.content`; the array never grows.
+- **`file.content` is a mixed list**: a `<file name="…">` text sentinel, one text item **per physical page in order**, `image_url` items interleaved after the page they came from, and a `</file>` text sentinel.
+- **Text-item count is exactly *pages + 2*** at every size tested (2→4, 8→10, 38→40, 88→90, 114→116).
+- **Blank pages keep their slot** — a near-empty page returned its own 1-character item rather than being omitted, so page ordinal stays aligned with physical page.
+- **Printed page numbers do not match physical ones** (physical page 4 printed "Page 3 of 6"); physical ordering is the reliable index.
+- **`image_url` items are capped, apparently at 8 per document**, regardless of length: three documents of 38, 88, and 114 pages (the latter two heavily illustrated) each returned exactly 8. They are a truncated sample, **not** a faithful image extraction, and must not be presented as complete.
+- **Reading `content` naively is a context bomb.** On a single-page statement, one `image_url` item held **25,409 characters** of base64 — 94% of that response's payload.
+
+### 17.4 Limits and failure shapes
+
+- **Errors arrive as HTTP 200 with an `error` body.** A 385-page / 24.1MB PDF returned status **200** whose entire body was `{"error":{"message":"Downloaded image content cannot exceed 30MB","code":413}}`. Code that branches on the status line and reaches for `choices[0]` fails on what looks like success. **The body must be inspected first.**
+- **The 30MB ceiling is on extracted image content, not the file.** A 23.3MB / 114-page PDF (base64 payload **31.1MB**, itself over 30MB) succeeded, while a 24.1MB / 385-page scanned-art book failed. Neither raw size nor encoded size explains it; the message's wording does. **A pre-flight size guard is therefore unsound** — it would reject working documents and admit failing ones.
+- Quiet-empty is the other failure shape: HTTP 200, a normal-looking response, and no `annotations` at all (this is what images do, §17.5).
+
+### 17.5 The plugin is a no-op for images (measured)
+
+| sent | plugin | annotations |
+|---|---|---|
+| PNG as `file` block | `mistral-ocr` | `[]` |
+| JPEG as `file` block | `mistral-ocr` | `[]` |
+| PNG as `file` block | none (control) | `[]` |
+| PNG as `file` block, named `page1.pdf` | `mistral-ocr` | `[]` |
+
+All four returned identical prompt-token counts, meaning the image was tokenized by the model's **native vision** in every case. The plugin does not touch images and the filename does not route it.
+
+**Wrapping works.** A raster image embedded in a minimal one-page PDF *does* go through the OCR path and returns full `annotations`. Confirmed for both a lossless-Flate PNG embed and a byte-for-byte `DCTDecode` JPEG embed; the two produced **byte-identical OCR text** apart from one line break, at a 4× payload-size difference, so the input encoding does not affect fidelity. The wrapper needs only `image/png`, `image/jpeg`, and `compress/zlib` — no `gs`, no ImageMagick, no new module (and `convert`/`magick`/`gs` are absent from the target sandbox anyway).
+
+### 17.6 Alternatives evaluated and not chosen
+
+- **Mistral OCR API direct** (`mistral-ocr-latest`, and the newer **OCR 4**). One endpoint handles **both** documents and images, returns parsed text with no model in the loop, and OCR 4 additionally returns **bounding boxes, typed blocks (titles, tables, signatures), and per-word confidence scores** — exactly what would let a consumer detect column flattening mechanically. Listed at $4/1k pages ($2 via batch). **Not chosen:** it needs a second vendor account, and API-key access is routed through OpenRouter. The lost geometry is a real, named cost of that constraint: `file-parser` returns Markdown only.
+- **Self-hosting Mistral OCR.** Supported by the vendor for data-privacy and sovereignty requirements. This is the escape hatch if sending financial documents to a third party ever becomes unacceptable — the exit is the *same engine run locally*, not a different vendor. Other self-hostable options: olmOCR, dots.ocr, Surya, PaddleOCR-VL, Tesseract.
+- **OpenAI.** Has **no dedicated OCR endpoint** (re-verified July 2026). Every OpenAI-plus-OCR pattern is either "prompt GPT vision to transcribe" or "run Tesseract first, then clean up with GPT". So there is currently nothing to reach on the subscription-auth path even in principle.
+- **Native vision on any chat model.** Works, but returns the model's prose rather than a parsed transcript, carrying paraphrase risk on financial figures and paying reasoning tokens to re-emit text.
+
+### 17.7 Fidelity characteristics (measured, not defects to fix)
+
+- **Tables come back as Markdown pipe tables**, and transaction tables extracted cleanly: `| Mar 03 | Mar 04 | EXAMPLE MERCHANTANYTOWNXX | $12.34 |`.
+- **Values can land in the wrong column.** Reproduced in three separate runs on the same statement: `| Average Balance (Ledger) | 1,234.56+ |   |` puts the figure under *Number* instead of *Amount*. The engine is faithful to where ink sits, not to what a column means. Mitigation is to validate figures against the document's own totals, never column position.
+- **Whitespace inside a cell is unreliable** — `EXAMPLE STOREANYTOWNXX` runs merchant, city, and state together. Never split a cell on spaces.
+- Logos degrade to their word mark; photographs become `![img-0.jpeg]` references; advertising copy is extracted in full as ordinary headings, so a classifier must expect to ignore it.
+- Identity fields (bank name, account type, last four, statement date) all appear in the top third of page 1, so classification rarely needs more than the first page.
+
+### 17.8 Cost and scale reference (measured)
+
+| pages | transcript chars | prompt tokens | cost | wall time |
+|---|---|---|---|---|
+| 1 (wrapped image) | 1,508 | 1,682 | $0.0048 | 4.2s |
+| 2 | 2,403 | 1,991 | $0.0072 | 4.1s |
+| 8 (dense tables) | 22,968 | 11,390 | $0.0333 | 5.9s |
+| 38 | 77,902 | 23,644 | $0.0784 | 7.4s |
+| 88 | 397,833 | 118,426 | $0.1878 | 16.0s |
+| 114 | ~920,000 | 158,051 | $0.2438 | 20.2s |
+
+Steady at roughly **$0.002 per page**. Note the scale gap between typical and tail: a bank statement is 2–8 pages and ~5–23k characters, while a scanned book is ~900k characters — about 30× any sane single tool-result cap. That gap is what forces extraction to disk rather than an inline return, and makes caching load-bearing rather than a nicety.
