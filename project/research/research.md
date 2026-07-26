@@ -373,49 +373,75 @@ The models AgentKit targets are newest-generation reasoning models. Reasoning is
 
 ### 7.1 Native-first reasoning control
 
-The native vocabulary genuinely does **not** unify: most providers use a discrete **effort/level enum**, some use an integer **token budget**, and the values and defaults differ per model *within* a provider. This heterogeneity is why a universal cross-model enum is not viable — there is no honest ordinal ladder spanning a `budget_tokens` integer and a `low/high/xhigh/max` enum, and "nearest" is undefinable across them.
+The native vocabulary genuinely does **not** unify: most providers use a discrete **effort/level enum**, some use an integer **token budget**, and some expose only an on/off **toggle**. Values and defaults differ per model *within* a provider. This heterogeneity is why a universal cross-model enum is not viable — there is no honest ordinal ladder spanning a `budget_tokens` integer and a `low/high/xhigh/max` enum, and "nearest" is undefinable across them.
 
-**Per-model native reasoning vocabulary (the data the introspection API must expose):**
+**Three axes, not one.** A model's reasoning surface answers three separate questions, and conflating them is what makes the data hard to read:
 
-| Model | Native term (wire field) | Value kind | Accepted values / range | Default | Disable? |
-|---|---|---|---|---|---|
-| **claude-opus-4-8** | effort (`output_config.effort`) + `thinking` on/off | enum | `low` `medium` `high` `xhigh` `max` | `high` (thinking off until `thinking:{type:"adaptive"}`) | **yes** (omit / `type:"disabled"`) |
-| **claude-sonnet-4-6** | effort (`output_config.effort`) + `thinking` on/off | enum | `low` `medium` `high` `max` (**no `xhigh`**) | `high` (adaptive when on) | **yes** |
-| **claude-sonnet-5** | effort (`output_config.effort`) + `thinking` on/off | enum | `low` `medium` `high` `xhigh` `max` | `medium` | **yes** |
-| **claude-fable-5** | effort (`output_config.effort`) | enum | `low` `medium` `high` `xhigh` `max` | `medium` | **no** (always-on) |
-| **claude-haiku-4-5** | thinking budget (`thinking.budget_tokens`) | **int budget** | `1024 … 4096` (**no `effort` field — 400 if sent**) | thinking **off** | **yes** (`type:"disabled"`/omit) |
-| **gpt-5.5-pro** | effort (`reasoning.effort`) | enum | `high` `xhigh` *(est.)* | `high` *(est.)* | **no** (no `none`; always-on) |
-| **gpt-5.5** | effort (`reasoning.effort`) | enum | `none` `low` `medium` `high` `xhigh` | `medium` | yes (`none`) |
-| **gpt-5.4** | effort (`reasoning.effort`) | enum | `none` `low` `medium` `high` `xhigh` | `none` | yes (`none`) |
-| **gpt-5.4-mini** | effort (`reasoning.effort`) | enum | `none` `low` `medium` `high` `xhigh` | `none` *(est.)* | yes (`none`) |
-| **gpt-5.4-nano** | effort (`reasoning.effort`) | enum | `none` `low` `medium` `high` `xhigh` | `none` *(est.)* | yes (`none`) |
-| **gpt-5.6-sol** | effort (`reasoning.effort`) | enum | `none` `low` `medium` `high` `xhigh` | `medium` | yes (`none`) |
-| **gpt-5.6-terra** | effort (`reasoning.effort`) | enum | `none` `low` `medium` `high` `xhigh` | `medium` | yes (`none`) |
-| **gpt-5.6-luna** | effort (`reasoning.effort`) | enum | `none` `low` `medium` `high` `xhigh` | `medium` | yes (`none`) |
-| **gemini-2.5-flash** | thinking budget (`thinkingConfig.thinkingBudget`) | **int budget** | `0 … 24576`; `0`=off, `-1`=dynamic | `-1` (dynamic) | **yes** (`0`) |
-| **gemini-2.5-pro** | thinking budget (`thinkingConfig.thinkingBudget`) | **int budget** | `128 … 32768`; `-1`=dynamic (**`0` rejected**) | `-1` (dynamic) | **no** (min 128) |
-| **gemini-3.5-flash** | thinking level (`thinkingConfig.thinkingLevel`) | enum | `minimal` `low` `medium` `high` | `medium` | **no** (`minimal` = floor) |
-| **gemini-3.1-flash-lite** | thinking level (`thinkingConfig.thinkingLevel`) | enum | `minimal` `low` `medium` `high` | `medium` *(by tier)* | **no** (`minimal` = floor) |
-| **gemini-3.1-pro-preview** | thinking level (`thinkingConfig.thinkingLevel`) | enum | `low` `medium` `high` (**no `minimal`**) | `high` (dynamic) | **no** (always-on) |
-| **glm-5.2** | `thinking` on/off + `reasoning_effort` | enum + on/off | effort `high` `max`; `thinking.type` `enabled`/`disabled` | enabled, effort `max` | **yes** (`type:"disabled"`) |
-| **glm-5.1** | `thinking` on/off | on/off only | `enabled` / `disabled` (**no effort**) | enabled | **yes** |
-| **glm-4.7** | `thinking` on/off | on/off only | `enabled` / `disabled` (**no effort**) | enabled | **yes** |
-| **glm-4.6** | `thinking` on/off | on/off only | `enabled` / `disabled` (**no effort**) | enabled | **yes** |
-| **grok-4.5** | effort (`reasoning_effort`) | enum | `low` `medium` `high` | `high` | **no** (docs: cannot be disabled) |
-| **grok-4.3** | effort (`reasoning_effort`) | enum | `none` `low` `medium` `high` | *undocumented* | **yes** (`none`) |
-| **grok-4.20** | `reasoning` on/off | on/off only | enabled / disabled | enabled | **yes** |
-| **grok-4.20-multi-agent** | effort (`reasoning.effort`) | enum | `low` `medium` `high` `xhigh` (**sub-agent count, not depth**) | *undocumented* | **no** |
-| **deepseek-v4-flash** | `thinking` on/off + `reasoning_effort` | enum + on/off | effort `high` `max`; `thinking.type` `enabled`/`disabled` | enabled, effort `high` | **yes** (`type:"disabled"`) |
-| **deepseek-v4-pro** | `thinking` on/off + `reasoning_effort` | enum + on/off | effort `high` `max`; `thinking.type` `enabled`/`disabled` | enabled, effort `high` | **yes** (`type:"disabled"`) |
-| **kimi-k3** | effort (`reasoning_effort`) | enum | `max` only *(more documented as forthcoming)* | `max` | **no** |
-| **kimi-k2.7-code** | `thinking` (pinned on) | on/off only | `{"type":"enabled","keep":"all"}` — any other value errors | enabled | **no** |
-| **kimi-k2.6** | `thinking` on/off | on/off only | `enabled` / `disabled` / `enabled,keep:all` | enabled | **yes** |
+1. **What values may I send?** — an enum of native level strings, an integer budget in `[Min,Max]`, or nothing at all (a bare toggle).
+2. **May I switch it on or off explicitly?** — whether the wire has an on-form and an off-form the model accepts. These are two independent permissions, not one: several models accept an explicit *on* while rejecting *off*.
+3. **What happens if I send nothing?** — the provider's default, which is one of *off*, a *fixed* value equivalent to something the caller could have sent, or **dynamic**, meaning the provider decides per request and the caller has no say.
 
-Reading the table for design: **the value space is one of three shapes** — a discrete enum of native level strings (most models), an integer token budget within `[min,max]` with sentinel meanings (`0`=off, `-1`=dynamic) (Gemini 2.5 family, Anthropic Haiku), or a bare on/off with no depth control (GLM 4.6/4.7/5.1, Grok 4.20, Kimi K2.6/K2.7-code). Gemini 2.5's `0`-disables-on-Flash-but-min-128-on-Pro and Anthropic's two-axis (effort enum *and* a thinking on/off, with Haiku dropping effort entirely) are the awkward edges.
+The third answer is not expressible in the vocabulary of the first. "Dynamic" is not a value on the ladder; it is the absence of a caller-chosen one. Recording it as a sendable value forces a reader to decode a magic number (Gemini's `-1`) to learn a fact about who is in control.
 
-**Two-axis models collapse cleanly into one spec.** GLM 5.2 and DeepSeek V4 each expose an on/off toggle *plus* an effort enum; both are modelled as `Kind: Enum` with the level set and `CanDisable: true`, since a toggle is exactly "the disabled value is accepted." A toggle pinned *on* (Kimi K2.7-code) is `Kind: Toggle, CanDisable: false`. No fourth shape is needed.
+**Per-model native reasoning vocabulary:**
+
+| Model | Native term (wire field) | Value kind | Accepted values / range | Default | Enable? | Disable? |
+|---|---|---|---|---|---|---|
+| **claude-opus-4-8** | effort (`output_config.effort`) + `thinking` on/off | enum | `low` `medium` `high` `xhigh` `max` | **off** (measured: no thinking block, 4/4) | yes (`thinking:{type:"adaptive"}`) | **yes** (omit / `type:"disabled"`) |
+| **claude-sonnet-4-6** | effort (`output_config.effort`) + `thinking` on/off | enum | `low` `medium` `high` `max` (**no `xhigh`**) | **off** (measured, 4/4) | yes (adaptive) | **yes** |
+| **claude-sonnet-5** | effort (`output_config.effort`) + `thinking` on/off | enum | `low` `medium` `high` `xhigh` `max` | fixed `medium` (measured: thinking 4/4) | yes | **yes** |
+| **claude-opus-5** | effort (`output_config.effort`) + `thinking` on/off | enum | `low` `medium` `high` `xhigh` `max` | fixed `medium` (measured: thinking 4/4) | yes | **yes** |
+| **claude-fable-5** | effort (`output_config.effort`) | enum | `low` `medium` `high` `xhigh` `max` | fixed `medium` (measured: thinking 4/4) | n/a | **no** (always-on) |
+| **claude-haiku-4-5** | thinking budget (`thinking.budget_tokens`) | **int budget** | `1024 … 4096` (**no `effort` field — 400 if sent**) | **off** (measured, 4/4) | n/a | **yes** (`type:"disabled"`/omit) |
+| **gpt-5.5-pro** | effort (`reasoning.effort`) | enum | `high` `xhigh` *(est.)* | dynamic (measured: reasons 2/2) | n/a | **no** (no `none`; always-on) |
+| **gpt-5.5** | effort (`reasoning.effort`) | enum | `none` `low` `medium` `high` `xhigh` | fixed `medium` (measured: reasons 6/6) | n/a | yes (`none`) |
+| **gpt-5.4** | effort (`reasoning.effort`) | enum | `none` `low` `medium` `high` `xhigh` | **off** (measured, 4/4) | n/a | yes (`none`) |
+| **gpt-5.4-mini** | effort (`reasoning.effort`) | enum | `none` `low` `medium` `high` `xhigh` | **off** (measured, 4/4) | n/a | yes (`none`) |
+| **gpt-5.4-nano** | effort (`reasoning.effort`) | enum | `none` `low` `medium` `high` `xhigh` | **off** (measured, 4/4) | n/a | yes (`none`) |
+| **gpt-5.6-sol** | effort (`reasoning.effort`) | enum | `none` `low` `medium` `high` `xhigh` | dynamic (measured: reasons ~2/14, prompt-dependent) | n/a | yes (`none`) |
+| **gpt-5.6-terra** | effort (`reasoning.effort`) | enum | `none` `low` `medium` `high` `xhigh` | dynamic (measured: reasons 5/6) | n/a | yes (`none`) |
+| **gpt-5.6-luna** | effort (`reasoning.effort`) | enum | `none` `low` `medium` `high` `xhigh` | fixed `medium` (measured: reasons 6/6) | n/a | yes (`none`) |
+| **gemini-2.5-flash** | thinking budget (`thinkingConfig.thinkingBudget`) | **int budget** | `0 … 24576`; `0`=off, `-1`=dynamic | **dynamic** (`-1`) | n/a | **yes** (`0` accepted, measured: 200, 0 thought tokens) |
+| **gemini-2.5-pro** | thinking budget (`thinkingConfig.thinkingBudget`) | **int budget** | `128 … 32768`; `-1`=dynamic | **dynamic** (`-1`) | n/a | **no** (measured: `0` → 400 *"only works in thinking mode"*; `64` → 400 *"choose a value between 128 and …"*) |
+| **gemini-3.5-flash** | thinking level (`thinkingConfig.thinkingLevel`) | enum | `minimal` `low` `medium` `high` | fixed `medium` (measured: reasons) | n/a | **no** (`minimal` = floor, not off) |
+| **gemini-3.1-flash-lite** | thinking level (`thinkingConfig.thinkingLevel`) | enum | `minimal` `low` `medium` `high` | fixed `medium` *(by tier)* | n/a | **no** (`minimal` = floor) |
+| **gemini-3.1-pro-preview** | thinking level (`thinkingConfig.thinkingLevel`) | enum | `low` `medium` `high` (**no `minimal`**) | fixed `high` (measured: 1022 reasoning tokens) | n/a | **no** (always-on) |
+| **glm-5.2** | `thinking` on/off + `reasoning_effort` | enum + on/off | effort `high` `max`; `thinking.type` `enabled`/`disabled` | dynamic, reasons (measured: reasoning content on every run) | yes | **yes** (`type:"disabled"`) |
+| **glm-5.1** | `thinking` on/off | on/off only | `enabled` / `disabled` (**no effort**) | dynamic, reasons (measured) | yes | **yes** |
+| **glm-4.7** | `thinking` on/off | on/off only | `enabled` / `disabled` (**no effort**) | dynamic, reasons (measured) | yes | **yes** |
+| **glm-4.6** | `thinking` on/off | on/off only | `enabled` / `disabled` (**no effort**) | dynamic, reasons (measured) | yes | **yes** |
+| **grok-4.5** | `reasoning` on/off (`reasoning.enabled`) | on/off | `enabled:true` accepted; `enabled:false` **rejected** | **dynamic** (measured: reasons 3/3) | **yes** | **no** (measured: 400 *"Reasoning is mandatory for this endpoint and cannot be disabled"*) |
+| **grok-4.3** | `reasoning` on/off (`reasoning.enabled`) | on/off | `enabled:true` / `enabled:false` | **dynamic** (measured: reasons 3/3) | **yes** | **yes** (measured: 200, 0 reasoning tokens) |
+| **grok-4.20** | `reasoning` on/off (`reasoning.enabled`) | on/off | `enabled:true` / `enabled:false` | **off** (measured: 0 reasoning tokens 6/6) | **yes** (measured: 399/438 reasoning tokens) | **yes** |
+| **grok-4.20-multi-agent** | `reasoning` on/off (`reasoning.enabled`) | on/off | `enabled:true` accepted; `enabled:false` **rejected** | **dynamic** (measured: 1424–2401 reasoning tokens) | **yes** | **no** (measured: 400, mandatory) |
+| **deepseek-v4-flash** | `reasoning` on/off (`reasoning.enabled`) | on/off | `enabled:true` / `enabled:false` | **dynamic** (measured: reasons 1/3 novel, 2/3 control — genuinely per-request) | **yes** | **yes** |
+| **deepseek-v4-pro** | `reasoning` on/off (`reasoning.enabled`) | on/off | `enabled:true` / `enabled:false` | **dynamic** (measured: reasons 2/3 novel, 2/3 control) | **yes** | **yes** |
+| **kimi-k3** | `reasoning` on/off (`reasoning.enabled`) | on/off | `enabled:true` / `enabled:false` | **dynamic** (measured: reasons 3/3) | **yes** | **yes** (measured: 200, 0 reasoning tokens) |
+| **kimi-k2.7-code** | `reasoning` on/off (`reasoning.enabled`) | on/off | `enabled:true` accepted; `enabled:false` **rejected** | **dynamic** (measured: reasons 2/2) | **yes** | **no** (measured: 400, mandatory) |
+| **kimi-k2.6** | `reasoning` on/off (`reasoning.enabled`) | on/off | `enabled:true` / `enabled:false` | **dynamic** (measured: reasons 3/3) | **yes** | **yes** |
+
+Rows marked *(measured)* were probed against the live API with a novel prompt (see "Measuring a default", below). Rows without that marker rest on vendor documentation.
+
+**Reading the table for design: the value space is one of three shapes** — a discrete enum of native level strings, an integer token budget within `[min,max]` with sentinel meanings (`0`=off, `-1`=dynamic), or a bare on/off with no depth control. The awkward edges are Gemini 2.5 (`0` disables Flash but Pro's floor is 128) and Anthropic's two-axis effort-enum-plus-thinking-toggle, with Haiku dropping effort entirely.
+
+**Off-ness is shape-dependent, and that is why it must be recorded rather than derived.** On a toggle it is an explicit off-form the model may reject. On a range it is whether zero is reachable: `gemini-2.5-flash` has `Min: 0` and an off sentinel, while `gemini-2.5-pro` has `Min: 128`, so every legal request still thinks — the range floor, not a separate switch, is what makes reasoning mandatory there. On an enum it is whether the level set contains a genuine off value, and nothing but convention distinguishes `gpt-5.4`'s `none` (which is off) from `gemini-3.5-flash`'s `minimal` (which is not). Only the range case is mechanically derivable; enum and toggle off-ness must be measured.
+
+**Two-axis models collapse cleanly into one spec.** GLM 5.2 and DeepSeek V4 each expose an on/off toggle *plus* an effort enum; both are modelled as `Kind: Enum` with the level set and `CanDisable: true`, since a toggle is exactly "the disabled value is accepted." A toggle pinned *on* (Kimi K2.7-code, Grok 4.5, Grok 4.20-multi-agent) is `Kind: Toggle, CanEnable: true, CanDisable: false`. No fourth shape is needed.
 
 Two vendor behaviors deliberately do **not** survive into the spec, because the spec's job is to say which values are accepted, not what the vendor does with them afterward: DeepSeek V4 silently maps `low`/`medium` **up** to `high` and `xhigh` up to `max` rather than erroring, and GLM 5.2 similarly folds its wider documented enum down to two distinct behaviors. Both are recorded as the two-value enums the vendor actually distinguishes.
+
+#### Measuring a default
+
+Provider defaults are largely undocumented, so they were measured: one request per model with no reasoning field on the wire at all, recording whether a reasoning block appeared and how many reasoning tokens the provider billed.
+
+**Prompt choice dominates the result, and getting it wrong inverts the answer.** An early probe used the `$1.10` bat-and-ball puzzle, which is heavily represented in training data; models that recognize it answer from recall and emit no reasoning, producing false negatives. An identically-structured prompt with novel numbers — *"A stapler and a pencil cost $2.47 in total. The stapler costs $1.83 more than the pencil."* — reversed the verdict for five models. A second unfamiliar prompt (a train-timetable subtraction) served as the control, confirming the novel prompts discriminate rather than always firing. **Any future re-measurement must use novel inputs**, or it will report contamination as vendor behavior.
+
+Two results only a repeated probe can produce:
+
+- **A default can be genuinely nondeterministic.** `deepseek-v4-flash` reasoned on 1 of 3 and then 2 of 3 identical requests; `deepseek-v4-pro` on 2 of 3 and 2 of 3. There is no fixed value to record for these models, which is what "dynamic" exists to say.
+- **Accepted is not the same as effective.** All nine OpenRouter-routed models return 200 for `reasoning:{effort:"low"|"high"}`, but only `grok-4.20-multi-agent` shows a differentiated response (1,744 reasoning tokens at `low` against 9,334 at `high`); the rest are flat within run-to-run noise. Acceptance of a level therefore does not establish that the model has one, and these entries stay `Kind: Toggle` until a level probe with adequate repetition says otherwise. This is an open measurement item, not a settled fact.
+
+**A model whose default is off may still be enableable.** `grok-4.20` emitted zero reasoning tokens on 6 of 6 unset requests and 399/438 on explicit `reasoning:{enabled:true}`. Its reasoning is reachable only through an explicit on-value, so a client with no way to *enable* reasoning cannot reach that model's reasoning at all — the on-form is load-bearing, not a redundant twin of the off-form.
 
 **Recommended introspection API (Go) — covers all three shapes with one discriminated type.** A consumer (agentrepl `--help`, a validator) reads this as data and never embeds provider knowledge:
 
@@ -424,20 +450,35 @@ type ReasoningKind int
 const (
     ReasoningEnum  ReasoningKind = iota // discrete native level strings
     ReasoningRange                      // integer token budget in [Min,Max]
-    ReasoningToggle                     // on/off only, no depth control (GLM 4.6/4.7)
+    ReasoningToggle                     // on/off only, no depth control
 )
 
 // ReasoningSpec is the inspectable native-vocabulary descriptor for one model.
 type ReasoningSpec struct {
-    Term       string         // native label: "effort" | "thinking level" | "thinking budget"
+    Term       string           // native label: "effort" | "thinking level" | "thinking budget" | "thinking"
     Kind       ReasoningKind
-    Levels     []string       // Kind==Enum: accepted native strings, in the model's own order
-    Min, Max   int            // Kind==Range: inclusive valid budget range
-    Sentinels  []Sentinel     // Kind==Range: magic ints with native meaning (0=off, -1=dynamic)
-    Default    ReasoningValue // the model's default — what the warn-fallback path applies
-    CanDisable bool
+    Levels     []string         // Kind==Enum: accepted native strings, in the model's own order
+    Min, Max   int              // Kind==Range: inclusive valid budget range
+    Sentinels  []Sentinel       // Kind==Range: magic ints with native meaning (0=off, -1=dynamic)
+    CanEnable  bool             // an explicit on-form exists and the model accepts it (Kind==Toggle only)
+    CanDisable bool             // an explicit off-form exists and the model accepts it
+    Default    ReasoningDefault // what the provider does when nothing is sent
 }
 type Sentinel struct{ Value int; Meaning string } // e.g. {0,"off"}, {-1,"dynamic"}
+
+// ReasoningDefault answers "what happens if I send nothing?" — deliberately a
+// different type from ReasoningValue, which answers "what may I send?".
+type ReasoningDefault struct {
+    Mode  ReasoningDefaultMode
+    Value ReasoningValue // set only when Mode == DefaultFixed
+}
+type ReasoningDefaultMode int
+const (
+    DefaultUnaudited ReasoningDefaultMode = iota // zero value: not measured or sourced
+    DefaultOff                                   // does not reason unless asked
+    DefaultFixed                                 // equivalent to the caller sending Value
+    DefaultDynamic                               // provider chooses per request; not caller-controllable
+)
 
 // Introspection is catalog data, not a provider interface: catalog.Lookup(model)
 // returns the Entry (whose Reasoning is a *ReasoningSpec, nil where unknown),
@@ -446,34 +487,29 @@ type Sentinel struct{ Value int; Meaning string } // e.g. {0,"off"}, {-1,"dynami
 // Providers expose no introspection of their own — they hold no model knowledge.
 ```
 
-**Setting reasoning natively — a tagged `ReasoningValue`** carrying exactly one native form (a level string, an int budget, or explicit-disabled), so the native value flows to the adapter untranslated. The zero value means "unset → use the model default, no warning":
+`DefaultUnaudited` as the **zero value** is load-bearing: an unrecorded default and a measured "off" must not read alike, or every un-probed entry silently claims a fact nobody established.
+
+**Setting reasoning natively — a tagged `ReasoningValue`** carrying exactly one native form, so the native value flows to the adapter untranslated. The zero value means "unset → whatever the provider does, no fields sent":
 
 ```go
 type ReasoningValue struct { /* tag + level string + budget int, fields unexported */ }
 func Level(s string) ReasoningValue    // native level: Level("high"), Level("xhigh")
 func Budget(n int) ReasoningValue      // native budget: Budget(8000)
-func DisableReasoning() ReasoningValue // explicit off (lowered to each model's native off-form)
-// GenSettings.Reasoning is a ReasoningValue (replacing the removed ReasoningEffort enum).
+func EnableReasoning() ReasoningValue  // explicit on (lowered to each wire's native on-form)
+func DisableReasoning() ReasoningValue // explicit off (lowered to each wire's native off-form)
 ```
 
-`DisableReasoning()` is first-class rather than an overloaded `0`/`none`, because whether a magic value means "off" is itself model-specific — the consumer expresses intent and the adapter lowers it to that model's native off-representation (`thinking:{type:"disabled"}`, `reasoning.effort:"none"`, `thinkingBudget:0`), or emits a warning+default if the model **cannot** disable.
+`DisableReasoning()` and `EnableReasoning()` are first-class rather than overloaded `0`/`none`/`max`, because which value means off or on is wire-specific — the consumer expresses intent and the adapter lowers it to that wire's native form (`{"reasoning":{"enabled":false}}`, `thinking:{type:"disabled"}`, `reasoning.effort:"none"`, `thinkingBudget:0`). **Not every wire has a bare on-form**: OpenRouter (`reasoning.enabled:true`), Z.ai (`thinking.type:"enabled"`) and Anthropic (`thinking.type:"adaptive"`) do, while Google and OpenAI express on-ness only as a budget or a level and have none.
 
-**No AgentKit-side validation, fallback, or coercion — the vendor is the judge.** The value the consumer sets is lowered to the wire **by its shape alone** (level / budget / disabled / unset) and sent as given. A value the model accepts is honored exactly; one it does not is rejected by the provider and surfaces as that provider's typed error, attributable and loud. Nothing is ever silently substituted, and there is no "apply the model's default instead" path — the former warn-and-fall-back design required per-model specs in the request path, which the provider layer no longer holds.
+**No AgentKit-side validation, fallback, or coercion — the vendor is the judge.** The value the consumer sets is lowered to the wire **by its shape alone** and sent as given. A value the model accepts is honored exactly; one it does not is rejected by the provider and surfaces as that provider's typed error, attributable and loud. Nothing is ever silently substituted, and there is no "apply the model's default instead" path.
 
-The zero value means "unset": an untouched `GenSettings` sends no reasoning fields at all, so a consumer that ignores reasoning is unaffected and a non-reasoning model is safe by default even when uncataloged.
-
-```go
-type ReasoningValue struct { /* tag + level string + budget int, fields unexported */ }
-func Level(s string) ReasoningValue    // native level: Level("high"), Level("xhigh")
-func Budget(n int) ReasoningValue      // native budget: Budget(8000)
-func DisableReasoning() ReasoningValue // explicit off (lowered to each model's native off-form)
-```
-
-`DisableReasoning()` is first-class rather than an overloaded `0`/`none`, because whether a magic value means "off" is itself model-specific — the consumer expresses intent and the adapter lowers it to that model's native off-form (`thinking:{type:"disabled"}`, `reasoning.effort:"none"`, `thinkingBudget:0`).
+The zero value means "unset": an untouched `GenSettings` sends no reasoning fields at all, so a consumer that ignores reasoning is unaffected and a non-reasoning model is safe by default even when uncataloged. This is also what makes the catalog's recorded default *true rather than aspirational* — because AgentKit sends nothing, what the user gets on an untouched setting is exactly the provider's own behavior, matching what they would have got calling the vendor API directly.
 
 **Pre-send politeness is a consumer choice, outside the request path.** A consumer that wants to validate a `/set` before spending a round trip, or render a model's vocabulary in `--help`, calls `catalog.Check(model, v)` — advisory only. The warning channel that *does* exist is narrow and structural: `Warning{Setting, Code, Detail}` with codes `WarnToolChoiceForced`, `WarnToolSchemaLossy`, and `WarnCostUnknown`, read off the stream via `Warnings()` alongside `Err()`/`Usage()`/`Cost()`. There are no reasoning warning codes, because there is no reasoning fallback to report.
 
-**Why a universal `ReasoningEffort` enum is not viable.** (1) A cross-model "nearest" requires rebuilding the very ordinal ladder being removed, and it is **undefinable** across a discrete enum and a `thinkingBudget` integer without arbitrary bucketing. (2) The per-model value sets genuinely differ even *within* effort-enum providers (`xhigh` exists on Opus but not Sonnet; gpt-5.4 defaults to `none` while gpt-5.5 defaults to `medium`; GLM and DeepSeek use `high`/`max`, not `low`/`medium`/`high`), so one enum would either over-promise values a model rejects or under-expose values it supports. (3) Silent lossy coercion is precisely the bug class a verification harness exists to expose. Native-first plus an advisory catalog is strictly more truthful and not materially more code, since the per-provider native lowering had to exist in each adapter anyway.
+**Why a universal `ReasoningEffort` enum is not viable.** (1) A cross-model "nearest" requires rebuilding the very ordinal ladder being removed, and it is **undefinable** across a discrete enum and a `thinkingBudget` integer without arbitrary bucketing. (2) The per-model value sets genuinely differ even *within* effort-enum providers (`xhigh` exists on Opus but not Sonnet; gpt-5.4 defaults to `none` while gpt-5.5 defaults to `medium`; GLM and DeepSeek use `high`/`max`, not `low`/`medium`/`high`), so one enum would either over-promise values a model rejects or under-expose values it supports. (3) Nine of the tracked models have **no** level vocabulary at all, so a level-shaped API cannot express them. (4) Silent lossy coercion is precisely the bug class a verification harness exists to expose. Native-first plus an advisory catalog is strictly more truthful and not materially more code, since the per-provider native lowering had to exist in each adapter anyway.
+
+**Why a single fixed default (e.g. "medium everywhere") was rejected.** It is conceptually simple and practically unworkable: nine tracked models have no levels to receive it; six models (three Anthropic 4.x, three gpt-5.4) default to off, so injecting a level would silently turn reasoning on and bill the user for tokens they never requested; `gemini-2.5-pro` has no off and a floor of 128; and models whose default is genuinely dynamic have no level to match. It would also make AgentKit substitute a value the consumer did not choose, which is the exact behavior native-first exists to forbid. Pass-through matches the vendor API by construction and costs no code, since an unset value already sends nothing.
 
 ### 7.2 Preserved cross-turn reasoning state (unchanged by native-first)
 

@@ -15,7 +15,7 @@ One line per Decision, in number order — file, label, and the Verification ids
 - **D5** `project/design/D05.md` — Provider packaging, construction credentials, and free-flow model selection
   - ids: R-CQO3-7EE9, R-CRVZ-L64Y, R-CT3V-YXVN, R-H65D-HYXH
 - **D6** `project/design/D06.md` — Generation settings and the native reasoning value
-  - ids: R-P5U3-5CFZ, R-CUBS-CPMC, R-T40A-VZQ7, R-T587-9RGW, R-T6G3-NJ7L, R-P9HS-ANO2, R-PBXL-275G
+  - ids: R-P5U3-5CFZ, R-CUBS-CPMC, R-T40A-VZQ7, R-T587-9RGW, R-T6G3-NJ7L, R-DCOZ-8W8U, R-DDWV-MNZJ, R-DF4S-0FQ8, R-DGCO-E7GX, R-P9HS-ANO2, R-PBXL-275G
 - **D7** `project/design/D07.md` — The error model
   - ids: R-BUR1-XAK8, R-FR35-46U7, R-BVYY-B2AX, R-BX6U-OU1M, R-BYER-2LSB, R-BZMN-GDJ0, R-I5VJ-CTXE, R-7CYE-KS40, R-6TQA-QKYI, R-6UY7-4CP7
 - **D8** `project/design/D08.md` — The uniform `Usage` struct (disjoint token buckets)
@@ -27,7 +27,7 @@ One line per Decision, in number order — file, label, and the Verification ids
 - **D11** `project/design/D11.md` — Retry & backoff policy
   - ids: R-P3LQ-QY2X, R-P4TN-4PTM, R-P61J-IHKB, R-Y878-6UDJ, R-P79F-W9B0, R-P8HC-A11P, R-6XDZ-VW6L, R-6YLW-9NXA
 - **D12** `project/design/D12.md` — Raw HTTP, not wrapped SDKs
-  - ids: (none — structural)
+  - ids: none — structural
 - **D13** `project/design/D13.md` — Testing strategy
   - ids: R-WJLM-7QRP, R-WKTI-LIIE, R-WM1E-ZA93, R-711P-17EO, R-CL9K-41F1, R-CMHG-HT5Q, R-CNPC-VKWF, R-COX9-9CN4, R-CQ55-N4DT, R-CRD2-0W4I, R-CSKY-ENV7, R-CTSU-SFLW
 - **D15** `project/design/D15.md` — Structured JSONL event log & conversation lifecycle
@@ -53,7 +53,7 @@ One line per Decision, in number order — file, label, and the Verification ids
 - **D25** `project/design/D25.md` — OpenAI credentials: API key and ChatGPT subscription
   - ids: R-DG9Z-8KYU, R-PV6N-URM6, R-PWEK-8JCV, R-DHHV-MCPJ, R-PXMG-MB3K, R-DL5K-RNXM, R-DJXO-DW6X
 - **D26** `project/design/D26.md` — The advisory model catalog: `agentkit/catalog`
-  - ids: R-DMDH-5FOB, R-DNLD-J7F0, R-DOT9-WZ5P, R-DQ16-AQWE, R-DR92-OIN3, R-4MB8-ERDC, R-4NJ4-SJ41, R-DSGZ-2ADS
+  - ids: R-DMDH-5FOB, R-DNLD-J7F0, R-DOT9-WZ5P, R-DQ16-AQWE, R-DHKK-RZ7M, R-DISH-5QYB, R-DK0D-JIP0, R-DL89-XAFP, R-DMG6-B26E, R-DNO2-OTX3, R-DOVZ-2LNS, R-DR92-OIN3, R-4MB8-ERDC, R-4NJ4-SJ41, R-DSGZ-2ADS
 - **D27** `project/design/D27.md` — The `toolkit` subpackage: standard coding tools, root confinement, output cap
   - ids: R-LQ1Y-XASG, R-LR9V-B2J5, R-LSHR-OU9U, R-LTPO-2M0J, R-LUXK-GDR8, R-LW5G-U5HX
 - **D28** `project/design/D28.md` — `toolkit`: `Read`, `Write`, `Edit` semantics
@@ -147,18 +147,29 @@ R-DALE-R5UM  D23  project/design/D23.md
 R-DBED-PI02  D24  project/design/D24.md
 R-DBTB-4XLB  D23  project/design/D23.md
 R-DCMA-39QR  D24  project/design/D24.md
+R-DCOZ-8W8U  D6  project/design/D06.md
 R-DD17-IPC0  D23  project/design/D23.md
+R-DDWV-MNZJ  D6  project/design/D06.md
 R-DE93-WH2P  D23  project/design/D23.md
 R-DF22-UT85  D24  project/design/D24.md
+R-DF4S-0FQ8  D6  project/design/D06.md
 R-DFH0-A8TE  D23  project/design/D23.md
 R-DG9Z-8KYU  D25  project/design/D25.md
+R-DGCO-E7GX  D6  project/design/D06.md
 R-DHHV-MCPJ  D25  project/design/D25.md
+R-DHKK-RZ7M  D26  project/design/D26.md
+R-DISH-5QYB  D26  project/design/D26.md
 R-DJXO-DW6X  D25  project/design/D25.md
+R-DK0D-JIP0  D26  project/design/D26.md
 R-DL5K-RNXM  D25  project/design/D25.md
+R-DL89-XAFP  D26  project/design/D26.md
 R-DMDH-5FOB  D26  project/design/D26.md
+R-DMG6-B26E  D26  project/design/D26.md
 R-DNLD-J7F0  D26  project/design/D26.md
+R-DNO2-OTX3  D26  project/design/D26.md
 R-DNS8-QC6Z  D9  project/design/D09.md
 R-DOT9-WZ5P  D26  project/design/D26.md
+R-DOVZ-2LNS  D26  project/design/D26.md
 R-DQ16-AQWE  D26  project/design/D26.md
 R-DR92-OIN3  D26  project/design/D26.md
 R-DRFX-VNF2  D9  project/design/D09.md
@@ -315,3 +326,4 @@ R-ZCMP-ARG8  D9  project/design/D09.md
 R-ZELD-OQNG  D1  project/design/D01.md
 R-ZWV0-CY54  D1  project/design/D01.md
 R-ZZAT-4HMI  D1  project/design/D01.md
+
