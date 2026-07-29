@@ -58,7 +58,7 @@ var entries = map[string]Entry{
 	"claude-haiku-4-5": chatEntry(
 		"claude-haiku-4-5", VendorAnthropic, agentkit.ProviderAnthropic, 200_000,
 		pricing(agentkit.RateTier{InputUncached: 1000, CacheReadInput: 100, CacheWrite5m: 1250, CacheWrite1h: 2000, Output: 5000}),
-		&ReasoningSpec{Term: "thinking budget", Kind: ReasoningRange, Min: 1024, Max: 4096, CanDisable: true, Default: ReasoningDefault{Mode: DefaultOff}},
+		&ReasoningSpec{Term: "thinking budget", Kind: ReasoningRange, Min: 1024, Max: 4096, Sentinels: []Sentinel{{Value: 0, Meaning: "off"}}, CanDisable: true, Default: ReasoningDefault{Mode: DefaultOff}},
 	),
 	"claude-fable-5": chatEntry(
 		"claude-fable-5", VendorAnthropic, agentkit.ProviderAnthropic, 1_000_000,
@@ -138,12 +138,12 @@ var entries = map[string]Entry{
 	"grok-4.5": chatEntry(
 		"grok-4.5", VendorXAI, agentkit.ProviderOpenRouter, 256_000,
 		pricing(agentkit.RateTier{InputUncached: 3000, Output: 15000}),
-		toggleReasoning(true, false, DefaultUnaudited),
+		&ReasoningSpec{Term: "thinking", Kind: ReasoningToggle, CanEnable: true, Default: fixed(agentkit.EnableReasoning())},
 	),
 	"grok-4.3": chatEntry(
 		"grok-4.3", VendorXAI, agentkit.ProviderOpenRouter, 256_000,
 		pricing(agentkit.RateTier{InputUncached: 3000, Output: 15000}),
-		toggleReasoning(true, true, DefaultUnaudited),
+		&ReasoningSpec{Term: "thinking", Kind: ReasoningToggle, CanEnable: true, CanDisable: true, Default: fixed(agentkit.EnableReasoning())},
 	),
 	"grok-4.20": chatEntry(
 		"grok-4.20", VendorXAI, agentkit.ProviderOpenRouter, 2_000_000,
@@ -153,7 +153,7 @@ var entries = map[string]Entry{
 	"grok-4.20-multi-agent": chatEntry(
 		"grok-4.20-multi-agent", VendorXAI, agentkit.ProviderOpenRouter, 2_000_000,
 		pricing(agentkit.RateTier{InputUncached: 6000, Output: 30000}),
-		toggleReasoning(true, false, DefaultUnaudited),
+		&ReasoningSpec{Term: "thinking", Kind: ReasoningToggle, CanEnable: true, Default: fixed(agentkit.EnableReasoning())},
 	),
 	"deepseek-v4-flash": chatEntry(
 		"deepseek-v4-flash", VendorDeepSeek, agentkit.ProviderOpenRouter, 128_000,
@@ -163,22 +163,22 @@ var entries = map[string]Entry{
 	"deepseek-v4-pro": chatEntry(
 		"deepseek-v4-pro", VendorDeepSeek, agentkit.ProviderOpenRouter, 128_000,
 		pricing(agentkit.RateTier{InputUncached: 600, CacheReadInput: 60, Output: 2400}),
-		toggleReasoning(true, true, DefaultUnaudited),
+		&ReasoningSpec{Term: "thinking", Kind: ReasoningToggle, CanEnable: true, CanDisable: true, Default: fixed(agentkit.EnableReasoning())},
 	),
 	"kimi-k3": chatEntry(
 		"kimi-k3", VendorMoonshot, agentkit.ProviderOpenRouter, 256_000,
 		pricing(agentkit.RateTier{InputUncached: 600, CacheReadInput: 60, Output: 2500}),
-		toggleReasoning(true, false, DefaultUnaudited),
+		&ReasoningSpec{Term: "thinking", Kind: ReasoningToggle, CanEnable: true, CanDisable: true, Default: fixed(agentkit.EnableReasoning())},
 	),
 	"kimi-k2.7-code": chatEntry(
 		"kimi-k2.7-code", VendorMoonshot, agentkit.ProviderOpenRouter, 256_000,
 		pricing(agentkit.RateTier{InputUncached: 600, CacheReadInput: 60, Output: 2500}),
-		toggleReasoning(true, false, DefaultUnaudited),
+		&ReasoningSpec{Term: "thinking", Kind: ReasoningToggle, CanEnable: true, Default: fixed(agentkit.EnableReasoning())},
 	),
 	"kimi-k2.6": chatEntry(
 		"kimi-k2.6", VendorMoonshot, agentkit.ProviderOpenRouter, 256_000,
 		pricing(agentkit.RateTier{InputUncached: 600, CacheReadInput: 60, Output: 2500}),
-		toggleReasoning(true, true, DefaultUnaudited),
+		&ReasoningSpec{Term: "thinking", Kind: ReasoningToggle, CanEnable: true, CanDisable: true, Default: fixed(agentkit.EnableReasoning())},
 	),
 	"glm-5.2": chatEntry(
 		"glm-5.2", VendorZAI, agentkit.ProviderZAI, 202_752,
@@ -189,19 +189,19 @@ var entries = map[string]Entry{
 	"glm-5.1": chatEntry(
 		"glm-5.1", VendorZAI, agentkit.ProviderZAI, 202_752,
 		pricing(agentkit.RateTier{InputUncached: 1400, CacheReadInput: 260, Output: 4400}),
-		toggleReasoning(true, true, DefaultUnaudited),
+		&ReasoningSpec{Term: "thinking", Kind: ReasoningToggle, CanEnable: true, CanDisable: true, Default: fixed(agentkit.EnableReasoning())},
 		routerOffering(202_752),
 	),
 	"glm-4.7": chatEntry(
 		"glm-4.7", VendorZAI, agentkit.ProviderZAI, 202_752,
 		pricing(agentkit.RateTier{InputUncached: 600, CacheReadInput: 110, Output: 2200}),
-		toggleReasoning(true, true, DefaultUnaudited),
+		&ReasoningSpec{Term: "thinking", Kind: ReasoningToggle, CanEnable: true, CanDisable: true, Default: fixed(agentkit.EnableReasoning())},
 		routerOffering(202_752),
 	),
 	"glm-4.6": chatEntry(
 		"glm-4.6", VendorZAI, agentkit.ProviderZAI, 202_752,
 		pricing(agentkit.RateTier{InputUncached: 600, CacheReadInput: 110, Output: 2200}),
-		toggleReasoning(true, true, DefaultUnaudited),
+		&ReasoningSpec{Term: "thinking", Kind: ReasoningToggle, CanEnable: true, CanDisable: true, Default: fixed(agentkit.EnableReasoning())},
 		routerOffering(202_752),
 	),
 	"text-embedding-3-small": embeddingEntry(

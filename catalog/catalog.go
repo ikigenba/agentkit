@@ -207,10 +207,11 @@ func Check(model string, provider agentkit.ProviderID, v agentkit.ReasoningValue
 	if offering.Reasoning == nil {
 		return false, nil, true
 	}
-	return offering.Reasoning.accepts(v), offering.Reasoning, true
+	return offering.Reasoning.Accepts(v), offering.Reasoning, true
 }
 
-func (s ReasoningSpec) accepts(v agentkit.ReasoningValue) bool {
+// Accepts reports whether v belongs to this offering's reasoning vocabulary.
+func (s ReasoningSpec) Accepts(v agentkit.ReasoningValue) bool {
 	if v.IsUnset() {
 		return true
 	}

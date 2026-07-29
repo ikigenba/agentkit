@@ -41,10 +41,14 @@ func TestCatalogDataMatchesRecordedReference(t *testing.T) {
 					row.ReasoningDefaults = append(row.ReasoningDefaults, "fixed:level:"+level)
 				} else if budget, ok := value.Budget(); ok {
 					row.ReasoningDefaults = append(row.ReasoningDefaults, fmt.Sprintf("fixed:budget:%d", budget))
+				} else if value.Enabled() {
+					row.ReasoningDefaults = append(row.ReasoningDefaults, "fixed:enabled")
+				} else if value.Disabled() {
+					row.ReasoningDefaults = append(row.ReasoningDefaults, "fixed:disabled")
 				} else {
 					t.Errorf("%s has an invalid fixed reasoning default", model)
 				}
-				if !offering.Reasoning.accepts(value) {
+				if !offering.Reasoning.Accepts(value) {
 					t.Errorf("%s fixed reasoning default is not accepted by its own spec", model)
 				}
 			default:
@@ -58,9 +62,121 @@ func TestCatalogDataMatchesRecordedReference(t *testing.T) {
 		t.Fatal(err)
 	}
 	digest := sha256.Sum256(encoded)
-	const recordedReference = "71edd090f612bb3fe40a54ef8caefdb308f1f1c82ed21e2e8b8a9cd94e5c3564"
+	const recordedReference = "55cd8ee108603f0dc897439ffd96cd22fdfd7e1c6ee19286740941c2e295408b"
 	if got := hex.EncodeToString(digest[:]); got != recordedReference {
 		t.Fatalf("catalog data differs from recorded reference table: got %s, want %s", got, recordedReference)
+	}
+}
+
+func TestReasoningDefaultValueMatchesMode(t *testing.T) {
+	// R-DHKK-RZ7M
+	for model, entry := range entries {
+		for i, offering := range entry.Offerings {
+			if offering.Reasoning == nil {
+				continue
+			}
+			fixed := offering.Reasoning.Default.Mode == DefaultFixed
+			if nonzero := !offering.Reasoning.Default.Value.IsUnset(); nonzero != fixed {
+				t.Errorf("%s offering %d default value nonzero = %v, fixed = %v", model, i, nonzero, fixed)
+			}
+		}
+	}
+}
+
+func TestFixedReasoningDefaultsAreAccepted(t *testing.T) {
+	// R-DISH-5QYB
+	for model, entry := range entries {
+		for i, offering := range entry.Offerings {
+			spec := offering.Reasoning
+			if spec != nil && spec.Default.Mode == DefaultFixed && !spec.Accepts(spec.Default.Value) {
+				t.Errorf("%s offering %d rejects its fixed default", model, i)
+			}
+		}
+	}
+}
+
+func TestCanEnableIsOnlySetOnToggleSpecs(t *testing.T) {
+	// R-DK0D-JIP0
+	for model, entry := range entries {
+		for i, offering := range entry.Offerings {
+			spec := offering.Reasoning
+			if spec != nil && spec.CanEnable && spec.Kind != ReasoningToggle {
+				t.Errorf("%s offering %d enables reasoning on kind %d", model, i, spec.Kind)
+			}
+		}
+	}
+}
+
+func TestRangeCanDisableMatchesOffVocabulary(t *testing.T) {
+	// R-DL89-XAFP
+	for model, entry := range entries {
+		for i, offering := range entry.Offerings {
+			spec := offering.Reasoning
+			if spec == nil || spec.Kind != ReasoningRange {
+				continue
+			}
+			derived := spec.Min == 0
+			for _, sentinel := range spec.Sentinels {
+				derived = derived || sentinel.Meaning == "off"
+			}
+			if spec.CanDisable != derived {
+				t.Errorf("%s offering %d CanDisable = %v, derived off vocabulary = %v", model, i, spec.CanDisable, derived)
+			}
+		}
+	}
+}
+
+func TestPrimaryChatReasoningDefaultsAreAudited(t *testing.T) {
+	// R-DMG6-B26E
+	for model, entry := range entries {
+		if entry.Embedding != nil {
+			continue
+		}
+		if len(entry.Offerings) == 0 || entry.Offerings[0].Reasoning == nil {
+			t.Errorf("%s has no primary reasoning spec", model)
+			continue
+		}
+		if entry.Offerings[0].Reasoning.Default.Mode == DefaultUnaudited {
+			t.Errorf("%s has an unaudited primary reasoning default", model)
+		}
+	}
+}
+
+func TestOfferingAuditTierRequiresCompletePrimaryTerms(t *testing.T) {
+	// R-LSJR-XP4J
+	var incompleteSecondary bool
+	for model, entry := range entries {
+		if entry.Embedding != nil {
+			continue
+		}
+		if len(entry.Offerings) == 0 || entry.Offerings[0].Pricing == nil || entry.Offerings[0].Reasoning == nil {
+			t.Errorf("%s has incomplete primary terms", model)
+		}
+		for _, offering := range entry.Offerings[1:] {
+			incompleteSecondary = incompleteSecondary || offering.Pricing == nil || offering.Reasoning == nil
+		}
+	}
+	if !incompleteSecondary {
+		t.Error("catalog has no secondary offering demonstrating the unaudited tier")
+	}
+}
+
+func TestEnableReasoningAcceptanceMatchesExplicitPermission(t *testing.T) {
+	// R-DNO2-OTX3
+	for model, entry := range entries {
+		for i, offering := range entry.Offerings {
+			spec := offering.Reasoning
+			if spec == nil {
+				continue
+			}
+			got := spec.Accepts(agentkit.EnableReasoning())
+			if got != spec.CanEnable {
+				t.Errorf("%s offering %d Accepts(EnableReasoning) = %v, CanEnable = %v", model, i, got, spec.CanEnable)
+			}
+			if spec.Kind != ReasoningToggle && got {
+				t.Errorf("%s offering %d kind %d accepts explicit enable", model, i, spec.Kind)
+			}
+		}
 	}
 }
 

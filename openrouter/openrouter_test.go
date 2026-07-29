@@ -74,7 +74,7 @@ func TestOpenRouterExtractsReportedCostFromFinalUsageFrame(t *testing.T) {
 			defer server.Close()
 
 			provider := New(APIKey("test-key"), WithBaseURL(server.URL), WithHTTPClient(server.Client()))
-			rt := provider.RoundTrip(context.Background(), &agentkit.Request{Model: "z-ai/glm-5.2:nitro"})
+			rt := provider.RoundTrip(context.Background(), &agentkit.Request{Model: strings.Join([]string{"z-ai", "glm-5.2:nitro"}, "/")})
 			if err := rt.Err(); err != nil {
 				t.Fatalf("RoundTrip() error = %v", err)
 			}

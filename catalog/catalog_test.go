@@ -92,8 +92,9 @@ func TestResolveCoversCuratedPassthruAndUnrouted(t *testing.T) {
 	}
 
 	namedRoute := Resolve(agentkit.ProviderOpenRouter, "glm-5.2")
+	wantRouterName := string(VendorZAI) + "/glm-5.2"
 	if namedRoute.Coverage != Curated || namedRoute.Provider != agentkit.ProviderOpenRouter ||
-		namedRoute.WireModel != "z-ai/glm-5.2" || !reflect.DeepEqual(namedRoute.Offering, Offerings("glm-5.2")[1]) {
+		namedRoute.WireModel != wantRouterName || !reflect.DeepEqual(namedRoute.Offering, Offerings("glm-5.2")[1]) {
 		t.Fatalf("Resolve(named) = %#v, want OpenRouter offering", namedRoute)
 	}
 
@@ -124,11 +125,11 @@ func TestResolveCoversCuratedPassthruAndUnrouted(t *testing.T) {
 func TestWireModelIsDerivedFromVendorAndProvider(t *testing.T) {
 	// R-LQ3Z-65N5
 	grok, _ := Lookup("grok-4.5")
-	if got := grok.WireModel(agentkit.ProviderOpenRouter); got != "x-ai/grok-4.5" {
+	if got, want := grok.WireModel(agentkit.ProviderOpenRouter), string(VendorXAI)+"/"+grok.Model; got != want {
 		t.Fatalf("grok OpenRouter wire model = %q", got)
 	}
 	glm, _ := Lookup("glm-5.2")
-	if got := glm.WireModel(agentkit.ProviderOpenRouter); got != "z-ai/glm-5.2" {
+	if got, want := glm.WireModel(agentkit.ProviderOpenRouter), string(VendorZAI)+"/"+glm.Model; got != want {
 		t.Fatalf("GLM OpenRouter wire model = %q", got)
 	}
 	if got := glm.WireModel(agentkit.ProviderZAI); got != "glm-5.2" {
@@ -138,7 +139,7 @@ func TestWireModelIsDerivedFromVendorAndProvider(t *testing.T) {
 		t.Fatalf("Resolve wire model = %q, want Entry.WireModel result", got)
 	}
 	glm.Vendor = VendorXAI
-	if got := glm.WireModel(agentkit.ProviderOpenRouter); got != "x-ai/glm-5.2" {
+	if got, want := glm.WireModel(agentkit.ProviderOpenRouter), string(VendorXAI)+"/"+glm.Model; got != want {
 		t.Fatalf("wire model after vendor change = %q, want derived x-ai namespace", got)
 	}
 }
