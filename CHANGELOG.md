@@ -2,6 +2,56 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.10.0
+
+- Organized the catalog by offering. `catalog.Entry` replaced `Provider` and
+  `Routes` with a `Vendor` and an ordered `Offerings` slice, with the default
+  route at index zero. Rates, reasoning vocabulary, and context size moved onto
+  each offering, so consumers can name a model and receive every route in
+  preference order, with each route's terms, in one call. In particular,
+  `glm-5.2` through OpenRouter no longer reports Z.ai's figures.
+- Changed `Resolve` to return a `Resolution` instead of four values and removed
+  the trailing `ok` boolean. Its `Coverage` reports `Curated`, `Passthru`, or
+  `Unrouted`, so a missing catalog entry for a provider/model pair is distinct
+  from whether that provider can serve the model. Every coverage state still
+  returns a runnable model string; none gates execution.
+- Derived wire model ids instead of storing them. Consumers name `grok-4.5`,
+  optionally with `openrouter`, and `Entry.WireModel` computes the provider's
+  namespaced id without exposing or requiring `x-ai/grok-4.5`.
+- Added `Offerings`, `Offer`, `Entry.WireModel`, and `catalog.VendorID`. Renamed
+  `ListByProvider` to `ListCurated` to reflect that it lists catalog coverage,
+  not everything a provider can serve. `Check` now accepts a provider because
+  different routes to the same model can accept different values.
+- Changed providers to report an `Identity` instead of a name:
+  `Provider.Name() string` and `EmbeddingProvider.Name() string` became
+  `Identity() Identity`, with `ProviderID` and `AuthMode` carried separately.
+  `agentkit.Error` likewise split `Provider` into typed `Provider` and `Auth`
+  fields, while JSONL `turn_start` records gained an `auth` field. Consumers
+  reading errors or logs now receive `provider` and `auth` independently where
+  they previously saw `"openai.subscription"`; `Identity.String()` preserves
+  that combined form for display.
+- Renamed `zai`'s provider id to `z-ai` in errors and log records. The new
+  spelling matches the vendor namespace used to derive OpenRouter ids; the Go
+  package remains `zai`.
+- Changed `ReasoningSpec.Default` from `agentkit.ReasoningValue` to
+  `catalog.ReasoningDefault`. It records `DefaultOff`, `DefaultFixed`,
+  `DefaultDynamic`, or the zero `DefaultUnaudited`, and carries a value only
+  when one exists. Providers that decide reasoning per request no longer need
+  an invented default value.
+- Added `ReasoningSpec.CanEnable` so the catalog reports permission to turn
+  reasoning on separately from permission to turn it off.
+- Added `agentkit.EnableReasoning()`, an explicit on-form lowered to each
+  provider's native wire representation. This made `grok-4.20` reasoning
+  reachable for the first time because the model reasons only when explicitly
+  enabled. Google and OpenAI reject this option with `ErrInvalidConfig` because
+  their wires have no bare on-form.
+- Corrected catalog data measured against the live APIs, most visibly marking
+  `kimi-k3` with `CanDisable: true` and recording `grok-4.20` as defaulting to
+  off.
+- Preserved what AgentKit sends for existing code: an unset reasoning value
+  still transmits no reasoning fields, so the provider's own default applies
+  exactly as before.
+
 ## v0.9.0
 
 - Changed `ocr.Tool` to return a transcript path under `<root>/ocr/` instead of
