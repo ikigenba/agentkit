@@ -568,6 +568,39 @@ func TestAnthropicRequestMapsGenerationSettingsAndWarnings(t *testing.T) {
 		}
 	})
 
+	t.Run("enable lowers to exact adaptive form", func(t *testing.T) {
+		// R-DCOZ-8W8U
+		// R-DF4S-0FQ8
+		var body map[string]any
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body = decodeRequest(t, r)
+			writeSSEFile(t, w, "testdata/final_turn.sse")
+		}))
+		defer server.Close()
+
+		conv := &agentkit.Conversation{
+			Provider: New(APIKey("key"), WithBaseURL(server.URL), WithHTTPClient(server.Client())),
+			Model:    "claude-future",
+			Pricing:  &agentkit.Pricing{},
+			Gen:      agentkit.GenSettings{Reasoning: agentkit.EnableReasoning()},
+		}
+		stream := conv.Send(context.Background(), "hello")
+		drain(stream)
+		if err := stream.Err(); err != nil {
+			t.Fatalf("Err() = %v, want nil", err)
+		}
+		got, err := json.Marshal(body["thinking"])
+		if err != nil {
+			t.Fatalf("marshal thinking: %v", err)
+		}
+		if want := `{"type":"adaptive"}`; string(got) != want {
+			t.Fatalf("thinking = %s, want %s", got, want)
+		}
+		if _, ok := body["output_config"]; ok {
+			t.Fatalf("enabled reasoning emitted level field: %#v", body["output_config"])
+		}
+	})
+
 	t.Run("native level is sent unchanged without warning", func(t *testing.T) {
 		// R-CUBS-CPMC
 		var body map[string]any

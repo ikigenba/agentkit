@@ -150,7 +150,10 @@ func (p *Provider) requestBody(req *agentkit.Request) (map[string]any, []agentki
 		}}
 	}
 
-	gen := generationConfig(req.Gen)
+	gen, err := generationConfig(req.Gen)
+	if err != nil {
+		return nil, nil, err
+	}
 	if len(gen) > 0 {
 		body["generationConfig"] = gen
 	}
@@ -442,7 +445,7 @@ func stringSlice(v any) ([]string, bool) {
 	return out, true
 }
 
-func generationConfig(gen agentkit.GenSettings) map[string]any {
+func generationConfig(gen agentkit.GenSettings) (map[string]any, error) {
 	cfg := make(map[string]any)
 	if gen.Temperature != nil {
 		cfg["temperature"] = *gen.Temperature
@@ -453,10 +456,13 @@ func generationConfig(gen agentkit.GenSettings) map[string]any {
 	if gen.MaxTokens > 0 {
 		cfg["maxOutputTokens"] = gen.MaxTokens
 	}
+	if gen.Reasoning.Enabled() {
+		return nil, fmt.Errorf("Google GenerateContent API has no bare reasoning-on form: %w", agentkit.ErrInvalidConfig)
+	}
 	if !gen.Reasoning.IsUnset() {
 		cfg["thinkingConfig"] = thinkingConfig(gen.Reasoning)
 	}
-	return cfg
+	return cfg, nil
 }
 
 func thinkingConfig(value agentkit.ReasoningValue) map[string]any {

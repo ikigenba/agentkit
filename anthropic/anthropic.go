@@ -249,6 +249,10 @@ func applyReasoning(value agentkit.ReasoningValue, out *messageRequest) {
 	if value.IsUnset() {
 		return
 	}
+	if value.Enabled() {
+		out.Thinking = map[string]any{"type": "adaptive"}
+		return
+	}
 	if value.Disabled() {
 		out.Thinking = map[string]any{"type": "disabled"}
 		return

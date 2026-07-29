@@ -331,6 +331,9 @@ func applyReasoning(value agentkit.ReasoningValue, out *responsesRequest) ([]age
 	if value.IsUnset() {
 		return nil, nil
 	}
+	if value.Enabled() {
+		return nil, fmt.Errorf("openai Responses API has no bare reasoning-on form: %w", agentkit.ErrInvalidConfig)
+	}
 	if value.Disabled() {
 		out.Reasoning = &reasoningConf{Effort: "none"}
 		return nil, nil

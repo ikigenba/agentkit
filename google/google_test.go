@@ -23,6 +23,12 @@ type unknownBlock struct {
 	agentkit.TextBlock
 }
 
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
+	return f(r)
+}
+
 func TestGoogleSendBuildsRequestParsesToolTurnAndUsage(t *testing.T) {
 	var calls int32
 	var sawAuth bool
@@ -375,6 +381,21 @@ func TestGoogleReasoningShapesMapDirectly(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestGoogleRejectsEnableReasoningBeforeTransport(t *testing.T) {
+	// R-DDWV-MNZJ
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		t.Fatal("HTTP transport invoked for unsupported enabled reasoning")
+		return nil, nil
+	})}
+	rt := New(APIKey("key"), WithHTTPClient(client)).RoundTrip(context.Background(), &agentkit.Request{
+		Model: "gemini-future",
+		Gen:   agentkit.GenSettings{Reasoning: agentkit.EnableReasoning()},
+	})
+	if !errors.Is(rt.Err(), agentkit.ErrInvalidConfig) {
+		t.Fatalf("RoundTrip() error = %v, want ErrInvalidConfig", rt.Err())
 	}
 }
 

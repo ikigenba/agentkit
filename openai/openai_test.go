@@ -23,6 +23,12 @@ type unknownBlock struct {
 	agentkit.TextBlock
 }
 
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
+	return f(r)
+}
+
 type staticTokenSource struct {
 	bearer  string
 	account string
@@ -468,6 +474,21 @@ func TestReasoningLowersByShapeWithoutModelKnowledge(t *testing.T) {
 	rt := p.RoundTrip(context.Background(), &agentkit.Request{Model: "any-model", Gen: agentkit.GenSettings{Reasoning: agentkit.Budget(8000)}})
 	if !errors.Is(rt.Err(), agentkit.ErrInvalidConfig) || requests != 0 {
 		t.Fatalf("budget error = %v, requests = %d; want ErrInvalidConfig without request", rt.Err(), requests)
+	}
+}
+
+func TestOpenAIRejectsEnableReasoningBeforeTransport(t *testing.T) {
+	// R-DDWV-MNZJ
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		t.Fatal("HTTP transport invoked for unsupported enabled reasoning")
+		return nil, nil
+	})}
+	rt := New(APIKey("secret"), WithHTTPClient(client)).RoundTrip(context.Background(), &agentkit.Request{
+		Model: "gpt-future",
+		Gen:   agentkit.GenSettings{Reasoning: agentkit.EnableReasoning()},
+	})
+	if !errors.Is(rt.Err(), agentkit.ErrInvalidConfig) {
+		t.Fatalf("RoundTrip() error = %v, want ErrInvalidConfig", rt.Err())
 	}
 }
 

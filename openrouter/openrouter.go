@@ -94,6 +94,9 @@ func encodeReasoning(value agentkit.ReasoningValue) (json.RawMessage, error) {
 	if value.IsUnset() {
 		return nil, nil
 	}
+	if value.Enabled() {
+		return json.RawMessage(`{"reasoning":{"enabled":true}}`), nil
+	}
 	if value.Disabled() {
 		return json.RawMessage(`{"reasoning":{"enabled":false}}`), nil
 	}

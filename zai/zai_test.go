@@ -418,6 +418,30 @@ func TestZaiDropsForeignReasoningFromWireRequest(t *testing.T) {
 	}
 }
 
+func TestZaiEnableReasoningUsesNativeThinkingForm(t *testing.T) {
+	// R-DCOZ-8W8U
+	var body map[string]json.RawMessage
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, zaiTextSSE("ok", 1, 0, 1))
+	}))
+	defer server.Close()
+
+	rt := New(APIKey("test-key"), WithBaseURL(server.URL), WithHTTPClient(server.Client())).RoundTrip(context.Background(), &agentkit.Request{
+		Model: "glm-future",
+		Gen:   agentkit.GenSettings{Reasoning: agentkit.EnableReasoning()},
+	})
+	if err := rt.Err(); err != nil {
+		t.Fatalf("RoundTrip() error = %v", err)
+	}
+	if got, want := string(body["thinking"]), `{"type":"enabled"}`; got != want {
+		t.Fatalf("thinking = %s, want %s", got, want)
+	}
+}
+
 func TestZaiUsageMappingDisjointBucketsAndNativeTotal(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")

@@ -3,6 +3,7 @@ package zai
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strings"
 
@@ -74,6 +75,7 @@ func New(cred Credential, opts ...Option) *Provider {
 		HTTPClient:               cfg.client,
 		Classify:                 classify,
 		WarnForcedToolChoiceAuto: true,
+		ReasoningEncoder:         encodeReasoning,
 	})}
 }
 
@@ -85,6 +87,28 @@ func (p *Provider) Name() string {
 // RoundTrip performs one Z.ai Chat-Completions model call.
 func (p *Provider) RoundTrip(ctx context.Context, req *agentkit.Request) *agentkit.RoundTrip {
 	return p.compat.RoundTrip(ctx, req)
+}
+
+func encodeReasoning(value agentkit.ReasoningValue) (json.RawMessage, error) {
+	if value.IsUnset() {
+		return nil, nil
+	}
+	if value.Enabled() {
+		return json.RawMessage(`{"thinking":{"type":"enabled"}}`), nil
+	}
+	if value.Disabled() {
+		return json.RawMessage(`{"thinking":{"type":"disabled"}}`), nil
+	}
+	if level, ok := value.Level(); ok {
+		return json.Marshal(map[string]any{
+			"thinking":         map[string]any{"type": "enabled"},
+			"reasoning_effort": level,
+		})
+	}
+	if _, ok := value.Budget(); ok {
+		return nil, agentkit.ErrInvalidConfig
+	}
+	return nil, agentkit.ErrInvalidConfig
 }
 
 func classify(status int, code, message string) error {

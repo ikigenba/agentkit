@@ -23,6 +23,7 @@ const (
 	reasoningUnset reasoningValueTag = iota
 	reasoningLevel
 	reasoningBudget
+	reasoningEnabled
 	reasoningDisabled
 )
 
@@ -34,6 +35,11 @@ func Level(s string) ReasoningValue {
 // Budget carries a provider-native reasoning token budget.
 func Budget(n int) ReasoningValue {
 	return ReasoningValue{tag: reasoningBudget, budget: n}
+}
+
+// EnableReasoning requests the selected model's native reasoning-on form.
+func EnableReasoning() ReasoningValue {
+	return ReasoningValue{tag: reasoningEnabled}
 }
 
 // DisableReasoning requests the selected model's native reasoning-off form.
@@ -62,6 +68,11 @@ func (v ReasoningValue) Budget() (int, bool) {
 	return v.budget, true
 }
 
+// Enabled reports whether v was built by EnableReasoning.
+func (v ReasoningValue) Enabled() bool {
+	return v.tag == reasoningEnabled
+}
+
 // Disabled reports whether v was built by DisableReasoning.
 func (v ReasoningValue) Disabled() bool {
 	return v.tag == reasoningDisabled
@@ -82,6 +93,7 @@ type ReasoningSpec struct {
 	Sentinels  []Sentinel
 	Default    ReasoningValue
 	CanDisable bool
+	CanEnable  bool `json:",omitempty"`
 }
 
 // Accepts reports whether v is native to this model's reasoning spec.
@@ -89,6 +101,8 @@ func (s ReasoningSpec) Accepts(v ReasoningValue) bool {
 	switch {
 	case v.IsUnset():
 		return true
+	case v.Enabled():
+		return s.CanEnable
 	case v.Disabled():
 		return s.CanDisable
 	}

@@ -87,6 +87,8 @@ func TestOpenRouterExtractsReportedCostFromFinalUsageFrame(t *testing.T) {
 
 func TestOpenRouterReasoningLoweringUsesNormalizedReasoningObject(t *testing.T) {
 	// R-DCMA-39QR
+	// R-DCOZ-8W8U
+	// R-DF4S-0FQ8
 	tests := []struct {
 		name      string
 		value     agentkit.ReasoningValue
@@ -95,6 +97,7 @@ func TestOpenRouterReasoningLoweringUsesNormalizedReasoningObject(t *testing.T) 
 	}{
 		{name: "level", value: agentkit.Level("xhigh"), want: map[string]any{"effort": "xhigh"}, wantField: true},
 		{name: "budget", value: agentkit.Budget(8000), want: map[string]any{"max_tokens": float64(8000)}, wantField: true},
+		{name: "enabled", value: agentkit.EnableReasoning(), want: map[string]any{"enabled": true}, wantField: true},
 		{name: "disabled", value: agentkit.DisableReasoning(), want: map[string]any{"enabled": false}, wantField: true},
 		{name: "unset"},
 	}
@@ -130,6 +133,25 @@ func TestOpenRouterReasoningLoweringUsesNormalizedReasoningObject(t *testing.T) 
 				t.Fatalf("OpenRouter request used Z.ai reasoning_effort field: %#v", body)
 			}
 		})
+	}
+}
+
+func TestOpenRouterEnableReasoningExactWireFragment(t *testing.T) {
+	// R-DCOZ-8W8U
+	// R-DF4S-0FQ8
+	got, err := encodeReasoning(agentkit.EnableReasoning())
+	if err != nil {
+		t.Fatalf("encodeReasoning() error = %v", err)
+	}
+	if want := `{"reasoning":{"enabled":true}}`; string(got) != want {
+		t.Fatalf("encodeReasoning() = %s, want %s", got, want)
+	}
+	disabled, err := encodeReasoning(agentkit.DisableReasoning())
+	if err != nil {
+		t.Fatalf("encodeReasoning(disabled) error = %v", err)
+	}
+	if want := `{"reasoning":{"enabled":false}}`; string(disabled) != want {
+		t.Fatalf("encodeReasoning(disabled) = %s, want %s", disabled, want)
 	}
 }
 
