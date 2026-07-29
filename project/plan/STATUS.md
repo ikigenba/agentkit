@@ -4,7 +4,6 @@ The manifest, and a work **queue**: one line per **pending** phase, in build ord
 
 Next phase: 86
 
-- Phase 81 ⬜ realizes D6 — the explicit reasoning on-value `EnableReasoning()` and its per-wire lowering
 - Phase 82 ⬜ realizes D9, D7, D15, D19 — provider identity: the package id, the auth mode, and the two fields that carry them
 - Phase 83 ⬜ realizes D26 — the catalog's offerings: ordered routes, derived wire names, and the resolution surface
 - Phase 84 ⬜ realizes D26 — the catalog's reasoning descriptor: measured defaults and both toggle permissions, per offering
