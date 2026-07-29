@@ -39,8 +39,9 @@ func TestOpenRouterUsesBakedBaseURLBearerAuthAndFreeFormModel(t *testing.T) {
 	})}
 
 	provider := New(APIKey("test-key"), WithHTTPClient(client))
-	if provider.Name() != "openrouter" {
-		t.Fatalf("Name() = %q, want openrouter", provider.Name())
+	// R-LK0H-9AXO
+	if got, want := provider.Identity(), (agentkit.Identity{Provider: agentkit.ProviderOpenRouter, Auth: agentkit.AuthAPIKey}); got != want {
+		t.Fatalf("Identity() = %#v, want %#v", got, want)
 	}
 	rt := provider.RoundTrip(context.Background(), &agentkit.Request{Model: model})
 	if err := rt.Err(); err != nil {

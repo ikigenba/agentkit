@@ -70,8 +70,8 @@ func New(cred Credential, opts ...Option) *Provider {
 	return p
 }
 
-func (p *Provider) Name() string {
-	return "anthropic"
+func (p *Provider) Identity() agentkit.Identity {
+	return agentkit.Identity{Provider: agentkit.ProviderAnthropic, Auth: agentkit.AuthAPIKey}
 }
 
 func (p *Provider) RoundTrip(ctx context.Context, req *agentkit.Request) *agentkit.RoundTrip {
@@ -533,7 +533,7 @@ func classifyTransport(err error) error {
 	if errors.Is(err, context.DeadlineExceeded) {
 		category = agentkit.ErrTimeout
 	}
-	return &agentkit.Error{Category: category, Provider: "anthropic", Message: err.Error(), Err: err}
+	return &agentkit.Error{Category: category, Provider: agentkit.ProviderAnthropic, Auth: agentkit.AuthAPIKey, Message: err.Error(), Err: err}
 }
 
 func classifyHTTP(resp *http.Response, raw []byte) error {
@@ -550,7 +550,8 @@ func classifyHTTP(resp *http.Response, raw []byte) error {
 	category := classifyStatusType(resp.StatusCode, typ, msg)
 	return &agentkit.Error{
 		Category:   category,
-		Provider:   "anthropic",
+		Provider:   agentkit.ProviderAnthropic,
+		Auth:       agentkit.AuthAPIKey,
 		StatusCode: resp.StatusCode,
 		Type:       typ,
 		Message:    msg,
@@ -563,7 +564,8 @@ func classifyHTTP(resp *http.Response, raw []byte) error {
 func classifyStreamError(raw []byte, ae anthropicError) error {
 	return &agentkit.Error{
 		Category: classifyStatusType(0, ae.Type, ae.Message),
-		Provider: "anthropic",
+		Provider: agentkit.ProviderAnthropic,
+		Auth:     agentkit.AuthAPIKey,
 		Type:     ae.Type,
 		Message:  ae.Message,
 		Raw:      cloneRaw(raw),

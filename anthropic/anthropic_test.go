@@ -29,9 +29,10 @@ func TestNewProviderSendsAuthenticatedRequestToInjectedServer(t *testing.T) {
 	// R-CQO3-7EE9
 	// R-H3PK-QFG3
 	// R-WKTI-LIIE
+	// R-LK0H-9AXO
 	var provider agentkit.Provider = New(APIKey("test-key"))
-	if provider.Name() != "anthropic" {
-		t.Fatalf("Name() = %q, want anthropic", provider.Name())
+	if got, want := provider.Identity(), (agentkit.Identity{Provider: agentkit.ProviderAnthropic, Auth: agentkit.AuthAPIKey}); got != want {
+		t.Fatalf("Identity() = %#v, want %#v", got, want)
 	}
 
 	var gotPath, gotKey string

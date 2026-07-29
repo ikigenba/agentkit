@@ -19,7 +19,8 @@ type LogRecord struct {
 	Error    *Error      `json:"error,omitempty"`
 	Turns    int         `json:"turns,omitempty"`
 	Cost     *Cost       `json:"cost,omitempty"`
-	Provider string      `json:"provider,omitempty"`
+	Provider ProviderID  `json:"provider,omitempty"`
+	Auth     AuthMode    `json:"auth,omitempty"`
 	Model    string      `json:"model,omitempty"`
 	Status   string      `json:"status,omitempty"`
 }

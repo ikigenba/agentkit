@@ -16,6 +16,18 @@ import (
 	"github.com/ikigenba/agentkit"
 )
 
+func TestProviderReportsZAIAPIKeyIdentity(t *testing.T) {
+	// R-LK0H-9AXO
+	provider := New(APIKey("key"))
+	want := agentkit.Identity{Provider: agentkit.ProviderZAI, Auth: agentkit.AuthAPIKey}
+	if got := provider.Identity(); got != want {
+		t.Fatalf("Identity() = %#v, want %#v", got, want)
+	}
+	if provider.Identity().Auth == "" {
+		t.Fatal("Identity().Auth is empty")
+	}
+}
+
 func TestZaiSendUsesBakedBaseURLAndAssemblesToolTurn(t *testing.T) {
 	// R-CQO3-7EE9
 	// R-CRVZ-L64Y
@@ -338,7 +350,7 @@ func TestZaiVendorRejectionsPreserveModelAndReasoningValue(t *testing.T) {
 		t.Fatalf("warnings = %#v, want none", stream.Warnings())
 	}
 	var providerErr *agentkit.Error
-	if !errors.As(stream.Err(), &providerErr) || providerErr.Provider != "zai" || !errors.Is(providerErr, agentkit.ErrInvalidRequest) {
+	if !errors.As(stream.Err(), &providerErr) || providerErr.Provider != agentkit.ProviderZAI || providerErr.Auth != agentkit.AuthAPIKey || !errors.Is(providerErr, agentkit.ErrInvalidRequest) {
 		t.Fatalf("error = %#v, want typed Z.ai invalid-request error", stream.Err())
 	}
 }
@@ -525,7 +537,7 @@ func TestZaiErrorMappingPreservesRawRetryAfterAndCodes(t *testing.T) {
 			if !errors.As(err, &providerErr) {
 				t.Fatalf("errors.As(*agentkit.Error) failed for %v", err)
 			}
-			if providerErr.Provider != "zai" || providerErr.StatusCode != tt.status || providerErr.RequestID != "req_123" {
+			if providerErr.Provider != agentkit.ProviderZAI || providerErr.Auth != agentkit.AuthAPIKey || providerErr.StatusCode != tt.status || providerErr.RequestID != "req_123" {
 				t.Fatalf("provider error details = %#v", providerErr)
 			}
 			if string(providerErr.Raw) != tt.body {

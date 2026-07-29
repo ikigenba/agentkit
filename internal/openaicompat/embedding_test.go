@@ -29,7 +29,7 @@ func TestEmbeddingProviderPostsEmbeddingsAndOrdersVectors(t *testing.T) {
 	defer server.Close()
 
 	provider := NewEmbeddingProvider(EmbeddingConfig{
-		Provider:   "compat",
+		Identity:   agentkit.Identity{Provider: "compat", Auth: agentkit.AuthAPIKey},
 		BaseURL:    server.URL,
 		APIKey:     "key",
 		HTTPClient: server.Client(),

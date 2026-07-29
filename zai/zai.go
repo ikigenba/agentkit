@@ -69,7 +69,7 @@ func New(cred Credential, opts ...Option) *Provider {
 		opt(&cfg)
 	}
 	return &Provider{compat: openaicompat.New(openaicompat.Config{
-		Provider:                 "zai",
+		Identity:                 agentkit.Identity{Provider: agentkit.ProviderZAI, Auth: agentkit.AuthAPIKey},
 		BaseURL:                  cfg.baseURL,
 		APIKey:                   auth.apiKey,
 		HTTPClient:               cfg.client,
@@ -79,9 +79,9 @@ func New(cred Credential, opts ...Option) *Provider {
 	})}
 }
 
-// Name labels Z.ai provider errors.
-func (p *Provider) Name() string {
-	return p.compat.Name()
+// Identity identifies the Z.ai package and API-key credential mode.
+func (p *Provider) Identity() agentkit.Identity {
+	return p.compat.Identity()
 }
 
 // RoundTrip performs one Z.ai Chat-Completions model call.

@@ -15,7 +15,7 @@ const (
 // embedding models.
 type EmbeddingProvider interface {
 	Embed(ctx context.Context, req *EmbedRequest) *EmbedRoundTrip
-	Name() string
+	Identity() Identity
 }
 
 // EmbedRequest is one embedding provider call's input, built by Embedder.

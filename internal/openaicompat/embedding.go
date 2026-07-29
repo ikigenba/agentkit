@@ -18,7 +18,7 @@ const maxEmbeddingInputsPerRequest = 2048
 
 // EmbeddingConfig describes one OpenAI-compatible embeddings endpoint.
 type EmbeddingConfig struct {
-	Provider   string
+	Identity   agentkit.Identity
 	BaseURL    string
 	APIKey     string
 	HTTPClient *http.Client
@@ -41,9 +41,9 @@ func NewEmbeddingProvider(cfg EmbeddingConfig) *EmbeddingProvider {
 	return &EmbeddingProvider{cfg: cfg}
 }
 
-// Name labels provider errors.
-func (p *EmbeddingProvider) Name() string {
-	return p.cfg.Provider
+// Identity identifies the provider package and credential mode.
+func (p *EmbeddingProvider) Identity() agentkit.Identity {
+	return p.cfg.Identity
 }
 
 // Embed performs one logical embedding call, splitting large batches as needed.
@@ -127,7 +127,7 @@ func (p *EmbeddingProvider) embedChunk(ctx context.Context, req *agentkit.EmbedR
 	if err := json.Unmarshal(raw, &payload); err != nil {
 		return nil, agentkit.EmbeddingUsage{}, p.transportError(err)
 	}
-	vectors, err := orderedEmbeddingVectors(payload.Data, len(inputs))
+	vectors, err := orderedEmbeddingVectors(p.cfg.Identity, payload.Data, len(inputs))
 	if err != nil {
 		return nil, agentkit.EmbeddingUsage{}, err
 	}
@@ -165,15 +165,15 @@ type embeddingErrorPayload struct {
 	Code    json.RawMessage `json:"code"`
 }
 
-func orderedEmbeddingVectors(data []embeddingItem, count int) ([][]float32, error) {
+func orderedEmbeddingVectors(identity agentkit.Identity, data []embeddingItem, count int) ([][]float32, error) {
 	if len(data) != count {
-		return nil, &agentkit.Error{Category: agentkit.ErrUnknown, Message: "provider embedding count does not match input count"}
+		return nil, &agentkit.Error{Category: agentkit.ErrUnknown, Provider: identity.Provider, Auth: identity.Auth, Message: "provider embedding count does not match input count"}
 	}
 	vectors := make([][]float32, count)
 	seen := make([]bool, count)
 	for _, item := range data {
 		if item.Index < 0 || item.Index >= count || seen[item.Index] {
-			return nil, &agentkit.Error{Category: agentkit.ErrUnknown, Message: "provider embedding index is invalid"}
+			return nil, &agentkit.Error{Category: agentkit.ErrUnknown, Provider: identity.Provider, Auth: identity.Auth, Message: "provider embedding index is invalid"}
 		}
 		vectors[item.Index] = append([]float32(nil), item.Embedding...)
 		seen[item.Index] = true
@@ -200,7 +200,8 @@ func (p *EmbeddingProvider) transportError(err error) error {
 	}
 	return &agentkit.Error{
 		Category: category,
-		Provider: p.cfg.Provider,
+		Provider: p.cfg.Identity.Provider,
+		Auth:     p.cfg.Identity.Auth,
 		Message:  err.Error(),
 		Err:      err,
 	}
@@ -229,7 +230,8 @@ func (p *EmbeddingProvider) httpError(resp *http.Response, raw []byte) error {
 	}
 	return &agentkit.Error{
 		Category:   category,
-		Provider:   p.cfg.Provider,
+		Provider:   p.cfg.Identity.Provider,
+		Auth:       p.cfg.Identity.Auth,
 		StatusCode: resp.StatusCode,
 		Type:       typ,
 		Message:    message,

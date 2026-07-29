@@ -39,6 +39,19 @@ func (s staticTokenSource) Token(context.Context) (string, string, error) {
 	return s.bearer, s.account, s.err
 }
 
+func TestEmbeddingProviderReportsSameOpenAIAPIKeyIdentityAsChat(t *testing.T) {
+	// R-LL8D-N2OD
+	chatIdentity := New(APIKey("key")).Identity()
+	embeddingIdentity := NewEmbedder(APIKey("key")).Identity()
+	want := agentkit.Identity{Provider: agentkit.ProviderOpenAI, Auth: agentkit.AuthAPIKey}
+	if chatIdentity != want || embeddingIdentity != want {
+		t.Fatalf("chat identity = %#v, embedding identity = %#v, want %#v", chatIdentity, embeddingIdentity, want)
+	}
+	if embeddingIdentity.Auth == "" {
+		t.Fatal("embedding Identity().Auth is empty")
+	}
+}
+
 func TestSubscriptionAndAPIKeyCredentialsSelectTransport(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -102,14 +115,14 @@ func TestSubscriptionAndAPIKeyCredentialsSelectTransport(t *testing.T) {
 	}
 }
 
-func TestCredentialModeLabelsNameAndProviderErrors(t *testing.T) {
+func TestCredentialModesSelectIdentityAndProviderErrorAttribution(t *testing.T) {
 	tests := []struct {
 		name       string
 		credential Credential
-		want       string
+		wantAuth   agentkit.AuthMode
 	}{
-		{name: "api key", credential: APIKey("key"), want: "openai.apikey"},
-		{name: "subscription", credential: Subscription(staticTokenSource{bearer: "token", account: "account"}), want: "openai.subscription"},
+		{name: "api key", credential: APIKey("key"), wantAuth: agentkit.AuthAPIKey},
+		{name: "subscription", credential: Subscription(staticTokenSource{bearer: "token", account: "account"}), wantAuth: agentkit.AuthSubscription},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -120,13 +133,15 @@ func TestCredentialModeLabelsNameAndProviderErrors(t *testing.T) {
 			defer server.Close()
 			provider := New(tt.credential, WithBaseURL(server.URL), WithHTTPClient(server.Client()))
 			// R-DL5K-RNXM
-			if got := provider.Name(); got != tt.want {
-				t.Fatalf("Name() = %q, want %q", got, tt.want)
+			// R-LK0H-9AXO
+			wantIdentity := agentkit.Identity{Provider: agentkit.ProviderOpenAI, Auth: tt.wantAuth}
+			if got := provider.Identity(); got != wantIdentity {
+				t.Fatalf("Identity() = %#v, want %#v", got, wantIdentity)
 			}
 			rt := provider.RoundTrip(context.Background(), &agentkit.Request{Model: "gpt-test"})
 			var providerErr *agentkit.Error
-			if !errors.As(rt.Err(), &providerErr) || providerErr.Provider != tt.want {
-				t.Fatalf("provider error = %#v, want label %q", rt.Err(), tt.want)
+			if !errors.As(rt.Err(), &providerErr) || providerErr.Provider != agentkit.ProviderOpenAI || providerErr.Auth != tt.wantAuth {
+				t.Fatalf("provider error = %#v, want identity %#v", rt.Err(), wantIdentity)
 			}
 		})
 	}
@@ -421,7 +436,7 @@ func TestUncatalogedModelFlowsToWireAndVendorErrorIsTyped(t *testing.T) {
 	// R-CT3V-YXVN
 	rt := p.RoundTrip(context.Background(), &agentkit.Request{Model: model})
 	var providerErr *agentkit.Error
-	if !errors.As(rt.Err(), &providerErr) || providerErr.Provider != "openai.apikey" || providerErr.StatusCode != http.StatusBadRequest {
+	if !errors.As(rt.Err(), &providerErr) || providerErr.Provider != agentkit.ProviderOpenAI || providerErr.Auth != agentkit.AuthAPIKey || providerErr.StatusCode != http.StatusBadRequest {
 		t.Fatalf("error = %#v, want typed OpenAI 400", rt.Err())
 	}
 }
@@ -515,7 +530,7 @@ func TestVendorRejectedReasoningValueReturnsTypedErrorUnchanged(t *testing.T) {
 		t.Fatalf("warnings = %#v, want none", rt.Warnings())
 	}
 	var providerErr *agentkit.Error
-	if !errors.As(rt.Err(), &providerErr) || providerErr.Provider != "openai.apikey" {
+	if !errors.As(rt.Err(), &providerErr) || providerErr.Provider != agentkit.ProviderOpenAI || providerErr.Auth != agentkit.AuthAPIKey {
 		t.Fatalf("error = %#v, want typed OpenAI error", rt.Err())
 	}
 }
@@ -759,7 +774,7 @@ func TestOpenAIErrorMappingPreservesRawAndRetryAfter(t *testing.T) {
 			if !errors.As(err, &providerErr) {
 				t.Fatalf("errors.As(*agentkit.Error) failed for %v", err)
 			}
-			if providerErr.Provider != "openai.apikey" || providerErr.StatusCode != tt.status || providerErr.RequestID != "req_123" {
+			if providerErr.Provider != agentkit.ProviderOpenAI || providerErr.Auth != agentkit.AuthAPIKey || providerErr.StatusCode != tt.status || providerErr.RequestID != "req_123" {
 				t.Fatalf("provider error details = %#v", providerErr)
 			}
 			if string(providerErr.Raw) != tt.body {
@@ -927,7 +942,11 @@ func TestOpenAIEmbeddingContextLengthError(t *testing.T) {
 		t.Fatalf("context error = %v, want ErrContextLength", err)
 	}
 	var providerErr *agentkit.Error
-	if !errors.As(err, &providerErr) || providerErr.Category != agentkit.ErrContextLength {
+	// R-LL8D-N2OD
+	if !errors.As(err, &providerErr) ||
+		providerErr.Category != agentkit.ErrContextLength ||
+		providerErr.Provider != agentkit.ProviderOpenAI ||
+		providerErr.Auth != agentkit.AuthAPIKey {
 		t.Fatalf("provider error = %#v, want context-length category", providerErr)
 	}
 	if calls != 1 {

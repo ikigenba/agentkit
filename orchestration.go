@@ -32,7 +32,7 @@ var (
 // from a provider package and assign it to Conversation.Provider.
 type Provider interface {
 	RoundTrip(ctx context.Context, req *Request) *RoundTrip
-	Name() string
+	Identity() Identity
 }
 
 // Request is one provider round-trip's input, built by the orchestrator.
@@ -226,7 +226,8 @@ func (c *Conversation) Send(ctx context.Context, userText string) *Stream {
 
 	s := &Stream{warnings: warnings}
 	s.run = func(yield func(Event) bool) (bool, error) {
-		s.log(c, LogRecord{Type: "turn_start", Provider: c.Provider.Name(), Model: c.Model})
+		identity := c.Provider.Identity()
+		s.log(c, LogRecord{Type: "turn_start", Provider: identity.Provider, Auth: identity.Auth, Model: c.Model})
 		success, err := c.runTurn(ctx, &history, tools, s, yield)
 		if success {
 			usage := s.usage

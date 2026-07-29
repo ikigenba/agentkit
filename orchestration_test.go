@@ -60,8 +60,8 @@ func (p *fakeProvider) RoundTrip(ctx context.Context, req *agentkit.Request) *ag
 	return rt
 }
 
-func (p *fakeProvider) Name() string {
-	return p.name
+func (p *fakeProvider) Identity() agentkit.Identity {
+	return agentkit.Identity{Provider: agentkit.ProviderID(p.name), Auth: agentkit.AuthAPIKey}
 }
 
 func TestSendBoundaryValidation(t *testing.T) {

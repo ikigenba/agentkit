@@ -32,7 +32,7 @@ type CostExtractor func(json.RawMessage) (cost agentkit.Cost, ok bool)
 
 // Config describes one first-class OpenAI-compatible provider.
 type Config struct {
-	Provider                 string
+	Identity                 agentkit.Identity
 	BaseURL                  string
 	APIKey                   string
 	HTTPClient               *http.Client
@@ -57,9 +57,9 @@ func New(cfg Config) *Provider {
 	return &Provider{cfg: cfg}
 }
 
-// Name labels provider errors and log records.
-func (p *Provider) Name() string {
-	return p.cfg.Provider
+// Identity identifies the provider package and credential mode.
+func (p *Provider) Identity() agentkit.Identity {
+	return p.cfg.Identity
 }
 
 // RoundTrip performs one Chat-Completions model call.
@@ -535,7 +535,8 @@ func (p *Provider) mapUsage(native usagePayload) (agentkit.Usage, error) {
 	if cached > native.PromptTokens {
 		return agentkit.Usage{}, &agentkit.Error{
 			Category: agentkit.ErrUnknown,
-			Provider: p.cfg.Provider,
+			Provider: p.cfg.Identity.Provider,
+			Auth:     p.cfg.Identity.Auth,
 			Message:  "provider usage cached tokens exceed prompt tokens",
 		}
 	}
@@ -552,7 +553,8 @@ func (p *Provider) mapUsage(native usagePayload) (agentkit.Usage, error) {
 	if native.TotalTokens != 0 && native.TotalTokens != usage.Total {
 		return agentkit.Usage{}, &agentkit.Error{
 			Category: agentkit.ErrUnknown,
-			Provider: p.cfg.Provider,
+			Provider: p.cfg.Identity.Provider,
+			Auth:     p.cfg.Identity.Auth,
 			Message:  "provider usage total does not equal mapped buckets",
 		}
 	}
@@ -566,7 +568,8 @@ func (p *Provider) transportError(err error) error {
 	}
 	return &agentkit.Error{
 		Category: category,
-		Provider: p.cfg.Provider,
+		Provider: p.cfg.Identity.Provider,
+		Auth:     p.cfg.Identity.Auth,
 		Message:  err.Error(),
 		Err:      err,
 	}
@@ -592,7 +595,8 @@ func (p *Provider) errorFromPayload(status int, raw []byte, payload errorPayload
 	}
 	return &agentkit.Error{
 		Category:   category,
-		Provider:   p.cfg.Provider,
+		Provider:   p.cfg.Identity.Provider,
+		Auth:       p.cfg.Identity.Auth,
 		StatusCode: status,
 		Type:       code,
 		Message:    message,

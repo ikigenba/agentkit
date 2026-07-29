@@ -2,11 +2,63 @@ package agentkit_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/ikigenba/agentkit"
 )
+
+func TestErrorIdentityFieldsAndJSONRemainSeparate(t *testing.T) {
+	// R-LMGA-0UF2
+	tests := []struct {
+		name string
+		err  *agentkit.Error
+	}{
+		{
+			name: "OpenAI subscription",
+			err:  &agentkit.Error{Provider: agentkit.ProviderOpenAI, Auth: agentkit.AuthSubscription},
+		},
+		{
+			name: "OpenAI API key",
+			err:  &agentkit.Error{Provider: agentkit.ProviderOpenAI, Auth: agentkit.AuthAPIKey},
+		},
+		{
+			name: "Z.ai API key",
+			err:  &agentkit.Error{Provider: agentkit.ProviderZAI, Auth: agentkit.AuthAPIKey},
+		},
+		{
+			name: "MCP",
+			err:  &agentkit.Error{MCPServer: "tools"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			raw, err := json.Marshal(tt.err)
+			if err != nil {
+				t.Fatalf("Marshal: %v", err)
+			}
+			if tt.err.MCPServer != "" {
+				if tt.err.Provider != "" || tt.err.Auth != "" {
+					t.Fatalf("MCP identity = {%q, %q}, want both empty", tt.err.Provider, tt.err.Auth)
+				}
+				if strings.Contains(string(raw), `"provider"`) || strings.Contains(string(raw), `"auth"`) {
+					t.Fatalf("MCP JSON unexpectedly carries provider identity: %s", raw)
+				}
+				return
+			}
+			wantProvider := `"provider":"` + string(tt.err.Provider) + `"`
+			wantAuth := `"auth":"` + string(tt.err.Auth) + `"`
+			if !strings.Contains(string(raw), wantProvider) || !strings.Contains(string(raw), wantAuth) {
+				t.Fatalf("JSON = %s, want %s and %s", raw, wantProvider, wantAuth)
+			}
+			if strings.Contains(string(raw), string(tt.err.Provider)+"."+string(tt.err.Auth)) {
+				t.Fatalf("JSON carries dotted composite identity: %s", raw)
+			}
+		})
+	}
+}
 
 func TestErrorCategorySentinelsMatchWithErrorsIs(t *testing.T) {
 	// R-BVYY-B2AX

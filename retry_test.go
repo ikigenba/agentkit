@@ -32,8 +32,8 @@ func (p *retryProvider) RoundTrip(_ context.Context, req *Request) *RoundTrip {
 	return rt
 }
 
-func (p *retryProvider) Name() string {
-	return "retry-test"
+func (p *retryProvider) Identity() Identity {
+	return Identity{Provider: "retry-test", Auth: AuthAPIKey}
 }
 
 func (p *retryProvider) Pricing(string) (Pricing, bool) {

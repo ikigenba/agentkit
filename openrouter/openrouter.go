@@ -70,7 +70,7 @@ func New(cred Credential, opts ...Option) *Provider {
 		opt(&cfg)
 	}
 	return &Provider{compat: openaicompat.New(openaicompat.Config{
-		Provider:         "openrouter",
+		Identity:         agentkit.Identity{Provider: agentkit.ProviderOpenRouter, Auth: agentkit.AuthAPIKey},
 		BaseURL:          cfg.baseURL,
 		APIKey:           auth.apiKey,
 		HTTPClient:       cfg.client,
@@ -80,9 +80,9 @@ func New(cred Credential, opts ...Option) *Provider {
 	})}
 }
 
-// Name labels OpenRouter provider errors.
-func (p *Provider) Name() string {
-	return p.compat.Name()
+// Identity identifies the OpenRouter package and API-key credential mode.
+func (p *Provider) Identity() agentkit.Identity {
+	return p.compat.Identity()
 }
 
 // RoundTrip performs one OpenRouter Chat-Completions model call.

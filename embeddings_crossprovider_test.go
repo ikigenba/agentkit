@@ -31,7 +31,7 @@ func TestCrossProviderEmbeddingsIdenticalCallingCode(t *testing.T) {
 			Dimensions: 128,
 		}).Embed(context.Background(), inputs, agentkit.InputQuery)
 		if err != nil {
-			t.Fatalf("Embed(%s) error = %v", provider.Name(), err)
+			t.Fatalf("Embed(%s) error = %v", provider.Identity(), err)
 		}
 		return result
 	}

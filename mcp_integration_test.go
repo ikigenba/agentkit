@@ -36,11 +36,11 @@ func (p *mcpTestProvider) RoundTrip(_ context.Context, req *Request) *RoundTrip 
 	return rt
 }
 
-func (p *mcpTestProvider) Name() string {
+func (p *mcpTestProvider) Identity() Identity {
 	if p.name == "" {
-		return "fake"
+		return Identity{Provider: "fake", Auth: AuthAPIKey}
 	}
-	return p.name
+	return Identity{Provider: ProviderID(p.name), Auth: AuthAPIKey}
 }
 
 func (p *mcpTestProvider) Pricing(string) (Pricing, bool) {
@@ -616,7 +616,7 @@ func TestMCPToolsJoinDeterministicOrderAndSchemaWarnings(t *testing.T) {
 		}
 	}
 	// R-SKVI-TSZQ
-	if provider.Name() == "google" {
+	if provider.Identity().Provider == ProviderGoogle {
 		t.Fatal("test provider name unexpectedly matched google")
 	}
 	detail := schemaWarnings[0].Detail

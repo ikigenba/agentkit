@@ -41,9 +41,9 @@ func (p *fakeEmbeddingProvider) Embed(ctx context.Context, req *EmbedRequest) *E
 	return rt
 }
 
-func (p *fakeEmbeddingProvider) Name() string {
+func (p *fakeEmbeddingProvider) Identity() Identity {
 	p.nameCalls++
-	return p.name
+	return Identity{Provider: ProviderID(p.name), Auth: AuthAPIKey}
 }
 
 func TestEmbedRejectsMissingConfigWithoutProviderCall(t *testing.T) {

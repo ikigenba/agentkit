@@ -29,7 +29,8 @@ var (
 // inspect provider details and the raw body via errors.As.
 type Error struct {
 	Category   error
-	Provider   string
+	Provider   ProviderID `json:"provider,omitempty"`
+	Auth       AuthMode   `json:"auth,omitempty"`
 	MCPServer  string
 	StatusCode int
 	Type       string
@@ -45,7 +46,7 @@ func (e *Error) Error() string {
 		return "<nil>"
 	}
 
-	subject := e.Provider
+	subject := (Identity{Provider: e.Provider, Auth: e.Auth}).String()
 	if subject == "" {
 		subject = e.MCPServer
 	}

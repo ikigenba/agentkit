@@ -29,6 +29,24 @@ func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
 	return f(r)
 }
 
+func TestChatAndEmbeddingProvidersReportAPIKeyIdentity(t *testing.T) {
+	// R-LK0H-9AXO
+	// R-LL8D-N2OD
+	want := agentkit.Identity{Provider: agentkit.ProviderGoogle, Auth: agentkit.AuthAPIKey}
+	providers := []interface{ Identity() agentkit.Identity }{
+		New(APIKey("key")),
+		NewEmbedder(APIKey("key")),
+	}
+	for _, provider := range providers {
+		if got := provider.Identity(); got != want {
+			t.Errorf("Identity() = %#v, want %#v", got, want)
+		}
+		if provider.Identity().Auth == "" {
+			t.Error("Identity().Auth is empty")
+		}
+	}
+}
+
 func TestGoogleSendBuildsRequestParsesToolTurnAndUsage(t *testing.T) {
 	var calls int32
 	var sawAuth bool
@@ -997,7 +1015,9 @@ type scriptedProvider struct {
 	calls int
 }
 
-func (p *scriptedProvider) Name() string { return "scripted" }
+func (p *scriptedProvider) Identity() agentkit.Identity {
+	return agentkit.Identity{Provider: "scripted", Auth: agentkit.AuthAPIKey}
+}
 
 func (p *scriptedProvider) RoundTrip(ctx context.Context, req *agentkit.Request) *agentkit.RoundTrip {
 	p.calls++

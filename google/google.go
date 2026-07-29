@@ -86,8 +86,8 @@ func NewEmbedder(cred Credential, opts ...Option) agentkit.EmbeddingProvider {
 	}
 }
 
-func (p *Provider) Name() string {
-	return "google"
+func (p *Provider) Identity() agentkit.Identity {
+	return agentkit.Identity{Provider: agentkit.ProviderGoogle, Auth: agentkit.AuthAPIKey}
 }
 
 func (p *Provider) UntranslatableSchemaConstructs(schema json.RawMessage) []string {
@@ -713,8 +713,8 @@ type embeddingProvider struct {
 	clock   retry.Clock
 }
 
-func (p *embeddingProvider) Name() string {
-	return "google"
+func (p *embeddingProvider) Identity() agentkit.Identity {
+	return agentkit.Identity{Provider: agentkit.ProviderGoogle, Auth: agentkit.AuthAPIKey}
 }
 
 func (p *embeddingProvider) Embed(ctx context.Context, req *agentkit.EmbedRequest) *agentkit.EmbedRoundTrip {
@@ -866,7 +866,12 @@ func googleEmbeddingTaskType(role agentkit.InputType) string {
 
 func googleEmbeddingVectors(embeddings []googleEmbedding, count int) ([][]float32, error) {
 	if len(embeddings) != count {
-		return nil, &agentkit.Error{Category: agentkit.ErrUnknown, Provider: "google", Message: "provider embedding count does not match input count"}
+		return nil, &agentkit.Error{
+			Category: agentkit.ErrUnknown,
+			Provider: agentkit.ProviderGoogle,
+			Auth:     agentkit.AuthAPIKey,
+			Message:  "provider embedding count does not match input count",
+		}
 	}
 	vectors := make([][]float32, count)
 	for i, embedding := range embeddings {
@@ -978,7 +983,8 @@ func providerError(status int, raw []byte, typ, message, requestID string, err e
 	}
 	return &agentkit.Error{
 		Category:   category,
-		Provider:   "google",
+		Provider:   agentkit.ProviderGoogle,
+		Auth:       agentkit.AuthAPIKey,
 		StatusCode: status,
 		Type:       typ,
 		Message:    message,
@@ -1001,7 +1007,8 @@ func transportError(err error) error {
 	}
 	return &agentkit.Error{
 		Category: category,
-		Provider: "google",
+		Provider: agentkit.ProviderGoogle,
+		Auth:     agentkit.AuthAPIKey,
 		Err:      err,
 		Message:  err.Error(),
 	}

@@ -25,6 +25,7 @@ type logRecordView struct {
 	Turns    int             `json:"turns"`
 	Cost     *Cost           `json:"cost"`
 	Provider string          `json:"provider"`
+	Auth     string          `json:"auth"`
 	Model    string          `json:"model"`
 	Status   string          `json:"status"`
 }
@@ -32,6 +33,52 @@ type logRecordView struct {
 type logClock struct {
 	now    time.Time
 	sleeps []time.Duration
+}
+
+type logIdentityProvider struct {
+	identity Identity
+}
+
+func (p logIdentityProvider) Identity() Identity {
+	return p.identity
+}
+
+func (p logIdentityProvider) RoundTrip(context.Context, *Request) *RoundTrip {
+	return retryTextRoundTrip("ok")
+}
+
+func TestTurnStartLogsProviderAndAuthAsSeparateStrings(t *testing.T) {
+	// R-LNO6-EM5R
+	identities := []Identity{
+		{Provider: ProviderOpenAI, Auth: AuthSubscription},
+		{Provider: ProviderOpenAI, Auth: AuthAPIKey},
+		{Provider: ProviderZAI, Auth: AuthAPIKey},
+	}
+	for _, identity := range identities {
+		t.Run(identity.String(), func(t *testing.T) {
+			var buf bytes.Buffer
+			conv := &Conversation{
+				Provider: logIdentityProvider{identity: identity},
+				Model:    "identity-model",
+				Log:      &buf,
+			}
+			stream := conv.Send(context.Background(), "hello")
+			drainRetry(stream)
+			if err := stream.Err(); err != nil {
+				t.Fatalf("Send: %v", err)
+			}
+
+			firstLine, _, _ := strings.Cut(buf.String(), "\n")
+			wantProvider := `"provider":"` + string(identity.Provider) + `"`
+			wantAuth := `"auth":"` + string(identity.Auth) + `"`
+			if !strings.Contains(firstLine, wantProvider) || !strings.Contains(firstLine, wantAuth) {
+				t.Fatalf("turn_start = %s, want %s and %s", firstLine, wantProvider, wantAuth)
+			}
+			if strings.Contains(firstLine, string(identity.Provider)+"."+string(identity.Auth)) {
+				t.Fatalf("turn_start carries dotted provider identity: %s", firstLine)
+			}
+		})
+	}
 }
 
 func (c *logClock) Now() time.Time {

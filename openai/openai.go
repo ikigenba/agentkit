@@ -107,7 +107,7 @@ func NewEmbedder(cred Credential, opts ...Option) agentkit.EmbeddingProvider {
 	}
 	p := New(apiKey, opts...)
 	return &embeddingProvider{cfg: openaicompat.EmbeddingConfig{
-		Provider:   "openai",
+		Identity:   agentkit.Identity{Provider: agentkit.ProviderOpenAI, Auth: agentkit.AuthAPIKey},
 		BaseURL:    p.baseURL,
 		APIKey:     p.apiKey,
 		HTTPClient: p.client,
@@ -116,12 +116,12 @@ func NewEmbedder(cred Credential, opts ...Option) agentkit.EmbeddingProvider {
 	}}
 }
 
-// Name labels OpenAI provider errors.
-func (p *Provider) Name() string {
+// Identity identifies the OpenAI package and selected credential mode.
+func (p *Provider) Identity() agentkit.Identity {
 	if p != nil && p.subscription {
-		return "openai.subscription"
+		return agentkit.Identity{Provider: agentkit.ProviderOpenAI, Auth: agentkit.AuthSubscription}
 	}
-	return "openai.apikey"
+	return agentkit.Identity{Provider: agentkit.ProviderOpenAI, Auth: agentkit.AuthAPIKey}
 }
 
 // RoundTrip performs one OpenAI Responses API model call.
@@ -191,11 +191,11 @@ type embeddingProvider struct {
 	cfg openaicompat.EmbeddingConfig
 }
 
-func (p *embeddingProvider) Name() string {
+func (p *embeddingProvider) Identity() agentkit.Identity {
 	if p == nil {
-		return "openai"
+		return agentkit.Identity{Provider: agentkit.ProviderOpenAI, Auth: agentkit.AuthAPIKey}
 	}
-	return p.cfg.Provider
+	return p.cfg.Identity
 }
 
 func (p *embeddingProvider) Embed(ctx context.Context, req *agentkit.EmbedRequest) *agentkit.EmbedRoundTrip {
@@ -713,7 +713,7 @@ func providerTransportError(err error) error {
 	}
 	return &agentkit.Error{
 		Category: category,
-		Provider: "openai",
+		Provider: agentkit.ProviderOpenAI,
 		Err:      err,
 		Message:  err.Error(),
 	}
@@ -729,7 +729,9 @@ func (p *Provider) labelError(err error) error {
 		return err
 	}
 	copy := *providerErr
-	copy.Provider = p.Name()
+	identity := p.Identity()
+	copy.Provider = identity.Provider
+	copy.Auth = identity.Auth
 	return &copy
 }
 
@@ -757,7 +759,8 @@ func (p *Provider) providerHTTPError(resp *http.Response, raw []byte) error {
 	category := classify(resp.StatusCode, envelope.Error.Type, code)
 	return &agentkit.Error{
 		Category:   category,
-		Provider:   p.Name(),
+		Provider:   p.Identity().Provider,
+		Auth:       p.Identity().Auth,
 		StatusCode: resp.StatusCode,
 		Type:       typ,
 		Message:    message,
