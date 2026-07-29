@@ -17,11 +17,11 @@ One line per Decision, in number order — file, label, and the Verification ids
 - **D6** `project/design/D06.md` — Generation settings and the native reasoning value
   - ids: R-P5U3-5CFZ, R-CUBS-CPMC, R-T40A-VZQ7, R-T587-9RGW, R-T6G3-NJ7L, R-DCOZ-8W8U, R-DDWV-MNZJ, R-DF4S-0FQ8, R-DGCO-E7GX, R-P9HS-ANO2, R-PBXL-275G
 - **D7** `project/design/D07.md` — The error model
-  - ids: R-BUR1-XAK8, R-FR35-46U7, R-BVYY-B2AX, R-BX6U-OU1M, R-BYER-2LSB, R-BZMN-GDJ0, R-I5VJ-CTXE, R-7CYE-KS40, R-6TQA-QKYI, R-6UY7-4CP7
+  - ids: R-LMGA-0UF2, R-BUR1-XAK8, R-FR35-46U7, R-BVYY-B2AX, R-BX6U-OU1M, R-BYER-2LSB, R-BZMN-GDJ0, R-I5VJ-CTXE, R-7CYE-KS40, R-6TQA-QKYI, R-6UY7-4CP7
 - **D8** `project/design/D08.md` — The uniform `Usage` struct (disjoint token buckets)
   - ids: R-Y810-TECF, R-Y98X-7634, R-YAGT-KXTT, R-YBOP-YPKI, R-YCWM-CHB7
 - **D9** `project/design/D09.md` — Package architecture & the provider adapter seam (SPI)
-  - ids: R-01HL-I6TM, R-02PH-VYKB, R-OUE3-L8VS, R-03XE-9QB0, R-055A-NI1P, R-XR4M-U1ZT, R-OMKB-AY19, R-UJNS-PFLL, R-ZCMP-ARG8, R-DNS8-QC6Z, R-DRFX-VNF2, R-DTVQ-N6WG, R-GSIG-PT07, R-TQ77-6QLK, R-T06O-8SZX, R-CVJO-QHD1, R-CXZH-I0UF, R-4YSE-6YBS
+  - ids: R-LK0H-9AXO, R-01HL-I6TM, R-02PH-VYKB, R-OUE3-L8VS, R-03XE-9QB0, R-055A-NI1P, R-XR4M-U1ZT, R-OMKB-AY19, R-UJNS-PFLL, R-ZCMP-ARG8, R-DNS8-QC6Z, R-DRFX-VNF2, R-DTVQ-N6WG, R-GSIG-PT07, R-TQ77-6QLK, R-T06O-8SZX, R-CVJO-QHD1, R-CXZH-I0UF, R-4YSE-6YBS
 - **D10** `project/design/D10.md` — The orchestration layer: tool loop, history, transparency, reasoning replay, cache-prefix stability
   - ids: R-VV9Y-GMKH, R-VWHU-UEB6, R-VXPR-861V, R-VYXN-LXSK, R-W05J-ZPJ9, R-W1DG-DH9Y, R-W2LC-R90N, R-XZNX-IG6O, R-Y4JJ-1J5G, R-6W63-I4FW
 - **D11** `project/design/D11.md` — Retry & backoff policy
@@ -31,7 +31,7 @@ One line per Decision, in number order — file, label, and the Verification ids
 - **D13** `project/design/D13.md` — Testing strategy
   - ids: R-WJLM-7QRP, R-WKTI-LIIE, R-WM1E-ZA93, R-711P-17EO, R-CL9K-41F1, R-CMHG-HT5Q, R-CNPC-VKWF, R-COX9-9CN4, R-CQ55-N4DT, R-CRD2-0W4I, R-CSKY-ENV7, R-CTSU-SFLW
 - **D15** `project/design/D15.md` — Structured JSONL event log & conversation lifecycle
-  - ids: R-PH7W-BVH0, R-PIFS-PN7P, R-PJNP-3EYE, R-PKVL-H6P3, R-PM3H-UYFS, R-PNBE-8Q6H, R-POJA-MHX6, R-PPR7-09NV
+  - ids: R-PH7W-BVH0, R-LNO6-EM5R, R-PIFS-PN7P, R-PJNP-3EYE, R-PKVL-H6P3, R-PM3H-UYFS, R-PNBE-8Q6H, R-POJA-MHX6, R-PPR7-09NV
 - **D16** `project/design/D16.md` — Dollar-cost accounting: the resolution seam
   - ids: R-CZ7D-VSL4, R-D0FA-9KBT, R-D1N6-NC2I, R-V2SM-WC8V, R-PVUO-X4DC, R-PX2L-AW41
 - **D17** `project/design/D17.md` — MCP servers as a tool source
@@ -39,7 +39,7 @@ One line per Decision, in number order — file, label, and the Verification ids
 - **D18** `project/design/D18.md` — The embeddings consumer surface: the `Embedder` object and the `Embed` verb
   - ids: R-Y5RV-WB3T, R-Y6ZS-A2UI, R-D5AV-SNAL, R-Y9FL-1MBW, R-YANH-FE2L, R-YBVD-T5TA, R-D6IS-6F1A, R-D2V3-13T7, R-D42Z-EVJW
 - **D19** `project/design/D19.md` — The `EmbeddingProvider` SPI, package architecture & adapter-owned guarantees
-  - ids: R-D7QO-K6RZ, R-YHYV-Q0IR, R-YJ6S-3S9G, R-YKEO-HK05, R-YLMK-VBQU, R-YO2D-MV88
+  - ids: R-D7QO-K6RZ, R-LL8D-N2OD, R-YHYV-Q0IR, R-YJ6S-3S9G, R-YKEO-HK05, R-YLMK-VBQU, R-YO2D-MV88
 - **D20** `project/design/D20.md` — Embedding usage & pricing: the data shapes
   - ids: R-YPAA-0MYX, R-D8YK-XYIO
 - **D21** `project/design/D21.md` — The shared retry executor (`internal/retry`)
@@ -53,7 +53,7 @@ One line per Decision, in number order — file, label, and the Verification ids
 - **D25** `project/design/D25.md` — OpenAI credentials: API key and ChatGPT subscription
   - ids: R-DG9Z-8KYU, R-PV6N-URM6, R-PWEK-8JCV, R-DHHV-MCPJ, R-PXMG-MB3K, R-DL5K-RNXM, R-DJXO-DW6X
 - **D26** `project/design/D26.md` — The advisory model catalog: `agentkit/catalog`
-  - ids: R-DMDH-5FOB, R-DNLD-J7F0, R-DOT9-WZ5P, R-DQ16-AQWE, R-DHKK-RZ7M, R-DISH-5QYB, R-DK0D-JIP0, R-DL89-XAFP, R-DMG6-B26E, R-DNO2-OTX3, R-DOVZ-2LNS, R-DR92-OIN3, R-4MB8-ERDC, R-4NJ4-SJ41, R-DSGZ-2ADS
+  - ids: R-DMDH-5FOB, R-LOW2-SDWG, R-LRBV-JXDU, R-DNLD-J7F0, R-LQ3Z-65N5, R-LXFD-GS3B, R-LTRO-BGV8, R-LW7H-30CM, R-LSJR-XP4J, R-DOT9-WZ5P, R-DQ16-AQWE, R-DHKK-RZ7M, R-DISH-5QYB, R-DK0D-JIP0, R-DL89-XAFP, R-DMG6-B26E, R-DNO2-OTX3, R-LYN9-UJU0, R-DOVZ-2LNS, R-DR92-OIN3, R-4NJ4-SJ41, R-DSGZ-2ADS
 - **D27** `project/design/D27.md` — The `toolkit` subpackage: standard coding tools, root confinement, output cap
   - ids: R-LQ1Y-XASG, R-LR9V-B2J5, R-LSHR-OU9U, R-LTPO-2M0J, R-LUXK-GDR8, R-LW5G-U5HX
 - **D28** `project/design/D28.md` — `toolkit`: `Read`, `Write`, `Edit` semantics
@@ -70,13 +70,11 @@ One line per Decision, in number order — file, label, and the Verification ids
   - ids: R-UJJV-4KZZ, R-UKRR-ICQO, R-ULZN-W4HD, R-UOFG-NNYR, R-UPND-1FPG
 
 ## Verification ids → Decision
-Every minted id, sorted, mapped to its Decision and file (grep target for id lookup).
 R-00IP-I9D7  D1  project/design/D01.md
 R-01HL-I6TM  D9  project/design/D09.md
 R-02PH-VYKB  D9  project/design/D09.md
 R-03XE-9QB0  D9  project/design/D09.md
 R-055A-NI1P  D9  project/design/D09.md
-R-4MB8-ERDC  D26  project/design/D26.md
 R-4NJ4-SJ41  D26  project/design/D26.md
 R-4YSE-6YBS  D9  project/design/D09.md
 R-6GBE-J3SV  D17  project/design/D17.md
@@ -191,14 +189,26 @@ R-IWR9-0OTQ  D21  project/design/D21.md
 R-IXZ5-EGKF  D21  project/design/D21.md
 R-IZ71-S8B4  D21  project/design/D21.md
 R-J0EY-601T  D21  project/design/D21.md
+R-LK0H-9AXO  D9  project/design/D09.md
+R-LL8D-N2OD  D19  project/design/D19.md
+R-LMGA-0UF2  D7  project/design/D07.md
+R-LNO6-EM5R  D15  project/design/D15.md
+R-LOW2-SDWG  D26  project/design/D26.md
 R-LQ1Y-XASG  D27  project/design/D27.md
+R-LQ3Z-65N5  D26  project/design/D26.md
 R-LR9V-B2J5  D27  project/design/D27.md
+R-LRBV-JXDU  D26  project/design/D26.md
 R-LSHR-OU9U  D27  project/design/D27.md
+R-LSJR-XP4J  D26  project/design/D26.md
 R-LTPO-2M0J  D27  project/design/D27.md
+R-LTRO-BGV8  D26  project/design/D26.md
 R-LUXK-GDR8  D27  project/design/D27.md
 R-LW5G-U5HX  D27  project/design/D27.md
+R-LW7H-30CM  D26  project/design/D26.md
 R-LXDD-7X8M  D28  project/design/D28.md
+R-LXFD-GS3B  D26  project/design/D26.md
 R-LYL9-LOZB  D28  project/design/D28.md
+R-LYN9-UJU0  D26  project/design/D26.md
 R-LZT5-ZGQ0  D28  project/design/D28.md
 R-M28Y-R07E  D28  project/design/D28.md
 R-M3GV-4RY3  D28  project/design/D28.md
@@ -326,4 +336,3 @@ R-ZCMP-ARG8  D9  project/design/D09.md
 R-ZELD-OQNG  D1  project/design/D01.md
 R-ZWV0-CY54  D1  project/design/D01.md
 R-ZZAT-4HMI  D1  project/design/D01.md
-

@@ -1,28 +1,25 @@
-# Phase 82 — the catalog's reasoning descriptor: measured defaults and both toggle permissions
+# Phase 82 — provider identity: the package id, the auth mode, and the two fields that carry them
 
-*Realizes design Decision 26 (the advisory model catalog). Depends on Phase 81 (`EnableReasoning` and `ReasoningSpec.CanEnable` must exist).*
+*Realizes design Decision 9 (the provider SPI), Decision 7 (the error model), Decision 15 (the JSONL log), and Decision 19 (the embedding SPI). Depends on no pending phase.*
 
-Reshapes `catalog.ReasoningSpec` so it answers the three reasoning questions in three separate fields, and refills the shipped data from the measurements recorded in research §7.1. The observable end state:
+Replaces the single `Name() string` label on both SPIs with a typed `Identity` carrying two facts, and splits every place that label landed into two fields. The observable end state:
 
-- `catalog.ReasoningDefault` and `catalog.ReasoningDefaultMode` exist, with `DefaultUnaudited` as the zero value, plus `DefaultOff`, `DefaultFixed`, and `DefaultDynamic`.
-- `ReasoningSpec.Default` changes type from `agentkit.ReasoningValue` to `ReasoningDefault`, and `CanEnable` joins `CanDisable`. This is a breaking change to a consumer-facing type; Phase 83 records it.
-- Every chat entry in `catalog/data.go` carries an audited default in the new shape, and every toggle-shaped entry carries both permissions. Corrections the measurements force, at minimum: `kimi-k3` gains `CanDisable: true` (its off-form returns 200 with reasoning suppressed), and `grok-4.20` is recorded as `DefaultOff` with `CanEnable: true` and `CanDisable: true`.
-- The recorded reference table backing the golden test is regenerated to match, so `R-DQ16-AQWE` covers the new cells rather than the old ones.
+- `agentkit.ProviderID`, `agentkit.AuthMode`, and `agentkit.Identity` exist in the root package, both ids defined `string` types so a third-party adapter can still name itself and both serialize as plain JSON strings. `Identity.String()` renders the dotted display form (`openai.subscription`).
+- The exported constants are `ProviderAnthropic`, `ProviderOpenAI`, `ProviderGoogle`, `ProviderZAI`, `ProviderOpenRouter`, and `AuthAPIKey`, `AuthSubscription`. **`ProviderZAI` is `"z-ai"`, not `"zai"`** — the Go package keeps its name, the id follows the vendor spelling so the catalog's OpenRouter join needs no mapping table (D26).
+- `agentkit.Provider` (`orchestration.go`) and `agentkit.EmbeddingProvider` both replace `Name() string` with `Identity() Identity`. Every adapter follows: `anthropic`, `google`, `zai`, `openrouter`, `internal/openaicompat`, `openai` chat, `openai` embedding, `google` embedding.
+- `openai`'s chat provider reports `{ProviderOpenAI, AuthSubscription}` or `{ProviderOpenAI, AuthAPIKey}` from the same credential branch that produced the dotted labels at `openai/openai.go:120`; its embedding provider reports `{ProviderOpenAI, AuthAPIKey}`, closing the asymmetry where the chat side said `openai.apikey` and the embedding side said bare `openai`.
+- `agentkit.Error` replaces `Provider string` with `Provider ProviderID` and gains `Auth AuthMode`. MCP failures leave both empty and continue to set `MCPServer`.
+- `LogRecord` (`log.go`) types `Provider` as `ProviderID` and gains `Auth AuthMode` with tag `json:"auth,omitempty"`; the `turn_start` emitter at `orchestration.go:229` fills both from the conversation provider's `Identity`.
 
-The invariant tests are the point of the reshape: they make the ambiguities that motivated it mechanically impossible to reintroduce. `R-DMG6-B26E` in particular means adding a model without establishing its default fails the suite instead of shipping a blank that reads as "off".
+Nothing about routing, credentials, or the wire changes: this is the label surface only. The `zai` → `z-ai` id change is user-visible in error values and log output, which is why it rides this release rather than a later one.
 
 **Done when** all of the following hold:
 
 - Each id below is covered by a clearly-named test carrying the id verbatim as a tag:
-  - `R-DHKK-RZ7M` — across every shipped entry with a `ReasoningSpec`, `Default.Value` is non-zero exactly when `Default.Mode == DefaultFixed`.
-  - `R-DISH-5QYB` — every `DefaultFixed` entry satisfies `spec.Accepts(spec.Default.Value)`.
-  - `R-DK0D-JIP0` — `CanEnable == true` implies `Kind == ReasoningToggle`, across every shipped entry.
-  - `R-DL89-XAFP` — every `Kind == ReasoningRange` entry satisfies `CanDisable == (Min == 0 || an "off" sentinel exists)`; `gemini-2.5-flash` is true and `gemini-2.5-pro` is false.
-  - `R-DMG6-B26E` — no shipped chat entry with a `ReasoningSpec` has `Default.Mode == DefaultUnaudited`.
-  - `R-DNO2-OTX3` — `spec.Accepts(agentkit.EnableReasoning())` is true exactly when `CanEnable` is set, and `catalog.Check` agrees for a cataloged model.
-  - `R-DOVZ-2LNS` — live, integration-gated: for each aggregator-routed entry the catalog's `CanDisable` claim matches the real OpenRouter API — the off-form completes for every `CanDisable: true` entry and is rejected for every `CanDisable: false` entry.
-  - `R-DQ16-AQWE` — the golden reference table matches the shipped data including `Kind`, `Levels`, `Min`/`Max`, `Sentinels`, `CanEnable`, `CanDisable`, and `Default`.
-- `grep -c 'CanDisable: *true' catalog/data.go` includes the `kimi-k3` entry: `sed -n '/"kimi-k3"/,/^	},/p' catalog/data.go | grep -qE 'CanDisable: *true'` exits 0.
-- No provider or root package imports the catalog (`R-DR92-OIN3` still green).
+  - `R-LK0H-9AXO` — every shipped chat provider's `Identity()` returns its `ProviderID` and the `AuthMode` its credential selects; both `openai` credential modes return the same `ProviderID`; `Identity.String()` renders `openai.subscription` and `z-ai.apikey`; no shipped provider returns the zero `AuthMode`.
+  - `R-LL8D-N2OD` — `openai.NewEmbedder` reports `{ProviderOpenAI, AuthAPIKey}` (identical `ProviderID` to its chat sibling) and `google.NewEmbedder` reports `{ProviderGoogle, AuthAPIKey}`.
+  - `R-LMGA-0UF2` — a provider `*Error` carries `Provider` and `Auth` as two typed fields matching the failing handle; an MCP failure leaves both empty with `MCPServer` set; the two serialize as separate `provider` and `auth` JSON strings.
+  - `R-LNO6-EM5R` — a `turn_start` record emits `provider` and `auth` as two JSON string fields, asserted on the raw log bytes, with no dotted composite in `provider` for either OpenAI mode and `"provider":"z-ai"` for a Z.ai turn.
+- No dotted provider label survives outside the display renderer: `grep -rnE '"(openai|z-ai)\.(apikey|subscription)"' --include='*.go' . | grep -v _test.go` matches only `Identity.String()`'s implementation, or nothing at all.
 - `go build ./...` and `go test ./...` both exit 0 (design Conventions).
 - The integration suite compiles: `go vet -tags integration ./...` exits 0.
