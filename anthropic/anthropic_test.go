@@ -507,6 +507,34 @@ func TestAnthropicToolSchemaUsesStrictClosedObjectsAndCanonicalOptionality(t *te
 	assertSchemaKeysAbsent(t, schema, "$schema", "$defs")
 }
 
+func TestBuildRequestToolsSortedByName(t *testing.T) {
+	// R-XY0O-DBX8
+	alpha := schemaTool{name: "alpha", description: "first", schema: json.RawMessage(`{"type":"object"}`)}
+	zulu := schemaTool{name: "zulu", description: "last", schema: json.RawMessage(`{"type":"object"}`)}
+
+	buildTools := func(tools []agentkit.Tool) ([]byte, []wireTool) {
+		t.Helper()
+		request, _, err := buildRequest(&agentkit.Request{Model: "claude-test", Tools: tools})
+		if err != nil {
+			t.Fatalf("buildRequest() error = %v", err)
+		}
+		raw, err := json.Marshal(request.Tools)
+		if err != nil {
+			t.Fatalf("marshal tools: %v", err)
+		}
+		return raw, request.Tools
+	}
+
+	forward, tools := buildTools([]agentkit.Tool{alpha, zulu})
+	reversed, _ := buildTools([]agentkit.Tool{zulu, alpha})
+	if !bytes.Equal(forward, reversed) {
+		t.Fatalf("serialized tools differ by input order:\nforward: %s\nreverse: %s", forward, reversed)
+	}
+	if got := []string{tools[0].Name, tools[1].Name}; !reflect.DeepEqual(got, []string{"alpha", "zulu"}) {
+		t.Fatalf("tool order = %#v, want [alpha zulu]", got)
+	}
+}
+
 func TestAnthropicToolSchemaRendererPreservesEveryCanonicalConstruct(t *testing.T) {
 	// R-2UV8-RBKS
 	canonical := json.RawMessage(`{

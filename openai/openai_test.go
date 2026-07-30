@@ -58,6 +58,35 @@ func (s staticTokenSource) Token(context.Context) (string, string, error) {
 	return s.bearer, s.account, s.err
 }
 
+func TestBuildRequestToolsSortedByName(t *testing.T) {
+	// R-XY0O-DBX8
+	alpha := testRawTool("alpha", "first", json.RawMessage(`{"type":"object"}`), nil)
+	zulu := testRawTool("zulu", "last", json.RawMessage(`{"type":"object"}`), nil)
+	provider := &Provider{}
+
+	buildTools := func(tools []agentkit.Tool) ([]byte, []toolDef) {
+		t.Helper()
+		request, _, err := provider.buildRequest(&agentkit.Request{Model: "gpt-test", Tools: tools})
+		if err != nil {
+			t.Fatalf("buildRequest() error = %v", err)
+		}
+		raw, err := json.Marshal(request.Tools)
+		if err != nil {
+			t.Fatalf("marshal tools: %v", err)
+		}
+		return raw, request.Tools
+	}
+
+	forward, tools := buildTools([]agentkit.Tool{alpha, zulu})
+	reversed, _ := buildTools([]agentkit.Tool{zulu, alpha})
+	if string(forward) != string(reversed) {
+		t.Fatalf("serialized tools differ by input order:\nforward: %s\nreverse: %s", forward, reversed)
+	}
+	if got := []string{tools[0].Name, tools[1].Name}; !reflect.DeepEqual(got, []string{"alpha", "zulu"}) {
+		t.Fatalf("tool order = %#v, want [alpha zulu]", got)
+	}
+}
+
 func TestEmbeddingProviderReportsSameOpenAIAPIKeyIdentityAsChat(t *testing.T) {
 	// R-LL8D-N2OD
 	chatIdentity := New(APIKey("key")).Identity()

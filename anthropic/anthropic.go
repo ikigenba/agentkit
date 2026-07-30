@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -195,7 +196,11 @@ func buildRequest(req *agentkit.Request) (messageRequest, []agentkit.Warning, er
 	if req.System != "" {
 		out.System = []wireBlock{{Type: "text", Text: req.System}}
 	}
-	for _, tool := range req.Tools {
+	tools := append([]agentkit.Tool(nil), req.Tools...)
+	sort.SliceStable(tools, func(i, j int) bool {
+		return tools[i].Name() < tools[j].Name()
+	})
+	for _, tool := range tools {
 		out.Tools = append(out.Tools, wireTool{
 			Name:        tool.Name(),
 			Description: tool.Description(),

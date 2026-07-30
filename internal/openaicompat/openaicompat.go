@@ -205,7 +205,11 @@ func (p *Provider) buildRequest(req *agentkit.Request) (chatRequest, []agentkit.
 	if req.System != "" {
 		out.Messages = append(out.Messages, chatMessage{Role: "system", Content: req.System})
 	}
-	for _, tool := range req.Tools {
+	tools := append([]agentkit.Tool(nil), req.Tools...)
+	sort.SliceStable(tools, func(i, j int) bool {
+		return tools[i].Name() < tools[j].Name()
+	})
+	for _, tool := range tools {
 		out.Tools = append(out.Tools, toolDef{
 			Type: "function",
 			Function: toolFunctionDef{

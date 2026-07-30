@@ -48,6 +48,37 @@ func (t rawTestTool) Call(ctx context.Context, input json.RawMessage) (string, e
 	return t.fn(ctx, append(json.RawMessage(nil), input...))
 }
 
+func TestRequestBodyToolsSortedByName(t *testing.T) {
+	// R-XY0O-DBX8
+	alpha := testRawTool("alpha", "first", json.RawMessage(`{"type":"object"}`), nil)
+	zulu := testRawTool("zulu", "last", json.RawMessage(`{"type":"object"}`), nil)
+	provider := &Provider{}
+
+	buildTools := func(tools []agentkit.Tool) ([]byte, []map[string]any) {
+		t.Helper()
+		body, _, err := provider.requestBody(&agentkit.Request{Model: "gemini-test", Tools: tools})
+		if err != nil {
+			t.Fatalf("requestBody() error = %v", err)
+		}
+		wireTools := body["tools"].([]map[string]any)
+		raw, err := json.Marshal(wireTools)
+		if err != nil {
+			t.Fatalf("marshal tools: %v", err)
+		}
+		return raw, wireTools
+	}
+
+	forward, tools := buildTools([]agentkit.Tool{alpha, zulu})
+	reversed, _ := buildTools([]agentkit.Tool{zulu, alpha})
+	if string(forward) != string(reversed) {
+		t.Fatalf("serialized tools differ by input order:\nforward: %s\nreverse: %s", forward, reversed)
+	}
+	declarations := tools[0]["functionDeclarations"].([]map[string]any)
+	if got := []string{declarations[0]["name"].(string), declarations[1]["name"].(string)}; !reflect.DeepEqual(got, []string{"alpha", "zulu"}) {
+		t.Fatalf("tool order = %#v, want [alpha zulu]", got)
+	}
+}
+
 func TestChatAndEmbeddingProvidersReportAPIKeyIdentity(t *testing.T) {
 	// R-LK0H-9AXO
 	// R-LL8D-N2OD

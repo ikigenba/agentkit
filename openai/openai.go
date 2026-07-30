@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -309,7 +310,11 @@ func (p *Provider) buildRequest(req *agentkit.Request) (responsesRequest, []agen
 			return responsesRequest{}, warnings, fmt.Errorf("openai provider options must be a JSON object: %w", agentkit.ErrInvalidConfig)
 		}
 	}
-	for _, tool := range req.Tools {
+	tools := append([]agentkit.Tool(nil), req.Tools...)
+	sort.SliceStable(tools, func(i, j int) bool {
+		return tools[i].Name() < tools[j].Name()
+	})
+	for _, tool := range tools {
 		out.Tools = append(out.Tools, toolDef{
 			Type:        "function",
 			Name:        tool.Name(),
