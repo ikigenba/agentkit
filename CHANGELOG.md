@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.11.0
+
+- Completed every catalog offering with full pricing, reasoning specification,
+  and context metadata, removing the blank secondary-offering tier.
+- Added OpenRouter offerings for every tracked chat model, with each route's
+  reasoning vocabulary documented and confirmed and its rates audited.
+- Added per-offering wire-name overrides for the three Anthropic model slugs
+  whose wire names contain dots.
+
 ## v0.10.0
 
 - Organized the catalog by offering. `catalog.Entry` replaced `Provider` and
