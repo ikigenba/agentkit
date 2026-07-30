@@ -4,4 +4,3 @@ The manifest, and a work **queue**: one line per **pending** phase, in build ord
 
 Next phase: 89
 
-- Phase 88 ⬜ realizes — — document the v0.11.0 release
