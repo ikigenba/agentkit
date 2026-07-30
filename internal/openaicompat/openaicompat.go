@@ -176,9 +176,134 @@ type toolDef struct {
 }
 
 type toolFunctionDef struct {
-	Name        string          `json:"name"`
-	Description string          `json:"description,omitempty"`
-	Parameters  json.RawMessage `json:"parameters"`
+	Name        string         `json:"name"`
+	Description string         `json:"description,omitempty"`
+	Parameters  map[string]any `json:"parameters"`
+	Strict      bool           `json:"strict"`
+}
+
+// RenderSchema renders AgentKit's canonical schema subset in OpenAI strict
+// mode's dialect. Callers pass schemas that have already crossed the canonical
+// subset gate, so rendering is total.
+func RenderSchema(raw json.RawMessage) map[string]any {
+	var schema map[string]any
+	if err := json.Unmarshal(raw, &schema); err != nil {
+		return map[string]any{}
+	}
+	defs, _ := schema["$defs"].(map[string]any)
+	return renderSchemaNode(schema, defs)
+}
+
+func renderSchemaNode(schema map[string]any, defs map[string]any) map[string]any {
+	out := make(map[string]any, len(schema))
+	if ref, ok := schema["$ref"].(string); ok {
+		if target, ok := resolveLocalRef(ref, defs); ok {
+			out = renderSchemaNode(target, defs)
+		}
+	}
+
+	for key, value := range schema {
+		switch key {
+		case "$schema", "$defs", "$ref", "additionalProperties", "required":
+			continue
+		case "properties":
+			properties, _ := value.(map[string]any)
+			rendered := make(map[string]any, len(properties))
+			required := stringSet(schema["required"])
+			names := make([]string, 0, len(properties))
+			for name, property := range properties {
+				propertySchema, _ := property.(map[string]any)
+				renderedProperty := renderSchemaNode(propertySchema, defs)
+				if !required[name] {
+					renderedProperty = nullableSchema(renderedProperty)
+				}
+				rendered[name] = renderedProperty
+				names = append(names, name)
+			}
+			sort.Strings(names)
+			out["properties"] = rendered
+			out["required"] = names
+		case "items":
+			item, _ := value.(map[string]any)
+			out["items"] = renderSchemaNode(item, defs)
+		case "oneOf":
+			out["anyOf"] = renderSchemaList(value, defs)
+		case "anyOf":
+			out["anyOf"] = renderSchemaList(value, defs)
+		default:
+			out[key] = value
+		}
+	}
+	if schemaTypeIncludes(out["type"], "object") || out["properties"] != nil {
+		out["additionalProperties"] = false
+	}
+	return out
+}
+
+func renderSchemaList(value any, defs map[string]any) []any {
+	items, _ := value.([]any)
+	out := make([]any, 0, len(items))
+	for _, item := range items {
+		itemSchema, _ := item.(map[string]any)
+		out = append(out, renderSchemaNode(itemSchema, defs))
+	}
+	return out
+}
+
+func resolveLocalRef(ref string, defs map[string]any) (map[string]any, bool) {
+	const prefix = "#/$defs/"
+	if !strings.HasPrefix(ref, prefix) {
+		return nil, false
+	}
+	name := strings.TrimPrefix(ref, prefix)
+	name = strings.ReplaceAll(strings.ReplaceAll(name, "~1", "/"), "~0", "~")
+	target, ok := defs[name].(map[string]any)
+	return target, ok
+}
+
+func stringSet(value any) map[string]bool {
+	set := make(map[string]bool)
+	values, _ := value.([]any)
+	for _, value := range values {
+		if stringValue, ok := value.(string); ok {
+			set[stringValue] = true
+		}
+	}
+	return set
+}
+
+func nullableSchema(schema map[string]any) map[string]any {
+	types, exists := schema["type"]
+	if !exists {
+		if alternatives, ok := schema["anyOf"].([]any); ok {
+			schema["anyOf"] = append(alternatives, map[string]any{"type": "null"})
+		}
+		return schema
+	}
+	if schemaTypeIncludes(types, "null") {
+		return schema
+	}
+	switch value := types.(type) {
+	case string:
+		schema["type"] = []any{value, "null"}
+	case []any:
+		schema["type"] = append(value, "null")
+	}
+	return schema
+}
+
+func schemaTypeIncludes(value any, want string) bool {
+	switch value := value.(type) {
+	case string:
+		return value == want
+	case []any:
+		for _, item := range value {
+			if item == want {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (p *Provider) buildRequest(req *agentkit.Request) (chatRequest, []agentkit.Warning, error) {
@@ -215,7 +340,8 @@ func (p *Provider) buildRequest(req *agentkit.Request) (chatRequest, []agentkit.
 			Function: toolFunctionDef{
 				Name:        tool.Name(),
 				Description: tool.Description(),
-				Parameters:  tool.JSONSchema(),
+				Parameters:  RenderSchema(tool.JSONSchema()),
+				Strict:      true,
 			},
 		})
 	}

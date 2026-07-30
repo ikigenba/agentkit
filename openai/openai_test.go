@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/ikigenba/agentkit"
+	"github.com/ikigenba/agentkit/internal/openaicompat"
 )
 
 type unknownBlock struct {
@@ -84,6 +85,274 @@ func TestBuildRequestToolsSortedByName(t *testing.T) {
 	}
 	if got := []string{tools[0].Name, tools[1].Name}; !reflect.DeepEqual(got, []string{"alpha", "zulu"}) {
 		t.Fatalf("tool order = %#v, want [alpha zulu]", got)
+	}
+}
+
+func TestProviderSendsStrictToolsWithClosedObjectsAndNullableOptionals(t *testing.T) {
+	// R-XUCZ-80P5
+	schema := json.RawMessage(`{
+		"$schema":"https://json-schema.org/draft/2020-12/schema",
+		"$defs":{"unused":{"type":"string"}},
+		"type":"object",
+		"properties":{
+			"query":{"type":"string"},
+			"limit":{"type":"integer"},
+			"filter":{
+				"type":"object",
+				"properties":{"field":{"type":"string"},"exact":{"type":"boolean"}},
+				"required":["field"]
+			}
+		},
+		"required":["query","filter"]
+	}`)
+	var recorded map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&recorded); err != nil {
+			t.Errorf("decode request: %v", err)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	provider := New(APIKey("test-key"), WithBaseURL(server.URL), WithHTTPClient(server.Client()))
+	provider.RoundTrip(context.Background(), &agentkit.Request{
+		Model: "gpt-test",
+		Tools: []agentkit.Tool{testRawTool(
+			"search",
+			"search records",
+			schema,
+			nil,
+		)},
+	})
+
+	tools, ok := recorded["tools"].([]any)
+	if !ok || len(tools) != 1 {
+		t.Fatalf("recorded tools = %#v, want one tool", recorded["tools"])
+	}
+	tool := tools[0].(map[string]any)
+	if tool["strict"] != true {
+		t.Fatalf("strict = %#v, want true", tool["strict"])
+	}
+	parameters := tool["parameters"].(map[string]any)
+	assertStrictObjectSchemas(t, parameters)
+	assertNoSchemaMetadata(t, parameters)
+
+	properties := parameters["properties"].(map[string]any)
+	if got := properties["limit"].(map[string]any)["type"]; !reflect.DeepEqual(got, []any{"integer", "null"}) {
+		t.Fatalf("optional limit type = %#v, want [integer null]", got)
+	}
+	filter := properties["filter"].(map[string]any)
+	exact := filter["properties"].(map[string]any)["exact"].(map[string]any)
+	if got := exact["type"]; !reflect.DeepEqual(got, []any{"boolean", "null"}) {
+		t.Fatalf("nested optional exact type = %#v, want [boolean null]", got)
+	}
+}
+
+func TestOpenAIRendererPreservesConstructCompleteSchemaAndMatchesCompat(t *testing.T) {
+	// R-2W35-53BH
+	schema := constructCompleteOpenAISchema()
+	request, _, err := (&Provider{}).buildRequest(&agentkit.Request{
+		Model: "gpt-test",
+		Tools: []agentkit.Tool{testRawTool(
+			"inspect",
+			"inspect a record",
+			schema,
+			nil,
+		)},
+	})
+	if err != nil {
+		t.Fatalf("buildRequest() error = %v", err)
+	}
+	if len(request.Tools) != 1 || !request.Tools[0].Strict {
+		t.Fatalf("rendered tools = %#v, want one strict tool", request.Tools)
+	}
+	parameters := request.Tools[0].Parameters
+	assertStrictObjectSchemas(t, parameters)
+	assertNoSchemaMetadata(t, parameters)
+
+	properties := parameters["properties"].(map[string]any)
+	name := properties["name"].(map[string]any)
+	for key, want := range map[string]any{
+		"pattern":     "^[a-z]+$",
+		"minLength":   float64(2),
+		"maxLength":   float64(20),
+		"format":      "email",
+		"default":     "agent",
+		"title":       "Name",
+		"description": "display name",
+	} {
+		if got := name[key]; !reflect.DeepEqual(got, want) {
+			t.Errorf("name.%s = %#v, want %#v", key, got, want)
+		}
+	}
+	if got := properties["state"].(map[string]any)["enum"]; !reflect.DeepEqual(got, []any{"new", "done"}) {
+		t.Errorf("state enum = %#v", got)
+	}
+	if got := properties["kind"].(map[string]any)["const"]; got != "record" {
+		t.Errorf("kind const = %#v, want record", got)
+	}
+	tags := properties["tags"].(map[string]any)
+	if tags["minItems"] != float64(1) || !reflect.DeepEqual(tags["items"].(map[string]any)["enum"], []any{"red", "blue"}) {
+		t.Errorf("tags schema = %#v", tags)
+	}
+	choice := properties["choice"].(map[string]any)
+	if _, exists := choice["oneOf"]; exists {
+		t.Error("choice retained oneOf")
+	}
+	if got, ok := choice["anyOf"].([]any); !ok || len(got) != 2 {
+		t.Errorf("choice anyOf = %#v, want two branches", choice["anyOf"])
+	}
+	if got, ok := properties["either"].(map[string]any)["anyOf"].([]any); !ok || len(got) != 2 {
+		t.Errorf("either anyOf = %#v, want two branches", properties["either"])
+	}
+	address := properties["address"].(map[string]any)
+	if _, exists := address["$ref"]; exists {
+		t.Error("address retained $ref")
+	}
+	if got := address["properties"].(map[string]any)["zip"].(map[string]any)["pattern"]; got != "^[0-9]{5}$" {
+		t.Errorf("inlined address zip pattern = %#v", got)
+	}
+	if got := properties["optional"].(map[string]any)["type"]; !reflect.DeepEqual(got, []any{"integer", "null"}) {
+		t.Errorf("optional type = %#v, want [integer null]", got)
+	}
+	if got := properties["nullable"].(map[string]any)["type"]; !reflect.DeepEqual(got, []any{"string", "null"}) {
+		t.Errorf("nullable type = %#v, want [string null]", got)
+	}
+
+	var compatBodies []map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode compat request: %v", err)
+		}
+		compatBodies = append(compatBodies, body)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+	for _, identity := range []agentkit.Identity{
+		{Provider: agentkit.ProviderZAI, Auth: agentkit.AuthAPIKey},
+		{Provider: agentkit.ProviderOpenRouter, Auth: agentkit.AuthAPIKey},
+	} {
+		compat := openaicompat.New(openaicompat.Config{
+			Identity:   identity,
+			BaseURL:    server.URL,
+			APIKey:     "test-key",
+			HTTPClient: server.Client(),
+		})
+		compat.RoundTrip(context.Background(), &agentkit.Request{
+			Model: "compat-test",
+			Tools: []agentkit.Tool{testRawTool(
+				"inspect",
+				"inspect a record",
+				schema,
+				nil,
+			)},
+		})
+	}
+
+	openAIToolRaw, err := json.Marshal(request.Tools[0])
+	if err != nil {
+		t.Fatalf("marshal OpenAI tool: %v", err)
+	}
+	var openAITool map[string]any
+	if err := json.Unmarshal(openAIToolRaw, &openAITool); err != nil {
+		t.Fatalf("decode OpenAI tool: %v", err)
+	}
+	delete(openAITool, "type")
+	if len(compatBodies) != 2 {
+		t.Fatalf("compat request count = %d, want 2", len(compatBodies))
+	}
+	for i, compatBody := range compatBodies {
+		compatTools := compatBody["tools"].([]any)
+		compatFunction := compatTools[0].(map[string]any)["function"].(map[string]any)
+		if !reflect.DeepEqual(openAITool, compatFunction) {
+			t.Fatalf("OpenAI tool payload differs from compat request %d:\nOpenAI: %#v\ncompat: %#v", i, openAITool, compatFunction)
+		}
+	}
+}
+
+func constructCompleteOpenAISchema() json.RawMessage {
+	return json.RawMessage(`{
+		"$schema":"https://json-schema.org/draft/2020-12/schema",
+		"$defs":{
+			"address":{
+				"type":"object",
+				"title":"Address",
+				"properties":{"zip":{"type":"string","pattern":"^[0-9]{5}$"}},
+				"required":["zip"]
+			}
+		},
+		"type":"object",
+		"description":"construct-complete",
+		"properties":{
+			"name":{"type":"string","pattern":"^[a-z]+$","minLength":2,"maxLength":20,"format":"email","default":"agent","title":"Name","description":"display name"},
+			"state":{"type":"string","enum":["new","done"]},
+			"kind":{"type":"string","const":"record"},
+			"tags":{"type":"array","items":{"type":"string","enum":["red","blue"]},"minItems":1},
+			"choice":{"oneOf":[{"type":"string","const":"left"},{"type":"integer","const":2}]},
+			"either":{"anyOf":[{"type":"string"},{"type":"number"}]},
+			"address":{"$ref":"#/$defs/address"},
+			"optional":{"type":"integer"},
+			"nullable":{"type":["string","null"]},
+			"nested":{"type":"object","properties":{"required":{"type":"string"},"optional":{"type":"boolean"}},"required":["required"]}
+		},
+		"required":["name","state","kind","tags","choice","either","address","nullable","nested"]
+	}`)
+}
+
+func assertStrictObjectSchemas(t *testing.T, value any) {
+	t.Helper()
+	switch value := value.(type) {
+	case map[string]any:
+		if properties, ok := value["properties"].(map[string]any); ok {
+			if value["additionalProperties"] != false {
+				t.Errorf("object additionalProperties = %#v, want false", value["additionalProperties"])
+			}
+			requiredSet := make(map[string]bool)
+			switch required := value["required"].(type) {
+			case []any:
+				for _, name := range required {
+					requiredSet[name.(string)] = true
+				}
+			case []string:
+				for _, name := range required {
+					requiredSet[name] = true
+				}
+			default:
+				t.Errorf("object required = %#v, want array", value["required"])
+			}
+			for name := range properties {
+				if !requiredSet[name] {
+					t.Errorf("property %q absent from required: %#v", name, value["required"])
+				}
+			}
+		}
+		for _, child := range value {
+			assertStrictObjectSchemas(t, child)
+		}
+	case []any:
+		for _, child := range value {
+			assertStrictObjectSchemas(t, child)
+		}
+	}
+}
+
+func assertNoSchemaMetadata(t *testing.T, value any) {
+	t.Helper()
+	switch value := value.(type) {
+	case map[string]any:
+		for _, key := range []string{"$schema", "$defs", "$ref", "oneOf"} {
+			if _, exists := value[key]; exists {
+				t.Errorf("rendered schema retained %s in %#v", key, value)
+			}
+		}
+		for _, child := range value {
+			assertNoSchemaMetadata(t, child)
+		}
+	case []any:
+		for _, child := range value {
+			assertNoSchemaMetadata(t, child)
+		}
 	}
 }
 

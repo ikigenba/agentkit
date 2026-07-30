@@ -51,3 +51,53 @@ func TestBuildRequestToolsSortedByName(t *testing.T) {
 		t.Fatalf("tool order = %#v, want [alpha zulu]", got)
 	}
 }
+
+func TestBuildRequestRendersStrictOpenAISchema(t *testing.T) {
+	// R-2W35-53BH
+	schema := json.RawMessage(`{
+		"$schema":"https://json-schema.org/draft/2020-12/schema",
+		"$defs":{"detail":{"type":"object","properties":{"code":{"type":"string","pattern":"^[A-Z]+$"}}}},
+		"type":"object",
+		"properties":{
+			"detail":{"$ref":"#/$defs/detail"},
+			"choice":{"oneOf":[{"const":"a"},{"const":"b"}]}
+		},
+		"required":["detail"]
+	}`)
+	provider := New(Config{})
+	request, _, err := provider.buildRequest(&agentkit.Request{
+		Model: "compat-test",
+		Tools: []agentkit.Tool{requestTestTool{
+			name:        "lookup",
+			description: "look up a value",
+			schema:      schema,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("buildRequest() error = %v", err)
+	}
+	if len(request.Tools) != 1 {
+		t.Fatalf("tool count = %d, want 1", len(request.Tools))
+	}
+	function := request.Tools[0].Function
+	if !function.Strict {
+		t.Fatal("function strict = false, want true")
+	}
+	if want := RenderSchema(schema); !reflect.DeepEqual(function.Parameters, want) {
+		t.Fatalf("parameters = %#v, want %#v", function.Parameters, want)
+	}
+	if _, exists := function.Parameters["$defs"]; exists {
+		t.Fatal("rendered parameters retained $defs")
+	}
+	detail := function.Parameters["properties"].(map[string]any)["detail"].(map[string]any)
+	if _, exists := detail["$ref"]; exists {
+		t.Fatal("rendered detail retained $ref")
+	}
+	choice := function.Parameters["properties"].(map[string]any)["choice"].(map[string]any)
+	if _, exists := choice["oneOf"]; exists {
+		t.Fatal("rendered choice retained oneOf")
+	}
+	if _, exists := choice["anyOf"]; !exists {
+		t.Fatal("rendered choice omitted anyOf")
+	}
+}

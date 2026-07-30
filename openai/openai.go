@@ -275,10 +275,11 @@ type summaryPart struct {
 }
 
 type toolDef struct {
-	Type        string          `json:"type"`
-	Name        string          `json:"name"`
-	Description string          `json:"description,omitempty"`
-	Parameters  json.RawMessage `json:"parameters"`
+	Type        string         `json:"type"`
+	Name        string         `json:"name"`
+	Description string         `json:"description,omitempty"`
+	Parameters  map[string]any `json:"parameters"`
+	Strict      bool           `json:"strict"`
 }
 
 func (p *Provider) buildRequest(req *agentkit.Request) (responsesRequest, []agentkit.Warning, error) {
@@ -319,7 +320,8 @@ func (p *Provider) buildRequest(req *agentkit.Request) (responsesRequest, []agen
 			Type:        "function",
 			Name:        tool.Name(),
 			Description: tool.Description(),
-			Parameters:  tool.JSONSchema(),
+			Parameters:  openaicompat.RenderSchema(tool.JSONSchema()),
+			Strict:      true,
 		})
 	}
 	for _, message := range req.Messages {
