@@ -17,6 +17,22 @@ direction: say what should change and wait. Edit code directly only on
 explicit operator instruction. See the `$ikispec` skill for the `project/`
 spec contracts and `$ralph` for the unattended build workflow.
 
+## Consumers and breaking changes
+
+Every consumer of this library is first-party software we own. There is no
+outside caller, and there never will be. The same holds on the other side of
+the MCP seam: every MCP server this library connects to is first-party
+software we own — there are no third-party servers, so a server whose tool
+schemas are rejected is fixed at the server, never accommodated here.
+Breaking changes are therefore not a cost and are never a reason to prefer
+one design over another.
+
+Never trade the optimal shape for backwards compatibility, migration effort, a
+deprecation path, or less work. If the right design is different from what
+exists, change it and fix every call site. Only the optimal solution is on the
+table. This applies to the spec under `project/` as much as to the code: a
+decision hedged for hypothetical third-party consumers is a finding to report.
+
 ## Layout
 
 - Root `.` — core `agentkit` package: `orchestration.go`, `tool.go`, `block.go`,

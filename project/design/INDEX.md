@@ -11,7 +11,7 @@ One line per Decision, in number order — file, label, and the Verification ids
 - **D3** `project/design/D03.md` — The canonical message & block data model
   - ids: R-IKKQ-Z3B4, R-ILSN-CV1T, R-IN0J-QMSI, R-IO8G-4EJ7, R-IPGC-I69W, R-XW08-D4YL
 - **D4** `project/design/D04.md` — The tool definition & registration surface
-  - ids: R-WYZP-N2VB, R-XZ8K-R3NX, R-Y0GH-4VEM, R-Y1OD-IN5B, R-Y2W9-WEW0, R-X07M-0UM0, R-X1FI-EMCP, R-SZH4-PB1G
+  - ids: R-WYZP-N2VB, R-XZ8K-R3NX, R-Y0GH-4VEM, R-Y1OD-IN5B, R-DIVW-07P0, R-AIWI-P5JP, R-Y2W9-WEW0, R-X07M-0UM0, R-X1FI-EMCP, R-SZH4-PB1G
 - **D5** `project/design/D05.md` — Provider packaging, construction credentials, and free-flow model selection
   - ids: R-CQO3-7EE9, R-CRVZ-L64Y, R-CT3V-YXVN, R-H65D-HYXH
 - **D6** `project/design/D06.md` — Generation settings and the native reasoning value
@@ -45,7 +45,7 @@ One line per Decision, in number order — file, label, and the Verification ids
 - **D21** `project/design/D21.md` — The shared retry executor (`internal/retry`)
   - ids: R-IUBG-95CC, R-IWR9-0OTQ, R-IXZ5-EGKF, R-IZ71-S8B4, R-J0EY-601T
 - **D22** `project/design/D22.md` — Per-provider schema rendering at the adapter boundary
-  - ids: R-XT52-U8YG, R-XUCZ-80P5, R-XVKV-LSFU, R-XWSR-ZK6J, R-XY0O-DBX8
+  - ids: R-XT52-U8YG, R-XUCZ-80P5, R-XVKV-LSFU, R-XWSR-ZK6J, R-XY0O-DBX8, R-2UV8-RBKS, R-2W35-53BH, R-2XB1-IV26
 - **D23** `project/design/D23.md` — Deferred tools & the built-in `load_tools` meta-tool
   - ids: R-9RQ8-9G3W, R-9SY4-N7UL, R-D5PT-82VU, R-D6XP-LUMJ, R-D85L-ZMD8, R-D9DI-DE3X, R-DALE-R5UM, R-DE93-WH2P, R-DBTB-4XLB, R-DD17-IPC0, R-B5BR-U5M1, R-B6JO-7XCQ, R-B7RK-LP3F, R-DFH0-A8TE
 - **D24** `project/design/D24.md` — The `openrouter` provider
@@ -69,7 +69,7 @@ One line per Decision, in number order — file, label, and the Verification ids
 - **D33** `project/design/D33.md` — Raster normalization: images become one-page PDFs
   - ids: R-UJJV-4KZZ, R-UKRR-ICQO, R-ULZN-W4HD, R-UOFG-NNYR, R-UPND-1FPG
 - **D34** `project/design/D34.md` — The canonical tool-schema subset, owned by root
-  - ids: R-XLTO-JMIA, R-XRX6-GH7R, R-XN1K-XE8Z, R-XO9H-B5ZO, R-XQPA-2PH2
+  - ids: R-XLTO-JMIA, R-XRX6-GH7R, R-XN1K-XE8Z, R-XO9H-B5ZO, R-XQPA-2PH2, R-ZPPN-6FV9, R-6QNT-WR7C, R-U3C5-4A1V
 
 ## Verification ids → Decision
 R-00IP-I9D7  D1  project/design/D01.md
@@ -77,6 +77,9 @@ R-01HL-I6TM  D9  project/design/D09.md
 R-02PH-VYKB  D9  project/design/D09.md
 R-03XE-9QB0  D9  project/design/D09.md
 R-055A-NI1P  D9  project/design/D09.md
+R-2UV8-RBKS  D22  project/design/D22.md
+R-2W35-53BH  D22  project/design/D22.md
+R-2XB1-IV26  D22  project/design/D22.md
 R-4NJ4-SJ41  D26  project/design/D26.md
 R-4YSE-6YBS  D9  project/design/D09.md
 R-6GBE-J3SV  D17  project/design/D17.md
@@ -87,6 +90,7 @@ R-6MEW-FYIC  D17  project/design/D17.md
 R-6NMS-TQ91  D17  project/design/D17.md
 R-6OUP-7HZQ  D17  project/design/D17.md
 R-6Q2L-L9QF  D17  project/design/D17.md
+R-6QNT-WR7C  D34  project/design/D34.md
 R-6RAH-Z1H4  D17  project/design/D17.md
 R-6SIE-CT7T  D17  project/design/D17.md
 R-6TQA-QKYI  D7  project/design/D07.md
@@ -98,6 +102,7 @@ R-711P-17EO  D13  project/design/D13.md
 R-7CYE-KS40  D7  project/design/D07.md
 R-9RQ8-9G3W  D23  project/design/D23.md
 R-9SY4-N7UL  D23  project/design/D23.md
+R-AIWI-P5JP  D4  project/design/D04.md
 R-B5BR-U5M1  D23  project/design/D23.md
 R-B6JO-7XCQ  D23  project/design/D23.md
 R-B7RK-LP3F  D23  project/design/D23.md
@@ -154,6 +159,7 @@ R-DGCO-E7GX  D6  project/design/D06.md
 R-DHHV-MCPJ  D25  project/design/D25.md
 R-DHKK-RZ7M  D26  project/design/D26.md
 R-DISH-5QYB  D26  project/design/D26.md
+R-DIVW-07P0  D4  project/design/D04.md
 R-DJXO-DW6X  D25  project/design/D25.md
 R-DK0D-JIP0  D26  project/design/D26.md
 R-DL5K-RNXM  D25  project/design/D25.md
@@ -256,6 +262,7 @@ R-T40A-VZQ7  D6  project/design/D06.md
 R-T587-9RGW  D6  project/design/D06.md
 R-T6G3-NJ7L  D6  project/design/D06.md
 R-TQ77-6QLK  D9  project/design/D09.md
+R-U3C5-4A1V  D34  project/design/D34.md
 R-UJJV-4KZZ  D33  project/design/D33.md
 R-UJNS-PFLL  D9  project/design/D09.md
 R-UKRR-ICQO  D33  project/design/D33.md
@@ -342,5 +349,6 @@ R-YO2D-MV88  D19  project/design/D19.md
 R-YPAA-0MYX  D20  project/design/D20.md
 R-ZCMP-ARG8  D9  project/design/D09.md
 R-ZELD-OQNG  D1  project/design/D01.md
+R-ZPPN-6FV9  D34  project/design/D34.md
 R-ZWV0-CY54  D1  project/design/D01.md
 R-ZZAT-4HMI  D1  project/design/D01.md

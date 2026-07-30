@@ -1074,7 +1074,10 @@ e.g. `maxLength: 3` against a 26-character request returned `"abc"`): `minimum`,
 Rejected: `allOf`, `oneOf`, `not`, `if`/`then`/`else`, `const` without `type`, root-level `anyOf`
 (rejected even without strict — `parameters` must be `type: "object"` unconditionally), and
 **`format: "uri"`**. The `uri` rejection is specific, not a general `format` restriction: `email`,
-`uuid`, `date`, `date-time`, `ipv4`, `duration`, `time`, `hostname` all pass.
+`uuid`, `date`, `date-time`, `ipv4`, `ipv6`, `duration`, `time`, `hostname` all
+pass (each verified live, at top level and on a nested object's string
+property; a garbage value like `zzz` is rejected, so acceptance is a positive
+allowlist hit).
 
 Two structural rules. **Every key in `properties` must appear in `required`** — there are no
 optional properties; optionality is expressed as `"type": ["T","null"]` or
@@ -1096,8 +1099,29 @@ means "did not 400", not "is honored", unless the keyword was demonstrably inspe
 Accepted: `minLength` and `maxLength` **at any value**, `pattern` (genuinely compiled — a
 lookahead is rejected as invalid regex, so the engine is RE2-like with no lookahead/lookbehind),
 `const`, `enum` (string, integer, or untyped), `allOf`, `anyOf`, `$ref` with `$defs` or draft-07
-`definitions`, `format` (allowlisted — `uri` and `date-time` pass, `zzz` is rejected), `title`,
-`default`, `minItems` with value 0 or 1.
+`definitions`, `format` (allowlisted; see below), `title`, `default`, `minItems` with value 0 or 1.
+
+The `format` allowlist was measured exhaustively: exactly ten values are accepted — `date-time`,
+`date`, `time`, `duration`, `email`, `hostname`, `ipv4`, `ipv6`, `uuid`, `uri` — and every other
+probed value 400s ("For 'string' type, format '…' is not supported"): `uri-reference`,
+`uri-template`, `iri`, `iri-reference`, `idn-email`, `idn-hostname`, `regex`, `json-pointer`,
+`relative-json-pointer`, `byte`, `binary`, `int32`, `int64`, `password`, `zzz`. The list applies
+uniformly at any depth (nested objects, array items, the string branch of a nullable union). Two
+qualifications: the check is keyed on the declared type — on non-string types arbitrary format
+values pass (`{"type":"integer","format":"zzz"}` is 200) — and the whole check exists only under
+`strict: true` (non-strict accepts `zzz` on a string). Note the OpenAI contrast: `uri` is accepted
+here and rejected there, `ipv6` accepted by both, so neither provider's allowlist contains the
+other's and only the intersection is portable.
+
+**Nullable type unions are accepted and honored under strict.** `"type": ["string","null"]` and
+the `anyOf` spelling (`[{"type":"string"},{"type":"null"}]`) both return 200, as does a bare
+`"type": "null"`, at top level and nested. The list is parsed, not ignored: `["string","bogus"]`
+is rejected. Object rules survive union membership — an object branch of a union still requires
+`additionalProperties: false` and still rejects unknown keys. Forced tool calls never returned a
+value outside the declared union (a `["integer","null"]` schema pushed toward a string answer
+emitted `null`). Two validator gaps observed alongside: a *known* keyword on the wrong type is
+tolerated (`minimum` on a string is 200 despite being rejected on numbers), and unlike OpenAI
+there is no required-must-list-all rule (a partial `required` array is 200).
 
 Rejected: `minimum`, `maximum`, `multipleOf`, `exclusiveMinimum` (all on numeric types),
 `maxItems`, `uniqueItems`, `minItems` with any value other than 0 or 1 (the error text leaks the

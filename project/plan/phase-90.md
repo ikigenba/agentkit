@@ -11,9 +11,12 @@ Google's `convertSchema` is left untouched here; Phase 93 rewrites it.
 **Done when:**
 - `R-XLTO-JMIA` — an out-of-subset construct (`minimum`, `not`, `allOf`, `patternProperties`, or an authored `additionalProperties`) surfaces `ErrInvalidConfig` via `errors.Is` through the `Stream`, leaves `History` unchanged, issues no provider call, and names the construct and its location; a subset-only schema passes.
 - `R-XRX6-GH7R` — the identical out-of-subset schema is rejected under every provider, including one whose own dialect accepts the construct.
-- `R-XN1K-XE8Z` — a Go map field is rejected at the gate naming `additionalProperties`.
-- `R-XO9H-B5ZO` — a recursive input struct is rejected at the gate naming the recursive reference, with no dangling `$ref` emitted.
+- `R-XN1K-XE8Z` — a schema carrying a schema-valued `additionalProperties`, supplied from a source that bypasses `NewTool` (MCP tool or test-only helper), is rejected at the gate naming that construct.
+- `R-XO9H-B5ZO` — a schema carrying a recursive `$ref`, supplied from a source that bypasses `NewTool`, is rejected at the gate naming the recursive reference, with no dangling `$ref` emitted.
 - `R-XQPA-2PH2` — an MCP tool whose server schema leaves the subset fails the whole `Send` with `ErrInvalidConfig` attributed `<server>.<tool>`.
+- `R-U3C5-4A1V` — a `format` outside the nine-value allowlist (e.g. `uri`) is rejected at the gate naming the format; all nine allowlisted values pass.
+- `R-6QNT-WR7C` — a schema with a non-string `enum` value or a non-string `const` is rejected at the gate naming the construct; string-valued forms pass.
+- `R-ZPPN-6FV9` — a schema whose root is not `"type": "object"` (a root `anyOf`, or a root `"type": "string"`) is rejected at the gate naming the root shape, even when every construct inside is subset-legal.
 - `R-XWSR-ZK6J` — no warning with `Setting == "tool_schema"` is producible under any provider; unrelated warnings still surface.
 - `grep -rn "ToolSchemaTranslator\|WarnToolSchemaLossy\|UntranslatableSchemaConstructs" --include='*.go' --exclude-dir=project . | wc -l` reports `0`.
 - `go build ./...` and `go test ./...` both exit 0.
