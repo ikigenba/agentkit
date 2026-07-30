@@ -153,10 +153,11 @@ type wireMessage struct {
 }
 
 type wireTool struct {
-	Name         string          `json:"name"`
-	Description  string          `json:"description,omitempty"`
-	InputSchema  json.RawMessage `json:"input_schema"`
-	CacheControl *cacheControl   `json:"cache_control,omitempty"`
+	Name         string         `json:"name"`
+	Description  string         `json:"description,omitempty"`
+	InputSchema  map[string]any `json:"input_schema"`
+	Strict       bool           `json:"strict"`
+	CacheControl *cacheControl  `json:"cache_control,omitempty"`
 }
 
 type wireBlock struct {
@@ -198,7 +199,8 @@ func buildRequest(req *agentkit.Request) (messageRequest, []agentkit.Warning, er
 		out.Tools = append(out.Tools, wireTool{
 			Name:        tool.Name(),
 			Description: tool.Description(),
-			InputSchema: tool.JSONSchema(),
+			InputSchema: renderSchema(tool.JSONSchema()),
+			Strict:      true,
 		})
 	}
 	for _, msg := range req.Messages {
@@ -220,6 +222,117 @@ func buildRequest(req *agentkit.Request) (messageRequest, []agentkit.Warning, er
 	applyReasoning(req.Gen.Reasoning, &out)
 	applyCacheControl(req, &out)
 	return out, nil, nil
+}
+
+func renderSchema(raw json.RawMessage) map[string]any {
+	var schema map[string]any
+	if err := json.Unmarshal(raw, &schema); err != nil {
+		return map[string]any{}
+	}
+	defs, _ := schema["$defs"].(map[string]any)
+	return renderSchemaNode(schema, defs)
+}
+
+func renderSchemaNode(schema map[string]any, defs map[string]any) map[string]any {
+	if ref, ok := schema["$ref"].(string); ok {
+		if target, ok := resolveSchemaRef(ref, defs); ok {
+			rendered := renderSchemaNode(target, defs)
+			for key, value := range schema {
+				if key == "$ref" {
+					continue
+				}
+				rendered[key] = renderSchemaValue(key, value, defs)
+			}
+			return rendered
+		}
+	}
+
+	rendered := make(map[string]any, len(schema))
+	for key, value := range schema {
+		switch key {
+		case "$schema", "$defs", "$ref":
+			continue
+		case "oneOf":
+			options := renderSchemaOptions(value, defs)
+			if existing, ok := rendered["anyOf"].([]any); ok {
+				options = append(existing, options...)
+			}
+			rendered["anyOf"] = options
+		default:
+			rendered[key] = renderSchemaValue(key, value, defs)
+		}
+	}
+	if schemaDescribesObject(rendered) {
+		rendered["additionalProperties"] = false
+	}
+	return rendered
+}
+
+func renderSchemaValue(key string, value any, defs map[string]any) any {
+	switch key {
+	case "properties":
+		properties, ok := value.(map[string]any)
+		if !ok {
+			return value
+		}
+		rendered := make(map[string]any, len(properties))
+		for name, property := range properties {
+			if propertySchema, ok := property.(map[string]any); ok {
+				rendered[name] = renderSchemaNode(propertySchema, defs)
+				continue
+			}
+			rendered[name] = property
+		}
+		return rendered
+	case "items":
+		if itemSchema, ok := value.(map[string]any); ok {
+			return renderSchemaNode(itemSchema, defs)
+		}
+	case "anyOf":
+		return renderSchemaOptions(value, defs)
+	}
+	return value
+}
+
+func renderSchemaOptions(value any, defs map[string]any) []any {
+	options, _ := value.([]any)
+	rendered := make([]any, 0, len(options))
+	for _, option := range options {
+		if optionSchema, ok := option.(map[string]any); ok {
+			rendered = append(rendered, renderSchemaNode(optionSchema, defs))
+			continue
+		}
+		rendered = append(rendered, option)
+	}
+	return rendered
+}
+
+func resolveSchemaRef(ref string, defs map[string]any) (map[string]any, bool) {
+	const prefix = "#/$defs/"
+	if !strings.HasPrefix(ref, prefix) {
+		return nil, false
+	}
+	name := strings.TrimPrefix(ref, prefix)
+	name = strings.ReplaceAll(strings.ReplaceAll(name, "~1", "/"), "~0", "~")
+	target, ok := defs[name].(map[string]any)
+	return target, ok
+}
+
+func schemaDescribesObject(schema map[string]any) bool {
+	if _, ok := schema["properties"]; ok {
+		return true
+	}
+	switch schemaType := schema["type"].(type) {
+	case string:
+		return schemaType == "object"
+	case []any:
+		for _, member := range schemaType {
+			if member == "object" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func convertMessage(msg agentkit.Message) (wireMessage, error) {

@@ -25,6 +25,17 @@ type unknownBlock struct {
 	agentkit.TextBlock
 }
 
+type schemaTool struct {
+	agentkit.Tool
+	name        string
+	description string
+	schema      json.RawMessage
+}
+
+func (t schemaTool) Name() string                { return t.name }
+func (t schemaTool) Description() string         { return t.description }
+func (t schemaTool) JSONSchema() json.RawMessage { return t.schema }
+
 func TestNewProviderSendsAuthenticatedRequestToInjectedServer(t *testing.T) {
 	// R-CQO3-7EE9
 	// R-H3PK-QFG3
@@ -432,6 +443,201 @@ func TestAnthropicDropsForeignReasoningBlocksFromRequest(t *testing.T) {
 	if !bytes.Contains(body, []byte("kept")) {
 		t.Fatalf("non-reasoning history was dropped:\n%s", body)
 	}
+}
+
+func TestAnthropicToolSchemaUsesStrictClosedObjectsAndCanonicalOptionality(t *testing.T) {
+	// R-XT52-U8YG
+	tool := schemaTool{
+		name:        "lookup",
+		description: "look up a record",
+		schema: json.RawMessage(`{
+			"$schema": "https://json-schema.org/draft/2020-12/schema",
+			"$defs": {
+				"unused": {"type": "string"}
+			},
+			"type": "object",
+			"properties": {
+				"query": {"type": "string"},
+				"filter": {
+					"type": "object",
+					"properties": {
+						"enabled": {"type": "boolean"},
+						"label": {"type": "string"}
+					},
+					"required": ["enabled"]
+				}
+			},
+			"required": ["query"]
+		}`),
+	}
+	request, _, err := buildRequest(&agentkit.Request{
+		Model: "claude-sonnet-4-6",
+		Tools: []agentkit.Tool{tool},
+	})
+	if err != nil {
+		t.Fatalf("buildRequest() error = %v", err)
+	}
+	raw, err := json.Marshal(request)
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(raw, &body); err != nil {
+		t.Fatalf("decode request: %v", err)
+	}
+
+	wire := body["tools"].([]any)[0].(map[string]any)
+	if wire["strict"] != true {
+		t.Fatalf("tool strict = %#v, want true", wire["strict"])
+	}
+	schema := wire["input_schema"].(map[string]any)
+	if schema["additionalProperties"] != false {
+		t.Fatalf("root additionalProperties = %#v, want false", schema["additionalProperties"])
+	}
+	filter := schema["properties"].(map[string]any)["filter"].(map[string]any)
+	if filter["additionalProperties"] != false {
+		t.Fatalf("nested additionalProperties = %#v, want false", filter["additionalProperties"])
+	}
+	if got, want := schema["required"], []any{"query"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("root required = %#v, want %#v", got, want)
+	}
+	if got, want := filter["required"], []any{"enabled"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("nested required = %#v, want %#v", got, want)
+	}
+	assertSchemaKeysAbsent(t, schema, "$schema", "$defs")
+}
+
+func TestAnthropicToolSchemaRendererPreservesEveryCanonicalConstruct(t *testing.T) {
+	// R-2UV8-RBKS
+	canonical := json.RawMessage(`{
+		"$schema": "https://json-schema.org/draft/2020-12/schema",
+		"$defs": {
+			"address": {
+				"type": "object",
+				"title": "Address",
+				"description": "A postal address",
+				"properties": {
+					"postal_code": {
+						"type": "string",
+						"pattern": "^[0-9]{3,5}$",
+						"minLength": 3,
+						"maxLength": 5,
+						"format": "date-time",
+						"default": "000"
+					}
+				},
+				"required": ["postal_code"]
+			}
+		},
+		"type": "object",
+		"title": "Lookup input",
+		"description": "Every canonical construct",
+		"properties": {
+			"address": {"$ref": "#/$defs/address"},
+			"tags": {
+				"type": "array",
+				"items": {"type": "string"},
+				"minItems": 1
+			},
+			"status": {
+				"type": "string",
+				"enum": ["new", "done"]
+			},
+			"fixed": {"const": "v1"},
+			"choice": {
+				"anyOf": [
+					{"type": "string"},
+					{"type": "integer"}
+				]
+			},
+			"alternative": {
+				"oneOf": [
+					{"type": "boolean"},
+					{"type": "number"}
+				]
+			},
+			"nullable": {"type": ["string", "null"]},
+			"nested": {
+				"type": "object",
+				"properties": {
+					"value": {"type": "string"}
+				},
+				"required": ["value"]
+			},
+			"optional_note": {"type": "string"}
+		},
+		"required": ["address", "tags", "status", "fixed", "choice", "alternative", "nullable", "nested"]
+	}`)
+	request, _, err := buildRequest(&agentkit.Request{
+		Model: "claude-sonnet-4-6",
+		Tools: []agentkit.Tool{schemaTool{name: "complete", schema: canonical}},
+	})
+	if err != nil {
+		t.Fatalf("buildRequest() error = %v", err)
+	}
+	got := request.Tools[0].InputSchema
+	want := map[string]any{
+		"type":                 "object",
+		"title":                "Lookup input",
+		"description":          "Every canonical construct",
+		"additionalProperties": false,
+		"properties": map[string]any{
+			"address": map[string]any{
+				"type":                 "object",
+				"title":                "Address",
+				"description":          "A postal address",
+				"additionalProperties": false,
+				"properties": map[string]any{
+					"postal_code": map[string]any{
+						"type":      "string",
+						"pattern":   "^[0-9]{3,5}$",
+						"minLength": float64(3),
+						"maxLength": float64(5),
+						"format":    "date-time",
+						"default":   "000",
+					},
+				},
+				"required": []any{"postal_code"},
+			},
+			"tags": map[string]any{
+				"type":     "array",
+				"items":    map[string]any{"type": "string"},
+				"minItems": float64(1),
+			},
+			"status": map[string]any{
+				"type": "string",
+				"enum": []any{"new", "done"},
+			},
+			"fixed": map[string]any{"const": "v1"},
+			"choice": map[string]any{
+				"anyOf": []any{
+					map[string]any{"type": "string"},
+					map[string]any{"type": "integer"},
+				},
+			},
+			"alternative": map[string]any{
+				"anyOf": []any{
+					map[string]any{"type": "boolean"},
+					map[string]any{"type": "number"},
+				},
+			},
+			"nullable": map[string]any{"type": []any{"string", "null"}},
+			"nested": map[string]any{
+				"type":                 "object",
+				"additionalProperties": false,
+				"properties": map[string]any{
+					"value": map[string]any{"type": "string"},
+				},
+				"required": []any{"value"},
+			},
+			"optional_note": map[string]any{"type": "string"},
+		},
+		"required": []any{"address", "tags", "status", "fixed", "choice", "alternative", "nullable", "nested"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("rendered schema mismatch\nwant:\n%s\n\ngot:\n%s", mustJSON(t, want), mustJSON(t, got))
+	}
+	assertSchemaKeysAbsent(t, got, "$schema", "$defs", "$ref", "oneOf")
 }
 
 func TestAnthropicRequestMapsGenerationSettingsAndWarnings(t *testing.T) {
@@ -1011,6 +1217,25 @@ func assertNumber(t *testing.T, got any, want float64) {
 	n, ok := got.(float64)
 	if !ok || n != want {
 		t.Fatalf("number = %#v, want %v", got, want)
+	}
+}
+
+func assertSchemaKeysAbsent(t *testing.T, value any, forbidden ...string) {
+	t.Helper()
+	switch value := value.(type) {
+	case map[string]any:
+		for _, key := range forbidden {
+			if _, ok := value[key]; ok {
+				t.Fatalf("schema contains forbidden key %q:\n%s", key, mustJSON(t, value))
+			}
+		}
+		for _, child := range value {
+			assertSchemaKeysAbsent(t, child, forbidden...)
+		}
+	case []any:
+		for _, child := range value {
+			assertSchemaKeysAbsent(t, child, forbidden...)
+		}
 	}
 }
 
