@@ -53,7 +53,7 @@ One line per Decision, in number order — file, label, and the Verification ids
 - **D25** `project/design/D25.md` — OpenAI credentials: API key and ChatGPT subscription
   - ids: R-DG9Z-8KYU, R-PV6N-URM6, R-PWEK-8JCV, R-DHHV-MCPJ, R-PXMG-MB3K, R-DL5K-RNXM, R-DJXO-DW6X
 - **D26** `project/design/D26.md` — The advisory model catalog: `agentkit/catalog`
-  - ids: R-DMDH-5FOB, R-LOW2-SDWG, R-LRBV-JXDU, R-DNLD-J7F0, R-LQ3Z-65N5, R-LXFD-GS3B, R-LTRO-BGV8, R-LW7H-30CM, R-LSJR-XP4J, R-DOT9-WZ5P, R-DQ16-AQWE, R-DHKK-RZ7M, R-DISH-5QYB, R-DK0D-JIP0, R-DL89-XAFP, R-DMG6-B26E, R-DNO2-OTX3, R-LYN9-UJU0, R-DOVZ-2LNS, R-DR92-OIN3, R-4NJ4-SJ41, R-DSGZ-2ADS
+  - ids: R-DMDH-5FOB, R-LOW2-SDWG, R-LRBV-JXDU, R-DNLD-J7F0, R-E7VN-JTZ0, R-LXFD-GS3B, R-LTRO-BGV8, R-LW7H-30CM, R-E5FU-SAHM, R-EBJC-P573, R-DOT9-WZ5P, R-DQ16-AQWE, R-DHKK-RZ7M, R-DISH-5QYB, R-DK0D-JIP0, R-EABG-BDGE, R-E6NR-628B, R-DNO2-OTX3, R-LYN9-UJU0, R-DOVZ-2LNS, R-DR92-OIN3, R-4NJ4-SJ41, R-DSGZ-2ADS
 - **D27** `project/design/D27.md` — The `toolkit` subpackage: standard coding tools, root confinement, output cap
   - ids: R-LQ1Y-XASG, R-LR9V-B2J5, R-LSHR-OU9U, R-LTPO-2M0J, R-LUXK-GDR8, R-LW5G-U5HX
 - **D28** `project/design/D28.md` — `toolkit`: `Read`, `Write`, `Edit` semantics
@@ -160,9 +160,7 @@ R-DISH-5QYB  D26  project/design/D26.md
 R-DJXO-DW6X  D25  project/design/D25.md
 R-DK0D-JIP0  D26  project/design/D26.md
 R-DL5K-RNXM  D25  project/design/D25.md
-R-DL89-XAFP  D26  project/design/D26.md
 R-DMDH-5FOB  D26  project/design/D26.md
-R-DMG6-B26E  D26  project/design/D26.md
 R-DNLD-J7F0  D26  project/design/D26.md
 R-DNO2-OTX3  D26  project/design/D26.md
 R-DNS8-QC6Z  D9  project/design/D09.md
@@ -173,6 +171,11 @@ R-DR92-OIN3  D26  project/design/D26.md
 R-DRFX-VNF2  D9  project/design/D09.md
 R-DSGZ-2ADS  D26  project/design/D26.md
 R-DTVQ-N6WG  D9  project/design/D09.md
+R-E5FU-SAHM  D26  project/design/D26.md
+R-E6NR-628B  D26  project/design/D26.md
+R-E7VN-JTZ0  D26  project/design/D26.md
+R-EABG-BDGE  D26  project/design/D26.md
+R-EBJC-P573  D26  project/design/D26.md
 R-FR35-46U7  D7  project/design/D07.md
 R-GMLN-XC8W  D32  project/design/D32.md
 R-GSIG-PT07  D9  project/design/D09.md
@@ -195,11 +198,9 @@ R-LMGA-0UF2  D7  project/design/D07.md
 R-LNO6-EM5R  D15  project/design/D15.md
 R-LOW2-SDWG  D26  project/design/D26.md
 R-LQ1Y-XASG  D27  project/design/D27.md
-R-LQ3Z-65N5  D26  project/design/D26.md
 R-LR9V-B2J5  D27  project/design/D27.md
 R-LRBV-JXDU  D26  project/design/D26.md
 R-LSHR-OU9U  D27  project/design/D27.md
-R-LSJR-XP4J  D26  project/design/D26.md
 R-LTPO-2M0J  D27  project/design/D27.md
 R-LTRO-BGV8  D26  project/design/D26.md
 R-LUXK-GDR8  D27  project/design/D27.md

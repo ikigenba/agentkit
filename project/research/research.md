@@ -319,7 +319,7 @@ The catalog (D26) carries maintained rates for the models we track; this subsect
 | gpt-5.6-terra | 2500 | 250 | 15000 | — |
 | gpt-5.6-luna | 1000 | 100 | 6000 | — |
 
-**Z.ai / GLM** — international `api.z.ai` USD rates; no cache-write bucket (cached-input storage currently free). Default route `zai`, also reachable via OpenRouter (`z-ai/<id>`); on the OpenRouter route the aggregator's reported cost wins (D16), so these direct rates are never misapplied to it. ⚠ OpenRouter prices GLM-4.7 differently ($0.40 in / $1.75 out) because third parties host the open weights — one more reason reported-cost precedence matters.
+**Z.ai / GLM** — international `api.z.ai` USD rates; no cache-write bucket (cached-input storage currently free). Default route `zai`, also reachable via OpenRouter (`z-ai/<id>`); on the OpenRouter route the aggregator's reported cost wins at runtime (D16), and that route's own rates are cataloged from the OpenRouter route table below — the direct rates here apply only to the `zai` offering. ⚠ OpenRouter prices GLM-4.7 differently ($0.40 in / $1.75 out) because third parties host the open weights — one more reason reported-cost precedence matters at runtime.
 
 | Model | InputUncached | CacheReadInput | Output |
 |---|---|---|---|
@@ -361,6 +361,35 @@ Moonshot Kimi — the instruct-vs-thinking model split is gone: `kimi-k2-thinkin
 | kimi-k2.6 | `moonshotai/kimi-k2.6` | 262144 | 660 | 160 | 3410 |
 
 ⚠ OpenRouter prices for the open-weight Kimi models are provider-dependent and move; K2.7-code and K2.6 both run below Moonshot direct because third parties host the weights. Deliberately excluded: `kimi-k2.5` (EOL 2026-08-31), `kimi-k2.7-code-highspeed` (Moonshot-direct only, so unreachable without a native adapter), and Moonshot's `moonshot-v1-*` era.
+
+**OpenRouter route rates — every tracked chat model's aggregator offering (audited 2026-07-29, `GET /api/v1/models`).** Every catalog offering carries rates — including OpenRouter secondaries — because when the route reports its charge it is provably cheap to establish the rate, and having it cataloged means the consumer has all pricing at model-picking time (D26). These are the OpenRouter-published per-token prices in nano-USD for the 22 routes that are secondaries of natively-served models (the OpenRouter-primary vendors above already carry theirs). Reported cost still wins at runtime (D16); these cells serve pre-flight prediction and pickers. Bucket-mapping rules applied: OpenRouter's `input_cache_read` → `CacheReadInput`; its `input_cache_write` → `CacheWrite5m` where it is a real per-token write price (Anthropic routes, where it equals the vendor's 1.25× convention, and the OpenAI 5.6 family, likewise 1.25×), and **0 for Google routes**, whose OpenRouter `input_cache_write` figure is a storage-style number that maps to no `RateTier` bucket (same as the native Google entries); `CacheWrite1h` is 0 on every OpenRouter route (unpublished). An absent `input_cache_read` (gpt-5.5-pro) is carried equal to `InputUncached`, matching the native no-discount fact. OpenRouter publishes a single price per route — no context tiering — so every OpenRouter offering is single-tier even where the native route tiers. Fractional nano cells (provider-mix averages) are rounded half-up and flagged.
+
+| Model (OpenRouter route) | Context | InputUncached | CacheReadInput | CacheWrite5m | Output | notes |
+|---|---|---|---|---|---|---|
+| claude-opus-4-8 | 1,000,000 | 5000 | 500 | 6250 | 25000 | = native rates |
+| claude-sonnet-4-6 | 1,000,000 | 3000 | 300 | 3750 | 15000 | = native rates |
+| claude-haiku-4-5 | 200,000 | 1000 | 100 | 1250 | 5000 | = native rates |
+| claude-fable-5 | 1,000,000 | 10000 | 1000 | 12500 | 50000 | = native rates |
+| claude-sonnet-5 | 1,000,000 | 2000 | 200 | 2500 | 10000 | ⚠ below native (3000/15000) |
+| gemini-2.5-flash | 1,048,576 | 300 | 30 | 0 | 2500 | |
+| gemini-2.5-pro | 1,048,576 | 1250 | 125 | 0 | 10000 | single-tier (native tiers >200K) |
+| gemini-3.5-flash | 1,048,576 | 1500 | 150 | 0 | 9000 | |
+| gemini-3.1-flash-lite | 1,048,576 | 250 | 25 | 0 | 1500 | |
+| gemini-3.1-pro-preview | 1,048,576 | 2000 | 200 | 0 | 12000 | single-tier (native tiers >200K) |
+| gpt-5.5-pro | 1,050,000 | 30000 | 30000 | 0 | 180000 | no cache-read discount, as native |
+| gpt-5.5 | 1,050,000 | 5000 | 500 | 0 | 30000 | single-tier (native tiers >272K) |
+| gpt-5.4 | 1,050,000 | 2500 | 250 | 0 | 15000 | single-tier (native tiers >272K) |
+| gpt-5.4-mini | 400,000 | 750 | 75 | 0 | 4500 | |
+| gpt-5.4-nano | 400,000 | 200 | 20 | 0 | 1250 | |
+| gpt-5.6-sol | 1,050,000 | 5000 | 500 | 6250 | 30000 | OpenRouter bills cache writes here |
+| gpt-5.6-terra | 1,050,000 | 1250 | 125 | 1563 | 7500 | ⚠ half native; cw rounded from 1562.5 |
+| gpt-5.6-luna | 1,050,000 | 500 | 50 | 625 | 3000 | ⚠ half native |
+| glm-5.2 | 1,048,576 | 678 | 126 | 0 | 2130 | ⚠ provider-mix averages, rounded |
+| glm-5.1 | 204,800 | 966 | 179 | 0 | 3036 | ⚠ rounded (cr from 179.4) |
+| glm-4.7 | 204,800 | 400 | 80 | 0 | 1750 | |
+| glm-4.6 | 204,800 | 500 | 100 | 0 | 2000 | |
+
+⚠ OpenRouter context lengths disagree with the native routes in places (glm-5.2: 1,048,576 vs `zai`'s 202,752; glm-5.1/4.7/4.6: 204,800 vs 202,752; the Claude models: 1,000,000/200,000 matching native). Each offering carries its own route's figure.
 
 
 
@@ -741,7 +770,7 @@ Sources: OpenRouter's docs/use-cases/usage-accounting, docs/features/provider-ro
 ### 14.1 The wire
 
 - One API for every model it serves: **OpenAI Chat-Completions-compatible**, base `https://openrouter.ai/api/v1`, bearer auth (`Authorization: Bearer <key>`). SSE streaming as standard chat-completions. This is the same protocol family AgentKit's `internal/openaicompat` already speaks.
-- Model ids are **vendor-namespaced free-form slugs** (`anthropic/claude-opus-4-8`, `z-ai/glm-5.2`); new models are typically served day-one. There is no meaningful closed model set — hundreds of ids, changing weekly.
+- Model ids are **vendor-namespaced free-form slugs** (`anthropic/claude-fable-5`, `z-ai/glm-5.2`); new models are typically served day-one. There is no meaningful closed model set — hundreds of ids, changing weekly. ⚠ The slug's model half does not always equal the vendor's own model id: OpenRouter spells three tracked Anthropic models with **dots** where Anthropic uses hyphens — `anthropic/claude-opus-4.8`, `anthropic/claude-sonnet-4.6`, `anthropic/claude-haiku-4.5` (verified against the live model list 2026-07-29; the hyphenated joins are not served). Every other tracked route follows the `vendor/model` join exactly.
 - **Model-suffix routing shortcuts** ride the model string itself: `:nitro` (= sort by throughput), `:floor` (= sort by price). A free-form model string passthrough gets these for free.
 
 ### 14.2 Cost reporting (the fact the cost seam leans on)
@@ -758,7 +787,7 @@ A top-level request-body object `provider: {…}` steers routing: `order` (provi
 
 ### 14.4 Reasoning parameter
 
-OpenRouter normalizes reasoning across models via a top-level `reasoning` request object: `{"effort": "high"}` (effort-enum models), `{"max_tokens": N}` (budget models), `{"enabled": false}` (disable). This is a *different encoding* than Z.ai's `thinking`/`reasoning_effort` fields on the same chat-completions wire, so the openrouter adapter has its own reasoning lowering: `{"reasoning":{"effort":…}}` for a level, `{"reasoning":{"max_tokens":N}}` for a budget, `{"reasoning":{"enabled":false}}` to disable, and nothing at all when unset. Accepted values are model-dependent; OpenRouter passes through and the upstream judges.
+OpenRouter normalizes reasoning across models via a top-level `reasoning` request object: `{"effort": "high"}` (effort-enum models), `{"max_tokens": N}` (budget models), `{"enabled": false}` (disable). This is a *different encoding* than Z.ai's `thinking`/`reasoning_effort` fields on the same chat-completions wire, so the openrouter adapter has its own reasoning lowering: `{"reasoning":{"effort":…}}` for a level, `{"reasoning":{"max_tokens":N}}` for a budget, `{"reasoning":{"enabled":false}}` to disable, and nothing at all when unset. What a given route validly accepts is **documented per model**: each entry in `GET /api/v1/models` may carry a `reasoning` descriptor — `supported_efforts` (descending), `default_effort` (a UI pre-select hint, *not* the silence behavior), `default_enabled` (the on/off state when nothing is sent), and `mandatory` (the model rejects being disabled). §14.7 records the audited descriptors and confirmations for every tracked route. ⚠ The gateway's *parser* is far more permissive than any model's documented set — it returns 200 for undocumented effort values, out-of-range budgets, and toggles it then silently ignores — so acceptance without error establishes nothing about validity.
 
 ### 14.6 Vendors reachable only through OpenRouter
 
@@ -769,6 +798,68 @@ Because §14.2's reported cost overrides table rates on this path, the rates rec
 ### 14.5 Auth acquisition
 
 API keys are created in the dashboard, or minted programmatically via **OAuth PKCE** (`https://openrouter.ai/auth` → callback `code` → POST `https://openrouter.ai/api/v1/auth/keys` → an ordinary API key). The PKCE flow's end product is a static key — construction-time credential handling is unaffected by how the key was obtained. Usage bills to the authenticating user's account.
+
+### 14.7 OpenRouter route audit — reasoning descriptors and confirmations (2026-07-29)
+
+A full audit of the 22 OpenRouter routes that are secondaries of natively-served tracked models: the documented per-model `reasoning` descriptor from `GET /api/v1/models`, plus live confirmation probes (13 requests per route — silence ×2, seven effort values, two budgets, both toggles; ~280 requests total). The rates gathered in the same pass live in §6.5. This subsection ends in the **resolved offering table** the catalog transcribes; the resolution rule it applies is D26's ("documented and confirmed; ambiguity resolves toward the native provider; never from acceptance alone").
+
+**Documented descriptors (verbatim from the models endpoint):**
+
+| Route | `supported_efforts` | `default_effort` | `default_enabled` | `mandatory` |
+|---|---|---|---|---|
+| anthropic/claude-opus-4.8 | max,xhigh,high,medium,low | high | false | false |
+| anthropic/claude-sonnet-4.6 | max,high,medium,low | medium | — | false |
+| anthropic/claude-haiku-4.5 | — | — | — | false |
+| anthropic/claude-fable-5 | max,xhigh,high,medium,low | high | — | true |
+| anthropic/claude-sonnet-5 | max,xhigh,high,medium,low | high | true | false |
+| google/gemini-2.5-flash | — | — | — | false |
+| google/gemini-2.5-pro | — | — | — | true |
+| google/gemini-3.5-flash | high,medium,low,minimal | medium | true | true |
+| google/gemini-3.1-flash-lite | high,medium,low,minimal | minimal | true | false |
+| google/gemini-3.1-pro-preview | high,medium,low | medium | — | true |
+| openai/gpt-5.5-pro | xhigh,high,medium | medium | — | true |
+| openai/gpt-5.5 | xhigh,high,medium,low,none | medium | true | false |
+| openai/gpt-5.4 (+mini,nano) | xhigh,high,medium,low,none | medium | false | false |
+| openai/gpt-5.6-sol (+terra,luna) | max,xhigh,high,medium,low,none | medium | true | false |
+| z-ai/glm-5.2 | xhigh,high | high | true | false |
+| z-ai/glm-5.1 | — | — | true | false |
+| z-ai/glm-4.7 | — | — | true | false |
+| z-ai/glm-4.6 | — | — | — | false |
+
+**Confirmations (live probes).** All 22 slugs resolve and serve. The deterministic signals, which are the only probe results treated as knowledge:
+- **Every documented `mandatory: true` matched an observed hard rejection** of both off-forms (`effort: "none"`, `enabled: false`) with the identical error *"Reasoning is mandatory for this endpoint and cannot be disabled."* — fable-5, gpt-5.5-pro, gemini-2.5-pro, gemini-3.5-flash, gemini-3.1-pro-preview. No `mandatory: false` route ever rejected an off-form.
+- **claude-haiku-4.5 enforces a real budget bound**, self-documented in its rejection: *"reasoning.max_tokens must be between 1024 and 63999 for this model."* The only route where a bound surfaced.
+- **Off-forms cleanly zero reasoning tokens** on every non-mandatory route that reasons by default (all four glm routes; gemini-2.5-flash's budget probes versus its silent default).
+- Everything else — 200s for undocumented effort values, huge budgets on effort-only routes, toggles with no observable effect — is the permissive gateway parser (§14.4) and establishes nothing. Reasoning-token counts on the trivial probe prompt are not monotonic in effort anywhere and are weak evidence either way; where they contradict a documented default (e.g. sonnet-5's `default_enabled: true` versus zero observed tokens), the ambiguity resolves per D26's rule.
+
+**Resolved offering table** — the reasoning-spec cells the catalog ships for each OpenRouter offering, with the resolution basis per row. `default_effort` is a UI hint by OpenRouter's own definition, so silence *values* come from the native route's established default wherever OpenRouter's vocabulary matches native's (pass-through logic); where OpenRouter documents its own divergent vocabulary (glm-5.2), its documented cells win.
+
+| Model @ openrouter | Kind / vocabulary | CanEnable | CanDisable | Default | basis |
+|---|---|---|---|---|---|
+| claude-opus-4-8 | Enum effort: low,medium,high,xhigh,max | f | t | Off | descriptor `default_enabled:false`, silence confirmed off ×2 |
+| claude-sonnet-4-6 | Enum effort: low,medium,high,max | f | t | Fixed(high) | descriptor silent on default → native (fixed high) |
+| claude-haiku-4-5 | Range budget: 1024–63999, no sentinels | f | t | Off | bound from live rejection; default off = native, confirmed |
+| claude-fable-5 | Enum effort: low,medium,high,xhigh,max | f | **f** | Fixed(medium) | `mandatory` documented + rejection-confirmed; silence value → native (medium) |
+| claude-sonnet-5 | Enum effort: low,medium,high,xhigh,max | f | t | Fixed(medium) | `default_enabled:true` agrees with native on-ness; value → native (medium) |
+| gemini-2.5-flash | Range budget: 0–24576, sentinel 0=off | f | t | Dynamic | descriptor documents no efforts; budget per prose docs + native; bounds/default → native |
+| gemini-2.5-pro | Range budget: 128–32768, no sentinels | f | **f** | Dynamic | `mandatory` rejection-confirmed; bounds/default → native |
+| gemini-3.5-flash | Enum thinking level: minimal,low,medium,high | f | **f** | Fixed(medium) | descriptor complete; mandatory rejection-confirmed; native agrees |
+| gemini-3.1-flash-lite | Enum thinking level: minimal,low,medium,high | f | t | Fixed(medium) | descriptor `mandatory:false`; silence value → native (medium; `default_effort:minimal` is a pre-select hint) |
+| gemini-3.1-pro-preview | Enum thinking level: low,medium,high | f | **f** | Fixed(high) | mandatory rejection-confirmed; silence value → native (high) |
+| gpt-5.5-pro | Enum effort: medium,high,xhigh | f | **f** | Fixed(high) | mandatory rejection-confirmed; descriptor adds `medium` to native's set; silence value → native (high) |
+| gpt-5.5 | Enum effort: none,low,medium,high,xhigh | f | t | Fixed(medium) | descriptor = native exactly |
+| gpt-5.4 | Enum effort: none,low,medium,high,xhigh | f | t | Fixed(none) | `default_enabled:false` = native fixed none |
+| gpt-5.4-mini | Enum effort: none,low,medium,high,xhigh | f | t | Fixed(none) | as gpt-5.4 |
+| gpt-5.4-nano | Enum effort: none,low,medium,high,xhigh | f | t | Fixed(none) | as gpt-5.4 |
+| gpt-5.6-sol | Enum effort: none,low,medium,high,xhigh | f | t | Fixed(medium) | descriptor's extra `max` is unconfirmed and absent natively → dropped per ambiguity rule |
+| gpt-5.6-terra | Enum effort: none,low,medium,high,xhigh | f | t | Fixed(medium) | as gpt-5.6-sol |
+| gpt-5.6-luna | Enum effort: none,low,medium,high,xhigh | f | t | Fixed(medium) | as gpt-5.6-sol |
+| glm-5.2 | Enum effort: high,xhigh | f | t | Fixed(high) | descriptor documents its **own** vocabulary (`high,xhigh` ≠ native `high,max`), proving no pass-through — its cells win, including `default_effort:high` with `default_enabled:true` |
+| glm-5.1 | Toggle thinking | t | t | Fixed(enabled) | descriptor `default_enabled:true`; native toggle agrees |
+| glm-4.7 | Toggle thinking | t | t | Fixed(enabled) | as glm-5.1 |
+| glm-4.6 | Toggle thinking | t | t | Fixed(enabled) | descriptor silent on default → native (enabled); silence-reasons probes corroborate |
+
+`CanEnable` is `t` only on Toggle rows by the standing D26 convention (on an enum or range, on-ness is expressed by naming a level or budget). `Term` strings follow the existing catalog vocabulary: `"effort"` for enum rows, `"thinking budget"` for range rows, `"thinking"` for toggle rows.
 
 ## 15. OpenAI ChatGPT-subscription auth — the Codex-backend path
 
