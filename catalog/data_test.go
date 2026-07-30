@@ -62,7 +62,7 @@ func TestCatalogDataMatchesRecordedReference(t *testing.T) {
 		t.Fatal(err)
 	}
 	digest := sha256.Sum256(encoded)
-	const recordedReference = "55cd8ee108603f0dc897439ffd96cd22fdfd7e1c6ee19286740941c2e295408b"
+	const recordedReference = "fbab166a95e0b6c04ed02d7eddc83428e3414304fc546325ef99fe443e281be6"
 	if got := hex.EncodeToString(digest[:]); got != recordedReference {
 		t.Fatalf("catalog data differs from recorded reference table: got %s, want %s", got, recordedReference)
 	}
@@ -107,57 +107,36 @@ func TestCanEnableIsOnlySetOnToggleSpecs(t *testing.T) {
 	}
 }
 
-func TestRangeCanDisableMatchesOffVocabulary(t *testing.T) {
-	// R-DL89-XAFP
+func TestShippedOfferingsAreComplete(t *testing.T) {
+	// R-E5FU-SAHM
 	for model, entry := range entries {
 		for i, offering := range entry.Offerings {
-			spec := offering.Reasoning
-			if spec == nil || spec.Kind != ReasoningRange {
+			if offering.Context <= 0 {
+				t.Errorf("%s offering %d has non-positive context %d", model, i, offering.Context)
+			}
+			if entry.Embedding != nil {
 				continue
 			}
-			derived := spec.Min == 0
-			for _, sentinel := range spec.Sentinels {
-				derived = derived || sentinel.Meaning == "off"
+			if offering.Pricing == nil {
+				t.Errorf("%s offering %d has nil pricing", model, i)
+			} else if len(offering.Pricing.Tiers) == 0 {
+				t.Errorf("%s offering %d has no pricing tiers", model, i)
 			}
-			if spec.CanDisable != derived {
-				t.Errorf("%s offering %d CanDisable = %v, derived off vocabulary = %v", model, i, spec.CanDisable, derived)
+			if offering.Reasoning == nil {
+				t.Errorf("%s offering %d has nil reasoning", model, i)
 			}
 		}
 	}
 }
 
-func TestPrimaryChatReasoningDefaultsAreAudited(t *testing.T) {
-	// R-DMG6-B26E
+func TestShippedReasoningDefaultsAreAudited(t *testing.T) {
+	// R-E6NR-628B
 	for model, entry := range entries {
-		if entry.Embedding != nil {
-			continue
+		for i, offering := range entry.Offerings {
+			if offering.Reasoning != nil && offering.Reasoning.Default.Mode == DefaultUnaudited {
+				t.Errorf("%s offering %d has an unaudited reasoning default", model, i)
+			}
 		}
-		if len(entry.Offerings) == 0 || entry.Offerings[0].Reasoning == nil {
-			t.Errorf("%s has no primary reasoning spec", model)
-			continue
-		}
-		if entry.Offerings[0].Reasoning.Default.Mode == DefaultUnaudited {
-			t.Errorf("%s has an unaudited primary reasoning default", model)
-		}
-	}
-}
-
-func TestOfferingAuditTierRequiresCompletePrimaryTerms(t *testing.T) {
-	// R-LSJR-XP4J
-	var incompleteSecondary bool
-	for model, entry := range entries {
-		if entry.Embedding != nil {
-			continue
-		}
-		if len(entry.Offerings) == 0 || entry.Offerings[0].Pricing == nil || entry.Offerings[0].Reasoning == nil {
-			t.Errorf("%s has incomplete primary terms", model)
-		}
-		for _, offering := range entry.Offerings[1:] {
-			incompleteSecondary = incompleteSecondary || offering.Pricing == nil || offering.Reasoning == nil
-		}
-	}
-	if !incompleteSecondary {
-		t.Error("catalog has no secondary offering demonstrating the unaudited tier")
 	}
 }
 

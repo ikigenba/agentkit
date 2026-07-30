@@ -32,10 +32,6 @@ func chatEntry(model string, vendor VendorID, provider agentkit.ProviderID, cont
 	return Entry{Model: model, Vendor: vendor, Offerings: offerings}
 }
 
-func routerOffering(context int64) Offering {
-	return Offering{Provider: agentkit.ProviderOpenRouter, Context: context}
-}
-
 func embeddingEntry(model string, vendor VendorID, provider agentkit.ProviderID, context int64, info EmbeddingInfo) Entry {
 	return Entry{
 		Model: model, Vendor: vendor,
@@ -184,25 +180,47 @@ var entries = map[string]Entry{
 		"glm-5.2", VendorZAI, agentkit.ProviderZAI, 202_752,
 		pricing(agentkit.RateTier{InputUncached: 1400, CacheReadInput: 260, Output: 4400}),
 		enumReasoning("effort (+ toggle)", []string{"high", "max"}, "max", true),
-		routerOffering(202_752),
+		Offering{
+			Provider: agentkit.ProviderOpenRouter,
+			Pricing:  pricing(agentkit.RateTier{InputUncached: 1400, CacheReadInput: 260, Output: 4400}),
+			Reasoning: enumReasoning(
+				"effort", []string{"high", "xhigh"}, "high", true,
+			),
+			Context: 202_752,
+		},
 	),
 	"glm-5.1": chatEntry(
 		"glm-5.1", VendorZAI, agentkit.ProviderZAI, 202_752,
 		pricing(agentkit.RateTier{InputUncached: 1400, CacheReadInput: 260, Output: 4400}),
 		&ReasoningSpec{Term: "thinking", Kind: ReasoningToggle, CanEnable: true, CanDisable: true, Default: fixed(agentkit.EnableReasoning())},
-		routerOffering(202_752),
+		Offering{
+			Provider:  agentkit.ProviderOpenRouter,
+			Pricing:   pricing(agentkit.RateTier{InputUncached: 1400, CacheReadInput: 260, Output: 4400}),
+			Reasoning: &ReasoningSpec{Term: "thinking", Kind: ReasoningToggle, CanEnable: true, CanDisable: true, Default: fixed(agentkit.EnableReasoning())},
+			Context:   202_752,
+		},
 	),
 	"glm-4.7": chatEntry(
 		"glm-4.7", VendorZAI, agentkit.ProviderZAI, 202_752,
 		pricing(agentkit.RateTier{InputUncached: 600, CacheReadInput: 110, Output: 2200}),
 		&ReasoningSpec{Term: "thinking", Kind: ReasoningToggle, CanEnable: true, CanDisable: true, Default: fixed(agentkit.EnableReasoning())},
-		routerOffering(202_752),
+		Offering{
+			Provider:  agentkit.ProviderOpenRouter,
+			Pricing:   pricing(agentkit.RateTier{InputUncached: 600, CacheReadInput: 110, Output: 2200}),
+			Reasoning: &ReasoningSpec{Term: "thinking", Kind: ReasoningToggle, CanEnable: true, CanDisable: true, Default: fixed(agentkit.EnableReasoning())},
+			Context:   202_752,
+		},
 	),
 	"glm-4.6": chatEntry(
 		"glm-4.6", VendorZAI, agentkit.ProviderZAI, 202_752,
 		pricing(agentkit.RateTier{InputUncached: 600, CacheReadInput: 110, Output: 2200}),
 		&ReasoningSpec{Term: "thinking", Kind: ReasoningToggle, CanEnable: true, CanDisable: true, Default: fixed(agentkit.EnableReasoning())},
-		routerOffering(202_752),
+		Offering{
+			Provider:  agentkit.ProviderOpenRouter,
+			Pricing:   pricing(agentkit.RateTier{InputUncached: 600, CacheReadInput: 110, Output: 2200}),
+			Reasoning: &ReasoningSpec{Term: "thinking", Kind: ReasoningToggle, CanEnable: true, CanDisable: true, Default: fixed(agentkit.EnableReasoning())},
+			Context:   202_752,
+		},
 	),
 	"text-embedding-3-small": embeddingEntry(
 		"text-embedding-3-small", VendorOpenAI, agentkit.ProviderOpenAI, 8192,
