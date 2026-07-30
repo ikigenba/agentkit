@@ -4,5 +4,4 @@ The manifest, and a work **queue**: one line per **pending** phase, in build ord
 
 Next phase: 89
 
-- Phase 87 ⬜ realizes R-E7VN-JTZ0, R-EBJC-P573, R-EABG-BDGE — OpenRouter offerings for every tracked chat model and the wire-name override
 - Phase 88 ⬜ realizes — — document the v0.11.0 release
