@@ -62,7 +62,7 @@ func TestCatalogDataMatchesRecordedReference(t *testing.T) {
 		t.Fatal(err)
 	}
 	digest := sha256.Sum256(encoded)
-	const recordedReference = "fbab166a95e0b6c04ed02d7eddc83428e3414304fc546325ef99fe443e281be6"
+	const recordedReference = "cf4d988ac12703d94ccf650d481e77012bd7a984a8d7a33fb6e2aafc7aa7a11e"
 	if got := hex.EncodeToString(digest[:]); got != recordedReference {
 		t.Fatalf("catalog data differs from recorded reference table: got %s, want %s", got, recordedReference)
 	}
@@ -199,6 +199,91 @@ func TestDirectVendorOfferingIsFirst(t *testing.T) {
 	glm := entries["glm-5.2"]
 	if len(glm.Offerings) < 2 || glm.Offerings[0].Provider != agentkit.ProviderZAI || glm.Offerings[1].Provider != agentkit.ProviderOpenRouter {
 		t.Fatalf("glm-5.2 offerings = %#v, want direct ZAI route first", glm.Offerings)
+	}
+}
+
+func TestEveryShippedChatEntryHasOpenRouterOffering(t *testing.T) {
+	// R-EBJC-P573
+	for model, entry := range entries {
+		if entry.Embedding != nil {
+			continue
+		}
+		found := false
+		for _, offering := range entry.Offerings {
+			if offering.Provider == agentkit.ProviderOpenRouter {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("%s has no OpenRouter offering", model)
+		}
+	}
+}
+
+func TestOnlyDottedAnthropicRoutesOverrideWireNames(t *testing.T) {
+	// R-E7VN-JTZ0
+	want := map[string]string{
+		"claude-opus-4-8":   "anthropic/claude-opus-4.8",
+		"claude-sonnet-4-6": "anthropic/claude-sonnet-4.6",
+		"claude-haiku-4-5":  "anthropic/claude-haiku-4.5",
+	}
+	for model, entry := range entries {
+		for _, offering := range entry.Offerings {
+			if offering.WireName == "" {
+				continue
+			}
+			if offering.Provider != agentkit.ProviderOpenRouter {
+				t.Errorf("%s has wire-name override on provider %q", model, offering.Provider)
+			}
+			if got, ok := want[model]; !ok || offering.WireName != got {
+				t.Errorf("%s wire-name override = %q, want %q", model, offering.WireName, got)
+			}
+			delete(want, model)
+		}
+	}
+	for model, wireName := range want {
+		t.Errorf("%s is missing OpenRouter wire-name override %q", model, wireName)
+	}
+}
+
+func TestNativeRangeCanDisableMatchesReachableOffBudget(t *testing.T) {
+	// R-EABG-BDGE
+	for model, entry := range entries {
+		for _, offering := range entry.Offerings {
+			spec := offering.Reasoning
+			if offering.Provider == agentkit.ProviderOpenRouter || spec == nil || spec.Kind != ReasoningRange {
+				continue
+			}
+			derived := spec.Min == 0
+			for _, sentinel := range spec.Sentinels {
+				if sentinel.Meaning == "off" {
+					derived = true
+					break
+				}
+			}
+			if spec.CanDisable != derived {
+				t.Errorf("%s native range CanDisable = %v, reachable off budget = %v", model, spec.CanDisable, derived)
+			}
+		}
+	}
+
+	flash, _ := Offer("gemini-2.5-flash", agentkit.ProviderGoogle)
+	if flash.Reasoning == nil || flash.Reasoning.Min != 0 || !flash.Reasoning.CanDisable {
+		t.Fatalf("gemini-2.5-flash native range = %#v, want reachable off and CanDisable", flash.Reasoning)
+	}
+	pro, _ := Offer("gemini-2.5-pro", agentkit.ProviderGoogle)
+	if pro.Reasoning == nil || pro.Reasoning.Min != 128 || pro.Reasoning.CanDisable {
+		t.Fatalf("gemini-2.5-pro native range = %#v, want no reachable off and CanDisable false", pro.Reasoning)
+	}
+	haiku, ok := Offer("claude-haiku-4-5", agentkit.ProviderOpenRouter)
+	if !ok || haiku.Reasoning == nil || haiku.Reasoning.Min != 1024 || !haiku.Reasoning.CanDisable {
+		t.Fatalf("claude-haiku-4-5 OpenRouter range = %#v/%v, want scoped exception", haiku.Reasoning, ok)
+	}
+	for _, sentinel := range haiku.Reasoning.Sentinels {
+		if sentinel.Meaning == "off" {
+			t.Fatalf("claude-haiku-4-5 OpenRouter range unexpectedly has off sentinel: %#v", sentinel)
+		}
 	}
 }
 

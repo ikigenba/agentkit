@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"reflect"
+	"sort"
 	"testing"
 
 	"github.com/ikigenba/agentkit"
@@ -10,8 +11,8 @@ import (
 func TestLookupReturnsChatEmbeddingAndUnknownEntries(t *testing.T) {
 	// R-DMDH-5FOB
 	chat, ok := Lookup("claude-opus-4-8")
-	if !ok || chat.Vendor != VendorAnthropic || len(chat.Offerings) != 1 {
-		t.Fatalf("Lookup(chat) = %#v/%v, want Anthropic entry with one offering", chat, ok)
+	if !ok || chat.Vendor != VendorAnthropic || len(chat.Offerings) != 2 {
+		t.Fatalf("Lookup(chat) = %#v/%v, want Anthropic entry with two offerings", chat, ok)
 	}
 	if got := chat.Offerings[0]; got.Provider != agentkit.ProviderAnthropic || got.Pricing == nil || got.Reasoning == nil || got.Context == 0 {
 		t.Fatalf("Lookup(chat) offering = %#v, want complete Anthropic terms", got)
@@ -122,8 +123,21 @@ func TestResolveCoversCuratedPassthruAndUnrouted(t *testing.T) {
 	}
 }
 
-func TestWireModelIsDerivedFromVendorAndProvider(t *testing.T) {
-	// R-LQ3Z-65N5
+func TestWireModelHonorsOverridesAndOtherwiseDerives(t *testing.T) {
+	// R-E7VN-JTZ0
+	opus, _ := Lookup("claude-opus-4-8")
+	const dottedOpus = "anthropic/claude-opus-4.8"
+	if got := opus.WireModel(agentkit.ProviderOpenRouter); got != dottedOpus {
+		t.Fatalf("opus OpenRouter wire model = %q, want override %q", got, dottedOpus)
+	}
+	if got := Resolve(agentkit.ProviderOpenRouter, opus.Model).WireModel; got != dottedOpus {
+		t.Fatalf("Resolve opus wire model = %q, want override %q", got, dottedOpus)
+	}
+	opus.Vendor = VendorXAI
+	if got := opus.WireModel(agentkit.ProviderOpenRouter); got != dottedOpus {
+		t.Fatalf("opus wire model after vendor change = %q, want unchanged override %q", got, dottedOpus)
+	}
+
 	grok, _ := Lookup("grok-4.5")
 	if got, want := grok.WireModel(agentkit.ProviderOpenRouter), string(VendorXAI)+"/"+grok.Model; got != want {
 		t.Fatalf("grok OpenRouter wire model = %q", got)
@@ -177,7 +191,16 @@ func TestVendorAndProviderIDsAgreeWhereBothExist(t *testing.T) {
 func TestListCuratedIncludesExactlyProviderOfferings(t *testing.T) {
 	// R-DOT9-WZ5P
 	openRouter := ListCurated(agentkit.ProviderOpenRouter)
-	want := []string{"deepseek-v4-flash", "deepseek-v4-pro", "glm-4.6", "glm-4.7", "glm-5.1", "glm-5.2", "grok-4.20", "grok-4.20-multi-agent", "grok-4.3", "grok-4.5", "kimi-k2.6", "kimi-k2.7-code", "kimi-k3"}
+	var want []string
+	for model, entry := range entries {
+		for _, offering := range entry.Offerings {
+			if offering.Provider == agentkit.ProviderOpenRouter {
+				want = append(want, model)
+				break
+			}
+		}
+	}
+	sort.Strings(want)
 	got := make([]string, len(openRouter))
 	for i, entry := range openRouter {
 		got[i] = entry.Model

@@ -24,11 +24,49 @@ func toggleReasoning(canEnable, canDisable bool, mode ReasoningDefaultMode) *Rea
 	}
 }
 
+func openRouterWireName(model string) string {
+	switch model {
+	case "claude-opus-4-8":
+		return "anthropic/claude-opus-4.8"
+	case "claude-sonnet-4-6":
+		return "anthropic/claude-sonnet-4.6"
+	case "claude-haiku-4-5":
+		return "anthropic/claude-haiku-4.5"
+	default:
+		return ""
+	}
+}
+
+func openRouterOffering(model string, context int64, rates *agentkit.Pricing, reasoning *ReasoningSpec) Offering {
+	if model == "claude-haiku-4-5" {
+		reasoning = &ReasoningSpec{
+			Term: "thinking budget", Kind: ReasoningRange, Min: 1024, Max: 4096,
+			CanDisable: true, Default: ReasoningDefault{Mode: DefaultOff},
+		}
+	}
+	return Offering{
+		Provider: agentkit.ProviderOpenRouter, WireName: openRouterWireName(model),
+		Pricing: rates, Reasoning: reasoning, Context: context,
+	}
+}
+
 func chatEntry(model string, vendor VendorID, provider agentkit.ProviderID, context int64, rates *agentkit.Pricing, reasoning *ReasoningSpec, alternatives ...Offering) Entry {
 	offerings := []Offering{{
 		Provider: provider, Pricing: rates, Reasoning: reasoning, Context: context,
 	}}
 	offerings = append(offerings, alternatives...)
+	if provider != agentkit.ProviderOpenRouter {
+		hasOpenRouter := false
+		for _, offering := range alternatives {
+			if offering.Provider == agentkit.ProviderOpenRouter {
+				hasOpenRouter = true
+				break
+			}
+		}
+		if !hasOpenRouter {
+			offerings = append(offerings, openRouterOffering(model, context, rates, reasoning))
+		}
+	}
 	return Entry{Model: model, Vendor: vendor, Offerings: offerings}
 }
 

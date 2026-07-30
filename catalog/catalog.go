@@ -20,6 +20,7 @@ type Entry struct {
 // Offering is one model as served by one provider.
 type Offering struct {
 	Provider  agentkit.ProviderID
+	WireName  string
 	Pricing   *agentkit.Pricing
 	Reasoning *ReasoningSpec
 	Context   int64
@@ -141,8 +142,14 @@ func Offer(model string, provider agentkit.ProviderID) (Offering, bool) {
 	return Offering{}, false
 }
 
-// WireModel derives the model id sent to provider.
+// WireModel reports the model id sent to provider, honoring an offering's
+// explicit override before applying the provider naming rule.
 func (e Entry) WireModel(provider agentkit.ProviderID) string {
+	for _, offering := range e.Offerings {
+		if offering.Provider == provider && offering.WireName != "" {
+			return offering.WireName
+		}
+	}
 	if provider == agentkit.ProviderOpenRouter {
 		return string(e.Vendor) + "/" + e.Model
 	}
