@@ -296,19 +296,32 @@ func convertSchemaValue(v any, root any, stack map[string]bool) any {
 	}
 
 	out := make(map[string]any)
-	if typ, ok := m["type"].(string); ok && typ != "" {
+	if typ, nullable := convertSchemaType(m["type"]); typ != "" {
 		out["type"] = strings.ToUpper(typ)
+		if nullable {
+			out["nullable"] = true
+		}
 	}
 	copyString(out, m, "description")
 	copyString(out, m, "format")
-	if nullable, ok := m["nullable"].(bool); ok {
-		out["nullable"] = nullable
+	copyString(out, m, "pattern")
+	copyString(out, m, "title")
+	copyNumber(out, m, "minLength")
+	copyNumber(out, m, "maxLength")
+	copyNumber(out, m, "minItems")
+	if value, ok := m["default"]; ok {
+		out["default"] = value
+	}
+	if nullable, ok := m["nullable"].(bool); ok && nullable {
+		out["nullable"] = true
 	}
 	if required, ok := stringSlice(m["required"]); ok {
 		out["required"] = required
 	}
-	if enum, ok := stringSlice(m["enum"]); ok {
+	if enum, ok := m["enum"].([]any); ok {
 		out["enum"] = enum
+	} else if constant, ok := m["const"]; ok {
+		out["enum"] = []any{constant}
 	}
 	if props, ok := m["properties"].(map[string]any); ok {
 		converted := make(map[string]any, len(props))
@@ -331,6 +344,32 @@ func convertSchemaValue(v any, root any, stack map[string]bool) any {
 		out["type"] = "OBJECT"
 	}
 	return out
+}
+
+func convertSchemaType(v any) (string, bool) {
+	switch typ := v.(type) {
+	case string:
+		return typ, false
+	case []any:
+		var value string
+		var nullable bool
+		for _, item := range typ {
+			name, ok := item.(string)
+			if !ok {
+				continue
+			}
+			if strings.EqualFold(name, "null") {
+				nullable = true
+				continue
+			}
+			if value == "" {
+				value = name
+			}
+		}
+		return value, nullable
+	default:
+		return "", false
+	}
 }
 
 func convertSchemaArray(values []any, root any, stack map[string]bool) []any {
@@ -377,6 +416,12 @@ func resolveLocalRef(root any, ref string) (any, bool) {
 func copyString(out, in map[string]any, key string) {
 	if s, ok := in[key].(string); ok && s != "" {
 		out[key] = s
+	}
+}
+
+func copyNumber(out, in map[string]any, key string) {
+	if number, ok := in[key].(float64); ok {
+		out[key] = number
 	}
 }
 

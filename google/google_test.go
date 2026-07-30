@@ -234,6 +234,155 @@ func TestGoogleSendBuildsRequestParsesToolTurnAndUsage(t *testing.T) {
 	}
 }
 
+func TestGoogleToolSchemaAllowlistRewritesCanonicalDialect(t *testing.T) {
+	// R-XVKV-LSFU
+	var recorded map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		decodeRequest(t, r, &body)
+		tools := field[[]any](t, body, "tools")
+		declarations := field[[]any](t, tools[0].(map[string]any), "functionDeclarations")
+		recorded = field[map[string]any](t, declarations[0].(map[string]any), "parameters")
+		writeSSE(t, w, `{"candidates":[{"content":{"role":"model","parts":[{"text":"ok"}]},"finishReason":"STOP"}]}`)
+	}))
+	defer server.Close()
+
+	canonical := json.RawMessage(`{
+		"$schema": "https://json-schema.org/draft/2020-12/schema",
+		"$defs": {
+			"record": {
+				"type": "object",
+				"additionalProperties": false,
+				"properties": {
+					"name": {"type": "string", "$schema": "discard-me"}
+				},
+				"required": ["name"]
+			}
+		},
+		"type": "object",
+		"additionalProperties": false,
+		"properties": {
+			"record": {"$ref": "#/$defs/record"},
+			"choice": {"oneOf": [{"type": "string"}, {"type": "number"}]},
+			"fixed": {"const": "v1"},
+			"nullable": {"type": ["string", "null"]}
+		}
+	}`)
+	tool := testRawTool("complete", "exercise canonical rewrites", canonical, func(context.Context, json.RawMessage) (string, error) {
+		return "ok", nil
+	})
+	rt := New(APIKey("key"), WithBaseURL(server.URL), WithHTTPClient(server.Client())).RoundTrip(context.Background(), &agentkit.Request{
+		Model: "gemini-test",
+		Tools: []agentkit.Tool{tool},
+	})
+	if err := rt.Err(); err != nil {
+		t.Fatalf("RoundTrip() error = %v", err)
+	}
+
+	for _, forbidden := range []string{"additionalProperties", "$schema", "$defs", "$ref", "oneOf", "const"} {
+		if containsKey(recorded, forbidden) {
+			t.Errorf("recorded parameters contain forbidden key %q: %#v", forbidden, recorded)
+		}
+	}
+	properties := field[map[string]any](t, recorded, "properties")
+	inlined := field[map[string]any](t, properties, "record")
+	if inlined["type"] != "OBJECT" || field[map[string]any](t, inlined, "properties")["name"] == nil {
+		t.Fatalf("$ref target was not inlined: %#v", inlined)
+	}
+	choice := field[[]any](t, field[map[string]any](t, properties, "choice"), "anyOf")
+	if got := []any{choice[0].(map[string]any)["type"], choice[1].(map[string]any)["type"]}; !reflect.DeepEqual(got, []any{"STRING", "NUMBER"}) {
+		t.Fatalf("oneOf was not rendered as anyOf: %#v", choice)
+	}
+	if got := field[[]any](t, field[map[string]any](t, properties, "fixed"), "enum"); !reflect.DeepEqual(got, []any{"v1"}) {
+		t.Fatalf("const was not rendered as a one-element enum: %#v", got)
+	}
+	nullable := field[map[string]any](t, properties, "nullable")
+	if nullable["type"] != "STRING" || nullable["nullable"] != true {
+		t.Fatalf("nullable union was not rendered in Gemini form: %#v", nullable)
+	}
+}
+
+func TestGoogleToolSchemaRendererPreservesEveryCanonicalConstruct(t *testing.T) {
+	// R-2XB1-IV26
+	canonical := json.RawMessage(`{
+		"$schema": "https://json-schema.org/draft/2020-12/schema",
+		"$defs": {
+			"address": {
+				"type": "object",
+				"title": "Address",
+				"description": "A postal address",
+				"properties": {
+					"postal_code": {
+						"type": "string",
+						"pattern": "^[0-9]{3,5}$",
+						"minLength": 3,
+						"maxLength": 5,
+						"format": "date-time",
+						"default": "000"
+					}
+				},
+				"required": ["postal_code"]
+			}
+		},
+		"type": "object",
+		"title": "Lookup input",
+		"description": "Every canonical construct",
+		"properties": {
+			"address": {"$ref": "#/$defs/address"},
+			"tags": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+			"status": {"type": "string", "enum": ["new", "done"]},
+			"fixed": {"const": "v1"},
+			"choice": {"anyOf": [{"type": "string"}, {"type": "integer"}]},
+			"alternative": {"oneOf": [{"type": "boolean"}, {"type": "number"}]},
+			"nullable": {"type": ["string", "null"]}
+		},
+		"required": ["address", "tags", "status", "fixed", "choice", "alternative", "nullable"]
+	}`)
+
+	got := convertSchema(canonical)
+	properties := field[map[string]any](t, got, "properties")
+	address := field[map[string]any](t, properties, "address")
+	postalCode := field[map[string]any](t, field[map[string]any](t, address, "properties"), "postal_code")
+	for key, want := range map[string]any{
+		"pattern":   "^[0-9]{3,5}$",
+		"minLength": float64(3),
+		"maxLength": float64(5),
+		"title":     "Address",
+		"default":   "000",
+		"format":    "date-time",
+	} {
+		target := postalCode
+		if key == "title" {
+			target = address
+		}
+		if !reflect.DeepEqual(target[key], want) {
+			t.Errorf("%s = %#v, want %#v in schema %#v", key, target[key], want, got)
+		}
+	}
+	tags := field[map[string]any](t, properties, "tags")
+	if tags["minItems"] != float64(1) || field[map[string]any](t, tags, "items")["type"] != "STRING" {
+		t.Errorf("array constructs were not preserved: %#v", tags)
+	}
+	if enum := field[[]any](t, field[map[string]any](t, properties, "status"), "enum"); !reflect.DeepEqual(enum, []any{"new", "done"}) {
+		t.Errorf("enum = %#v, want [new done]", enum)
+	}
+	if enum := field[[]any](t, field[map[string]any](t, properties, "fixed"), "enum"); !reflect.DeepEqual(enum, []any{"v1"}) {
+		t.Errorf("const enum = %#v, want [v1]", enum)
+	}
+	for _, name := range []string{"choice", "alternative"} {
+		if branches := field[[]any](t, field[map[string]any](t, properties, name), "anyOf"); len(branches) != 2 {
+			t.Errorf("%s anyOf branches = %#v, want two", name, branches)
+		}
+	}
+	nullable := field[map[string]any](t, properties, "nullable")
+	if nullable["type"] != "STRING" || nullable["nullable"] != true {
+		t.Errorf("nullable = %#v, want STRING plus nullable true", nullable)
+	}
+	if got["title"] != "Lookup input" || got["description"] != "Every canonical construct" || address["description"] != "A postal address" {
+		t.Errorf("schema metadata was not preserved: %#v", got)
+	}
+}
+
 func TestGoogleRequestBodyPanicsOnUnknownOutboundBlockType(t *testing.T) {
 	// R-4YSE-6YBS
 	provider := New(APIKey("test-key"))
