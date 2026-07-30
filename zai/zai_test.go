@@ -16,6 +16,25 @@ import (
 	"github.com/ikigenba/agentkit"
 )
 
+type rawTestTool struct {
+	agentkit.Tool
+	name        string
+	description string
+	schema      json.RawMessage
+	fn          func(context.Context, json.RawMessage) (string, error)
+}
+
+func testRawTool(name, description string, schema json.RawMessage, fn func(context.Context, json.RawMessage) (string, error)) agentkit.Tool {
+	return rawTestTool{name: name, description: description, schema: append(json.RawMessage(nil), schema...), fn: fn}
+}
+
+func (t rawTestTool) Name() string                { return t.name }
+func (t rawTestTool) Description() string         { return t.description }
+func (t rawTestTool) JSONSchema() json.RawMessage { return append(json.RawMessage(nil), t.schema...) }
+func (t rawTestTool) Call(ctx context.Context, input json.RawMessage) (string, error) {
+	return t.fn(ctx, append(json.RawMessage(nil), input...))
+}
+
 func TestProviderReportsZAIAPIKeyIdentity(t *testing.T) {
 	// R-LK0H-9AXO
 	provider := New(APIKey("key"))
@@ -73,7 +92,7 @@ func TestZaiSendUsesBakedBaseURLAndAssemblesToolTurn(t *testing.T) {
 	temperature := 0.2
 	topP := 0.9
 	var called bool
-	tool := agentkit.RawTool("weather", "get weather", json.RawMessage(`{"type":"object"}`), func(ctx context.Context, input json.RawMessage) (string, error) {
+	tool := testRawTool("weather", "get weather", json.RawMessage(`{"type":"object"}`), func(ctx context.Context, input json.RawMessage) (string, error) {
 		called = true
 		if string(input) != `{"city":"Paris"}` {
 			t.Fatalf("tool input = %s", input)
@@ -198,7 +217,7 @@ func TestZaiReplayedToolCallArgumentsAreJSONString(t *testing.T) {
 	}))
 	defer server.Close()
 
-	tool := agentkit.RawTool("weather", "get weather", json.RawMessage(`{"type":"object"}`), func(ctx context.Context, input json.RawMessage) (string, error) {
+	tool := testRawTool("weather", "get weather", json.RawMessage(`{"type":"object"}`), func(ctx context.Context, input json.RawMessage) (string, error) {
 		return "sunny", nil
 	})
 	c := &agentkit.Conversation{

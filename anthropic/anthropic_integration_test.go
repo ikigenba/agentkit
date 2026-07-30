@@ -13,6 +13,25 @@ import (
 	"github.com/ikigenba/agentkit"
 )
 
+type rawTestTool struct {
+	agentkit.Tool
+	name        string
+	description string
+	schema      json.RawMessage
+	fn          func(context.Context, json.RawMessage) (string, error)
+}
+
+func testRawTool(name, description string, schema json.RawMessage, fn func(context.Context, json.RawMessage) (string, error)) agentkit.Tool {
+	return rawTestTool{name: name, description: description, schema: append(json.RawMessage(nil), schema...), fn: fn}
+}
+
+func (t rawTestTool) Name() string                { return t.name }
+func (t rawTestTool) Description() string         { return t.description }
+func (t rawTestTool) JSONSchema() json.RawMessage { return append(json.RawMessage(nil), t.schema...) }
+func (t rawTestTool) Call(ctx context.Context, input json.RawMessage) (string, error) {
+	return t.fn(ctx, append(json.RawMessage(nil), input...))
+}
+
 func TestAnthropicIntegrationSkipsWithoutCredential(t *testing.T) {
 	// R-WJLM-7QRP
 	key := os.Getenv("ANTHROPIC_API_KEY")
@@ -63,7 +82,7 @@ func TestAnthropicIntegrationToolRoundTrip(t *testing.T) {
 		t.Skip("ANTHROPIC_API_KEY is not set")
 	}
 
-	tool := agentkit.RawTool("integration_echo", "Return the supplied value.", json.RawMessage(`{"type":"object","properties":{"value":{"type":"string"}},"required":["value"]}`), func(_ context.Context, input json.RawMessage) (string, error) {
+	tool := testRawTool("integration_echo", "Return the supplied value.", json.RawMessage(`{"type":"object","properties":{"value":{"type":"string"}},"required":["value"]}`), func(_ context.Context, input json.RawMessage) (string, error) {
 		return "anthropic-tool-ok", nil
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)

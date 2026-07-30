@@ -19,7 +19,7 @@ const maxPreviewCharacters = 30_000
 var pageBoundary = regexp.MustCompile(`(?m)^<!-- page [1-9][0-9]* -->\n`)
 
 type ocrInput struct {
-	FilePath string `json:"file_path" jsonschema:"required"`
+	FilePath string `json:"file_path"`
 }
 
 // Tool returns a model-callable OCR tool whose source paths are confined to

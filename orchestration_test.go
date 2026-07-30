@@ -129,7 +129,7 @@ func TestSendAcceptsFreeFlowModelAndRejectsInvalidToolSetup(t *testing.T) {
 			Provider: provider,
 			Model:    testModel,
 			Tools: []agentkit.Tool{
-				agentkit.RawTool("bad", "bad schema", json.RawMessage(`{`), func(context.Context, json.RawMessage) (string, error) {
+				testRawTool("bad", "bad schema", json.RawMessage(`{`), func(context.Context, json.RawMessage) (string, error) {
 					return "", nil
 				}),
 			},
@@ -143,13 +143,13 @@ func TestSendAcceptsFreeFlowModelAndRejectsInvalidToolSetup(t *testing.T) {
 			t.Fatalf("provider calls = %d, want 0", len(provider.calls))
 		}
 
-		conv.Tools = []agentkit.Tool{agentkit.RawTool("good", "valid schema", json.RawMessage(`{"type":"object"}`), func(context.Context, json.RawMessage) (string, error) {
+		conv.Tools = []agentkit.Tool{testRawTool("good", "valid schema", json.RawMessage(`{"type":"object"}`), func(context.Context, json.RawMessage) (string, error) {
 			return "ok", nil
 		})}
 		stream = conv.Send(ctx, "hello")
 		drain(stream)
 		if err := stream.Err(); err != nil {
-			t.Fatalf("valid RawTool Send Err() = %v, want nil", err)
+			t.Fatalf("valid test tool Send Err() = %v, want nil", err)
 		}
 	})
 
@@ -161,8 +161,8 @@ func TestSendAcceptsFreeFlowModelAndRejectsInvalidToolSetup(t *testing.T) {
 			Provider: provider,
 			Model:    testModel,
 			Tools: []agentkit.Tool{
-				agentkit.RawTool("same", "first", schema, func(context.Context, json.RawMessage) (string, error) { return "", nil }),
-				agentkit.RawTool("same", "second", schema, func(context.Context, json.RawMessage) (string, error) { return "", nil }),
+				testRawTool("same", "first", schema, func(context.Context, json.RawMessage) (string, error) { return "", nil }),
+				testRawTool("same", "second", schema, func(context.Context, json.RawMessage) (string, error) { return "", nil }),
 			},
 		}
 		stream := conv.Send(ctx, "hello")
@@ -420,7 +420,7 @@ func TestToolLoopRunsToolsAndContinuesToFinalMessage(t *testing.T) {
 }
 
 func TestMessageDoneMirrorsHistoryForRichToolUseMessage(t *testing.T) {
-	tool := agentkit.RawTool("lookup", "look up", json.RawMessage(`{"type":"object"}`), func(context.Context, json.RawMessage) (string, error) {
+	tool := testRawTool("lookup", "look up", json.RawMessage(`{"type":"object"}`), func(context.Context, json.RawMessage) (string, error) {
 		return "sunny", nil
 	})
 	reasoning := agentkit.ReasoningBlock{Opaque: json.RawMessage(`{"signature":"opaque"}`), Summary: "looked at request"}
@@ -514,8 +514,8 @@ func TestUnknownToolAndToolErrorAreFedBackInBand(t *testing.T) {
 
 func TestToolsAreSortedDeterministicallyAcrossTurns(t *testing.T) {
 	schema := json.RawMessage(`{"type":"object"}`)
-	a := agentkit.RawTool("a_tool", "a", schema, func(context.Context, json.RawMessage) (string, error) { return "a", nil })
-	b := agentkit.RawTool("b_tool", "b", schema, func(context.Context, json.RawMessage) (string, error) { return "b", nil })
+	a := testRawTool("a_tool", "a", schema, func(context.Context, json.RawMessage) (string, error) { return "a", nil })
+	b := testRawTool("b_tool", "b", schema, func(context.Context, json.RawMessage) (string, error) { return "b", nil })
 	provider := newFakeProvider(textRoundTrip("one"), textRoundTrip("two"))
 	conv := &agentkit.Conversation{Provider: provider, Model: testModel, Tools: []agentkit.Tool{b, a}}
 	drain(conv.Send(context.Background(), "one"))
@@ -538,7 +538,7 @@ func TestToolsAreSortedDeterministicallyAcrossTurns(t *testing.T) {
 
 func TestDeferredToolsAdvertiseLoadToolsAndEmptyIsNoop(t *testing.T) {
 	schema := json.RawMessage(`{"type":"object","properties":{"secret_prop":{"type":"string"}}}`)
-	deferred := agentkit.RawTool("later_search", "SECRET deferred search description", schema, func(context.Context, json.RawMessage) (string, error) {
+	deferred := testRawTool("later_search", "SECRET deferred search description", schema, func(context.Context, json.RawMessage) (string, error) {
 		return "later", nil
 	})
 	provider := newFakeProvider(textRoundTrip("ok"))
@@ -586,7 +586,7 @@ func TestDeferredToolsAdvertiseLoadToolsAndEmptyIsNoop(t *testing.T) {
 
 func TestDeferredLoadToolsLoadsWithinTurnAndReturnsSchemas(t *testing.T) {
 	var calledWith json.RawMessage
-	deferred := agentkit.RawTool("later_lookup", "Lookup deferred facts", json.RawMessage(`{"type":"object","properties":{"q":{"type":"string"}}}`), func(_ context.Context, input json.RawMessage) (string, error) {
+	deferred := testRawTool("later_lookup", "Lookup deferred facts", json.RawMessage(`{"type":"object","properties":{"q":{"type":"string"}}}`), func(_ context.Context, input json.RawMessage) (string, error) {
 		calledWith = append(json.RawMessage(nil), input...)
 		return "fact", nil
 	})
@@ -634,10 +634,10 @@ func TestDeferredLoadToolsLoadsWithinTurnAndReturnsSchemas(t *testing.T) {
 
 func TestDeferredLoadToolsGroupNameLoadsGroupInOrder(t *testing.T) {
 	var calledWith json.RawMessage
-	first := agentkit.RawTool("z_group_first", "First grouped tool", json.RawMessage(`{"type":"object","properties":{"first":{"type":"string"}}}`), func(context.Context, json.RawMessage) (string, error) {
+	first := testRawTool("z_group_first", "First grouped tool", json.RawMessage(`{"type":"object","properties":{"first":{"type":"string"}}}`), func(context.Context, json.RawMessage) (string, error) {
 		return "first", nil
 	})
-	second := agentkit.RawTool("a_group_second", "Second grouped tool", json.RawMessage(`{"type":"object","properties":{"second":{"type":"string"}}}`), func(_ context.Context, input json.RawMessage) (string, error) {
+	second := testRawTool("a_group_second", "Second grouped tool", json.RawMessage(`{"type":"object","properties":{"second":{"type":"string"}}}`), func(_ context.Context, input json.RawMessage) (string, error) {
 		calledWith = append(json.RawMessage(nil), input...)
 		return "second", nil
 	})
@@ -685,7 +685,7 @@ func TestDeferredLoadToolsGroupNameLoadsGroupInOrder(t *testing.T) {
 }
 
 func TestDeferredLoadToolsMixedNamesReportsUnknownAndContinues(t *testing.T) {
-	deferred := agentkit.RawTool("valid_deferred", "Valid deferred tool", json.RawMessage(`{"type":"object"}`), func(context.Context, json.RawMessage) (string, error) {
+	deferred := testRawTool("valid_deferred", "Valid deferred tool", json.RawMessage(`{"type":"object"}`), func(context.Context, json.RawMessage) (string, error) {
 		return "valid", nil
 	})
 	provider := newFakeProvider(
@@ -714,13 +714,13 @@ func TestDeferredLoadToolsMixedNamesReportsUnknownAndContinues(t *testing.T) {
 }
 
 func TestDeferredLoadToolsMixedToolGroupAndUnknown(t *testing.T) {
-	solo := agentkit.RawTool("solo_deferred", "Solo deferred tool", json.RawMessage(`{"type":"object","properties":{"solo":{"type":"boolean"}}}`), func(context.Context, json.RawMessage) (string, error) {
+	solo := testRawTool("solo_deferred", "Solo deferred tool", json.RawMessage(`{"type":"object","properties":{"solo":{"type":"boolean"}}}`), func(context.Context, json.RawMessage) (string, error) {
 		return "solo", nil
 	})
-	groupFirst := agentkit.RawTool("group_first", "First mixed group tool", json.RawMessage(`{"type":"object","properties":{"one":{"type":"string"}}}`), func(context.Context, json.RawMessage) (string, error) {
+	groupFirst := testRawTool("group_first", "First mixed group tool", json.RawMessage(`{"type":"object","properties":{"one":{"type":"string"}}}`), func(context.Context, json.RawMessage) (string, error) {
 		return "first", nil
 	})
-	groupSecond := agentkit.RawTool("group_second", "Second mixed group tool", json.RawMessage(`{"type":"object","properties":{"two":{"type":"string"}}}`), func(context.Context, json.RawMessage) (string, error) {
+	groupSecond := testRawTool("group_second", "Second mixed group tool", json.RawMessage(`{"type":"object","properties":{"two":{"type":"string"}}}`), func(context.Context, json.RawMessage) (string, error) {
 		return "second", nil
 	})
 	provider := newFakeProvider(
@@ -758,10 +758,10 @@ func TestDeferredLoadToolsMixedToolGroupAndUnknown(t *testing.T) {
 }
 
 func TestDeferredLoadToolsNamePrefersToolOverGroup(t *testing.T) {
-	shadowTool := agentkit.RawTool("shadow_name", "Shadow tool", json.RawMessage(`{"type":"object","properties":{"shadow":{"type":"string"}}}`), func(context.Context, json.RawMessage) (string, error) {
+	shadowTool := testRawTool("shadow_name", "Shadow tool", json.RawMessage(`{"type":"object","properties":{"shadow":{"type":"string"}}}`), func(context.Context, json.RawMessage) (string, error) {
 		return "shadow", nil
 	})
-	groupOnly := agentkit.RawTool("group_only", "Group-only tool", json.RawMessage(`{"type":"object","properties":{"group":{"type":"string"}}}`), func(context.Context, json.RawMessage) (string, error) {
+	groupOnly := testRawTool("group_only", "Group-only tool", json.RawMessage(`{"type":"object","properties":{"group":{"type":"string"}}}`), func(context.Context, json.RawMessage) (string, error) {
 		return "group", nil
 	})
 	provider := newFakeProvider(
@@ -794,7 +794,7 @@ func TestDeferredLoadToolsNamePrefersToolOverGroup(t *testing.T) {
 
 func TestDeferredUnloadedDirectCallLoadsAndUnknownStillInBand(t *testing.T) {
 	called := false
-	deferred := agentkit.RawTool("cold_lookup", "Cold lookup", json.RawMessage(`{"type":"object"}`), func(context.Context, json.RawMessage) (string, error) {
+	deferred := testRawTool("cold_lookup", "Cold lookup", json.RawMessage(`{"type":"object"}`), func(context.Context, json.RawMessage) (string, error) {
 		called = true
 		return "should not run", nil
 	})
@@ -837,10 +837,10 @@ func TestDeferredUnloadedDirectCallLoadsAndUnknownStillInBand(t *testing.T) {
 
 func TestDeferredToolOrderFreezesBaseAndAppendsLoads(t *testing.T) {
 	schema := json.RawMessage(`{"type":"object"}`)
-	aBase := agentkit.RawTool("a_base", "base a", schema, func(context.Context, json.RawMessage) (string, error) { return "a", nil })
-	zBase := agentkit.RawTool("z_base", "base z", schema, func(context.Context, json.RawMessage) (string, error) { return "z", nil })
-	alpha := agentkit.RawTool("alpha_deferred", "alpha", schema, func(context.Context, json.RawMessage) (string, error) { return "alpha", nil })
-	gamma := agentkit.RawTool("gamma_deferred", "gamma", schema, func(context.Context, json.RawMessage) (string, error) { return "gamma", nil })
+	aBase := testRawTool("a_base", "base a", schema, func(context.Context, json.RawMessage) (string, error) { return "a", nil })
+	zBase := testRawTool("z_base", "base z", schema, func(context.Context, json.RawMessage) (string, error) { return "z", nil })
+	alpha := testRawTool("alpha_deferred", "alpha", schema, func(context.Context, json.RawMessage) (string, error) { return "alpha", nil })
+	gamma := testRawTool("gamma_deferred", "gamma", schema, func(context.Context, json.RawMessage) (string, error) { return "gamma", nil })
 	provider := newFakeProvider(
 		newRoundTrip(assistant(agentkit.ToolUseBlock{ID: "toolu_alpha", Name: "load_tools", Input: json.RawMessage(`{"tools":["alpha_deferred"]}`)}), agentkit.FinishToolUse, agentkit.Usage{}, nil),
 		newRoundTrip(assistant(agentkit.ToolUseBlock{ID: "toolu_gamma", Name: "load_tools", Input: json.RawMessage(`{"tools":["gamma_deferred"]}`)}), agentkit.FinishToolUse, agentkit.Usage{}, nil),
@@ -889,11 +889,11 @@ func TestDeferredToolInvalidConfigFailsAtSendBoundary(t *testing.T) {
 		{
 			name: "eager duplicates deferred",
 			conv: agentkit.Conversation{
-				Tools: []agentkit.Tool{agentkit.RawTool("same", "eager", schema, func(context.Context, json.RawMessage) (string, error) { return "eager", nil })},
+				Tools: []agentkit.Tool{testRawTool("same", "eager", schema, func(context.Context, json.RawMessage) (string, error) { return "eager", nil })},
 				DeferredTools: []agentkit.DeferredToolGroup{{
 					Name:  "dup",
 					Blurb: "dup",
-					Tools: []agentkit.Tool{agentkit.RawTool("same", "deferred", schema, func(context.Context, json.RawMessage) (string, error) { return "deferred", nil })},
+					Tools: []agentkit.Tool{testRawTool("same", "deferred", schema, func(context.Context, json.RawMessage) (string, error) { return "deferred", nil })},
 				}},
 			},
 		},
@@ -903,7 +903,7 @@ func TestDeferredToolInvalidConfigFailsAtSendBoundary(t *testing.T) {
 				DeferredTools: []agentkit.DeferredToolGroup{{
 					Name:  "reserved",
 					Blurb: "reserved",
-					Tools: []agentkit.Tool{agentkit.RawTool("load_tools", "reserved", schema, func(context.Context, json.RawMessage) (string, error) { return "reserved", nil })},
+					Tools: []agentkit.Tool{testRawTool("load_tools", "reserved", schema, func(context.Context, json.RawMessage) (string, error) { return "reserved", nil })},
 				}},
 			},
 		},
@@ -913,7 +913,7 @@ func TestDeferredToolInvalidConfigFailsAtSendBoundary(t *testing.T) {
 				DeferredTools: []agentkit.DeferredToolGroup{{
 					Name:  "invalid",
 					Blurb: "invalid",
-					Tools: []agentkit.Tool{agentkit.RawTool("bad_schema", "bad", json.RawMessage(`{`), func(context.Context, json.RawMessage) (string, error) { return "bad", nil })},
+					Tools: []agentkit.Tool{testRawTool("bad_schema", "bad", json.RawMessage(`{`), func(context.Context, json.RawMessage) (string, error) { return "bad", nil })},
 				}},
 			},
 		},
@@ -941,7 +941,7 @@ func TestDeferredToolInvalidConfigFailsAtSendBoundary(t *testing.T) {
 }
 
 func TestReasoningBlockIsReplayedOnToolLoopRequest(t *testing.T) {
-	tool := agentkit.RawTool("ok", "ok", json.RawMessage(`{"type":"object"}`), func(context.Context, json.RawMessage) (string, error) {
+	tool := testRawTool("ok", "ok", json.RawMessage(`{"type":"object"}`), func(context.Context, json.RawMessage) (string, error) {
 		return "ok", nil
 	})
 	reasoning := agentkit.ReasoningBlock{Opaque: json.RawMessage(`{"signature":"opaque"}`), Summary: "summary"}

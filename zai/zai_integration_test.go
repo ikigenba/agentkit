@@ -42,7 +42,7 @@ func TestZAIIntegrationToolRoundTrip(t *testing.T) {
 	if key == "" {
 		t.Skip("ZAI_API_KEY is not set")
 	}
-	tool := agentkit.RawTool("integration_echo", "Return the supplied value.", json.RawMessage(`{"type":"object","properties":{"value":{"type":"string"}},"required":["value"]}`), func(_ context.Context, _ json.RawMessage) (string, error) {
+	tool := testRawTool("integration_echo", "Return the supplied value.", json.RawMessage(`{"type":"object","properties":{"value":{"type":"string"}},"required":["value"]}`), func(_ context.Context, _ json.RawMessage) (string, error) {
 		return "zai-tool-ok", nil
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)

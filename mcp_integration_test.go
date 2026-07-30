@@ -191,7 +191,7 @@ func TestMCPDiscoveryFailuresAndCollisionsStopBeforeProvider(t *testing.T) {
 		conv := &Conversation{
 			Provider: provider,
 			Model:    "mcp-model",
-			Tools: []Tool{RawTool("srv_tool", "custom", json.RawMessage(`{"type":"object"}`), func(context.Context, json.RawMessage) (string, error) {
+			Tools: []Tool{testRawTool("srv_tool", "custom", json.RawMessage(`{"type":"object"}`), func(context.Context, json.RawMessage) (string, error) {
 				return "custom", nil
 			})},
 			MCPServers: []MCPServer{{Name: "srv", URL: server.URL}},
@@ -555,7 +555,7 @@ func TestMCPToolsJoinDeterministicOrderAndSchemaWarnings(t *testing.T) {
 	serverM := newMCPListOnlyServer(t, "middle", `{"type":"object"}`)
 	defer serverM.Close()
 
-	custom := RawTool("custom_mid", "custom", json.RawMessage(`{"type":"object"}`), func(context.Context, json.RawMessage) (string, error) { return "ok", nil })
+	custom := testRawTool("custom_mid", "custom", json.RawMessage(`{"type":"object"}`), func(context.Context, json.RawMessage) (string, error) { return "ok", nil })
 	provider := &mcpSchemaTranslatorProvider{mcpTestProvider: mcpTestProvider{name: "schema-translator"}}
 	conv := &Conversation{
 		Provider: provider,

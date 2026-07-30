@@ -9,6 +9,25 @@ import (
 	"time"
 )
 
+type rawTestTool struct {
+	Tool
+	name        string
+	description string
+	schema      json.RawMessage
+	fn          func(context.Context, json.RawMessage) (string, error)
+}
+
+func testRawTool(name, description string, schema json.RawMessage, fn func(context.Context, json.RawMessage) (string, error)) Tool {
+	return rawTestTool{name: name, description: description, schema: append(json.RawMessage(nil), schema...), fn: fn}
+}
+
+func (t rawTestTool) Name() string                { return t.name }
+func (t rawTestTool) Description() string         { return t.description }
+func (t rawTestTool) JSONSchema() json.RawMessage { return append(json.RawMessage(nil), t.schema...) }
+func (t rawTestTool) Call(ctx context.Context, input json.RawMessage) (string, error) {
+	return t.fn(ctx, append(json.RawMessage(nil), input...))
+}
+
 var retryTestPricing = Pricing{Tiers: []RateTier{{
 	MinInputTokens: 0,
 	InputUncached:  1,
@@ -186,7 +205,7 @@ func TestRetryableFailureWithPartialMessageRetries(t *testing.T) {
 
 func TestRetryBudgetIsPerRoundTripInToolLoop(t *testing.T) {
 	// R-Y878-6UDJ
-	tool := RawTool("lookup", "lookup", json.RawMessage(`{"type":"object"}`), func(context.Context, json.RawMessage) (string, error) {
+	tool := testRawTool("lookup", "lookup", json.RawMessage(`{"type":"object"}`), func(context.Context, json.RawMessage) (string, error) {
 		return "tool ok", nil
 	})
 	provider := &retryProvider{roundTrips: []*RoundTrip{

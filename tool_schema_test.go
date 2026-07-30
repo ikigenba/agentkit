@@ -9,6 +9,25 @@ import (
 	"github.com/ikigenba/agentkit"
 )
 
+type rawTestTool struct {
+	agentkit.Tool
+	name        string
+	description string
+	schema      json.RawMessage
+	fn          func(context.Context, json.RawMessage) (string, error)
+}
+
+func testRawTool(name, description string, schema json.RawMessage, fn func(context.Context, json.RawMessage) (string, error)) agentkit.Tool {
+	return rawTestTool{name: name, description: description, schema: append(json.RawMessage(nil), schema...), fn: fn}
+}
+
+func (t rawTestTool) Name() string                { return t.name }
+func (t rawTestTool) Description() string         { return t.description }
+func (t rawTestTool) JSONSchema() json.RawMessage { return append(json.RawMessage(nil), t.schema...) }
+func (t rawTestTool) Call(ctx context.Context, input json.RawMessage) (string, error) {
+	return t.fn(ctx, append(json.RawMessage(nil), input...))
+}
+
 type schemaTranslatorProvider struct {
 	fakeProvider
 	schemas []json.RawMessage
@@ -30,7 +49,7 @@ func (p *schemaTranslatorProvider) UntranslatableSchemaConstructs(schema json.Ra
 
 func TestCustomToolSchemaWarningAtSendBoundary(t *testing.T) {
 	provider := newSchemaTranslatorProvider()
-	tool := agentkit.RawTool("custom_lossy", "custom", json.RawMessage(`{
+	tool := testRawTool("custom_lossy", "custom", json.RawMessage(`{
 		"type":"object",
 		"additionalProperties":false
 	}`), func(context.Context, json.RawMessage) (string, error) { return "ok", nil })
@@ -62,7 +81,7 @@ func TestDeferredToolSchemaWarningAppearsAfterLoad(t *testing.T) {
 		textRoundTrip("loaded"),
 		textRoundTrip("next"),
 	}
-	tool := agentkit.RawTool("deferred_lossy", "custom", json.RawMessage(`{
+	tool := testRawTool("deferred_lossy", "custom", json.RawMessage(`{
 		"type":"object",
 		"additionalProperties":false
 	}`), func(context.Context, json.RawMessage) (string, error) { return "ok", nil })

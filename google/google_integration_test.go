@@ -55,7 +55,7 @@ func TestGoogleIntegrationAcceptsRefOneOfToolSchemaAndRoundTripsToolCall(t *test
 	}
 
 	const toolOutput = "round-trip-ok: overnight to Austin, US"
-	tool := agentkit.RawTool("select_shipping", "Select a shipping speed for a destination.", json.RawMessage(`{
+	tool := testRawTool("select_shipping", "Select a shipping speed for a destination.", json.RawMessage(`{
 		"type":"object",
 		"properties":{
 			"destination":{"$ref":"#/$defs/destination"},

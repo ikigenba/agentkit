@@ -29,6 +29,25 @@ func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
 	return f(r)
 }
 
+type rawTestTool struct {
+	agentkit.Tool
+	name        string
+	description string
+	schema      json.RawMessage
+	fn          func(context.Context, json.RawMessage) (string, error)
+}
+
+func testRawTool(name, description string, schema json.RawMessage, fn func(context.Context, json.RawMessage) (string, error)) agentkit.Tool {
+	return rawTestTool{name: name, description: description, schema: append(json.RawMessage(nil), schema...), fn: fn}
+}
+
+func (t rawTestTool) Name() string                { return t.name }
+func (t rawTestTool) Description() string         { return t.description }
+func (t rawTestTool) JSONSchema() json.RawMessage { return append(json.RawMessage(nil), t.schema...) }
+func (t rawTestTool) Call(ctx context.Context, input json.RawMessage) (string, error) {
+	return t.fn(ctx, append(json.RawMessage(nil), input...))
+}
+
 func TestChatAndEmbeddingProvidersReportAPIKeyIdentity(t *testing.T) {
 	// R-LK0H-9AXO
 	// R-LL8D-N2OD
@@ -118,7 +137,7 @@ func TestGoogleSendBuildsRequestParsesToolTurnAndUsage(t *testing.T) {
 
 	temp := 0.2
 	topP := 0.8
-	tool := agentkit.RawTool("lookup", "look up weather", json.RawMessage(`{
+	tool := testRawTool("lookup", "look up weather", json.RawMessage(`{
 		"type":"object",
 		"properties":{
 			"city":{"type":"string"},
@@ -635,7 +654,7 @@ func TestGoogleReplayedToolUsePlacesThoughtSignatureOnPart(t *testing.T) {
 	}))
 	defer server.Close()
 
-	tool := agentkit.RawTool("lookup", "look up weather", json.RawMessage(`{"type":"object"}`), func(ctx context.Context, input json.RawMessage) (string, error) {
+	tool := testRawTool("lookup", "look up weather", json.RawMessage(`{"type":"object"}`), func(ctx context.Context, input json.RawMessage) (string, error) {
 		return "sunny", nil
 	})
 	conv := &agentkit.Conversation{
@@ -994,7 +1013,7 @@ func TestGoogleSerializesPortableHistoryAfterProviderSwitch(t *testing.T) {
 	conv := &agentkit.Conversation{
 		Provider: first,
 		Model:    "first-model",
-		Tools: []agentkit.Tool{agentkit.RawTool("lookup", "lookup", json.RawMessage(`{"type":"object"}`), func(ctx context.Context, input json.RawMessage) (string, error) {
+		Tools: []agentkit.Tool{testRawTool("lookup", "lookup", json.RawMessage(`{"type":"object"}`), func(ctx context.Context, input json.RawMessage) (string, error) {
 			return "tool output", nil
 		})},
 	}

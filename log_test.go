@@ -103,7 +103,7 @@ func (failWriter) Write([]byte) (int, error) {
 
 func TestJSONLLogRecordsFollowProtocolEventOrder(t *testing.T) {
 	// R-PH7W-BVH0
-	tool := RawTool("lookup", "lookup", json.RawMessage(`{"type":"object"}`), func(context.Context, json.RawMessage) (string, error) {
+	tool := testRawTool("lookup", "lookup", json.RawMessage(`{"type":"object"}`), func(context.Context, json.RawMessage) (string, error) {
 		return "tool ok", nil
 	})
 	provider := &retryProvider{roundTrips: []*RoundTrip{
@@ -227,7 +227,7 @@ func TestFailingLogWriterDoesNotAffectTurn(t *testing.T) {
 
 func TestNilLogDisablesRecordWriting(t *testing.T) {
 	// R-PM3H-UYFS
-	tool := RawTool("lookup", "lookup", json.RawMessage(`{"type":"object"}`), func(context.Context, json.RawMessage) (string, error) {
+	tool := testRawTool("lookup", "lookup", json.RawMessage(`{"type":"object"}`), func(context.Context, json.RawMessage) (string, error) {
 		return "tool ok", nil
 	})
 	newConversation := func(log io.Writer) *Conversation {

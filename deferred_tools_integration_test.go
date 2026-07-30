@@ -25,7 +25,7 @@ func TestAnthropicLiveDeferredToolsLoadsAndCallsNativeTool(t *testing.T) {
 		toolName   = "reveal_deferred_probe"
 		toolOutput = "deferred-live-result:a8te-6b925f14"
 	)
-	tool := agentkit.RawTool(toolName, "Return the hidden live deferred-tools verification token.", json.RawMessage(`{
+	tool := testRawTool(toolName, "Return the hidden live deferred-tools verification token.", json.RawMessage(`{
 		"type":"object",
 		"properties":{
 			"reason":{"type":"string"}
