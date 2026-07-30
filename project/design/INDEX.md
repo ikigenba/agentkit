@@ -11,7 +11,7 @@ One line per Decision, in number order — file, label, and the Verification ids
 - **D3** `project/design/D03.md` — The canonical message & block data model
   - ids: R-IKKQ-Z3B4, R-ILSN-CV1T, R-IN0J-QMSI, R-IO8G-4EJ7, R-IPGC-I69W, R-XW08-D4YL
 - **D4** `project/design/D04.md` — The tool definition & registration surface
-  - ids: R-WYZP-N2VB, R-X07M-0UM0, R-X1FI-EMCP, R-X2NE-SE3E, R-SX1B-XRK2, R-SZH4-PB1G, R-X3VB-65U3, R-6ZTS-NFNZ
+  - ids: R-WYZP-N2VB, R-XZ8K-R3NX, R-Y0GH-4VEM, R-Y1OD-IN5B, R-Y2W9-WEW0, R-X07M-0UM0, R-X1FI-EMCP, R-SZH4-PB1G
 - **D5** `project/design/D05.md` — Provider packaging, construction credentials, and free-flow model selection
   - ids: R-CQO3-7EE9, R-CRVZ-L64Y, R-CT3V-YXVN, R-H65D-HYXH
 - **D6** `project/design/D06.md` — Generation settings and the native reasoning value
@@ -29,7 +29,7 @@ One line per Decision, in number order — file, label, and the Verification ids
 - **D12** `project/design/D12.md` — Raw HTTP, not wrapped SDKs
   - ids: none — structural
 - **D13** `project/design/D13.md` — Testing strategy
-  - ids: R-WJLM-7QRP, R-WKTI-LIIE, R-WM1E-ZA93, R-711P-17EO, R-CL9K-41F1, R-CMHG-HT5Q, R-CNPC-VKWF, R-COX9-9CN4, R-CQ55-N4DT, R-CRD2-0W4I, R-CSKY-ENV7, R-CTSU-SFLW
+  - ids: R-WJLM-7QRP, R-WKTI-LIIE, R-WM1E-ZA93, R-711P-17EO, R-CL9K-41F1, R-CMHG-HT5Q, R-CNPC-VKWF, R-Y5C2-NYDE, R-COX9-9CN4, R-CQ55-N4DT, R-CRD2-0W4I, R-CSKY-ENV7, R-CTSU-SFLW
 - **D15** `project/design/D15.md` — Structured JSONL event log & conversation lifecycle
   - ids: R-PH7W-BVH0, R-LNO6-EM5R, R-PIFS-PN7P, R-PJNP-3EYE, R-PKVL-H6P3, R-PM3H-UYFS, R-PNBE-8Q6H, R-POJA-MHX6, R-PPR7-09NV
 - **D16** `project/design/D16.md` — Dollar-cost accounting: the resolution seam
@@ -44,8 +44,8 @@ One line per Decision, in number order — file, label, and the Verification ids
   - ids: R-YPAA-0MYX, R-D8YK-XYIO
 - **D21** `project/design/D21.md` — The shared retry executor (`internal/retry`)
   - ids: R-IUBG-95CC, R-IWR9-0OTQ, R-IXZ5-EGKF, R-IZ71-S8B4, R-J0EY-601T
-- **D22** `project/design/D22.md` — Faithful tool-schema translation (provider-driven, no provider-name dispatch)
-  - ids: R-SKVI-TSZQ, R-SNBB-LCH4, R-SOJ7-Z47T, R-9QWF-E6VI, R-9S4B-RYM7, R-9TC8-5QCW, R-9UK4-JI3L
+- **D22** `project/design/D22.md` — Per-provider schema rendering at the adapter boundary
+  - ids: R-XT52-U8YG, R-XUCZ-80P5, R-XVKV-LSFU, R-XWSR-ZK6J, R-XY0O-DBX8
 - **D23** `project/design/D23.md` — Deferred tools & the built-in `load_tools` meta-tool
   - ids: R-9RQ8-9G3W, R-9SY4-N7UL, R-D5PT-82VU, R-D6XP-LUMJ, R-D85L-ZMD8, R-D9DI-DE3X, R-DALE-R5UM, R-DE93-WH2P, R-DBTB-4XLB, R-DD17-IPC0, R-B5BR-U5M1, R-B6JO-7XCQ, R-B7RK-LP3F, R-DFH0-A8TE
 - **D24** `project/design/D24.md` — The `openrouter` provider
@@ -55,7 +55,7 @@ One line per Decision, in number order — file, label, and the Verification ids
 - **D26** `project/design/D26.md` — The advisory model catalog: `agentkit/catalog`
   - ids: R-DMDH-5FOB, R-LOW2-SDWG, R-LRBV-JXDU, R-DNLD-J7F0, R-E7VN-JTZ0, R-LXFD-GS3B, R-LTRO-BGV8, R-LW7H-30CM, R-E5FU-SAHM, R-EBJC-P573, R-DOT9-WZ5P, R-DQ16-AQWE, R-DHKK-RZ7M, R-DISH-5QYB, R-DK0D-JIP0, R-EABG-BDGE, R-E6NR-628B, R-DNO2-OTX3, R-LYN9-UJU0, R-DOVZ-2LNS, R-DR92-OIN3, R-4NJ4-SJ41, R-DSGZ-2ADS
 - **D27** `project/design/D27.md` — The `toolkit` subpackage: standard coding tools, root confinement, output cap
-  - ids: R-LQ1Y-XASG, R-LR9V-B2J5, R-LSHR-OU9U, R-LTPO-2M0J, R-LUXK-GDR8, R-LW5G-U5HX
+  - ids: R-LQ1Y-XASG, R-LR9V-B2J5, R-Y446-A6MP, R-LSHR-OU9U, R-LTPO-2M0J, R-LUXK-GDR8, R-LW5G-U5HX
 - **D28** `project/design/D28.md` — `toolkit`: `Read`, `Write`, `Edit` semantics
   - ids: R-LXDD-7X8M, R-LYL9-LOZB, R-LZT5-ZGQ0, R-M28Y-R07E, R-M3GV-4RY3, R-M4OR-IJOS, R-M5WN-WBFH, R-M74K-A366, R-VGH5-GE0Q, R-VHP1-U5RF, R-VIWY-7XI4, R-VK4U-LP8T
 - **D29** `project/design/D29.md` — `toolkit`: `Bash` semantics
@@ -68,6 +68,8 @@ One line per Decision, in number order — file, label, and the Verification ids
   - ids: R-UQV9-F7G5, R-US35-SZ6U, R-GMLN-XC8W, R-UTB2-6QXJ, R-UUIY-KIO8, R-UVQU-YAEX, R-UWYR-C25M, R-UY6N-PTWB, R-UZEK-3LN0, R-V0MG-HDDP
 - **D33** `project/design/D33.md` — Raster normalization: images become one-page PDFs
   - ids: R-UJJV-4KZZ, R-UKRR-ICQO, R-ULZN-W4HD, R-UOFG-NNYR, R-UPND-1FPG
+- **D34** `project/design/D34.md` — The canonical tool-schema subset, owned by root
+  - ids: R-XLTO-JMIA, R-XRX6-GH7R, R-XN1K-XE8Z, R-XO9H-B5ZO, R-XQPA-2PH2
 
 ## Verification ids → Decision
 R-00IP-I9D7  D1  project/design/D01.md
@@ -92,15 +94,10 @@ R-6UY7-4CP7  D7  project/design/D07.md
 R-6W63-I4FW  D10  project/design/D10.md
 R-6XDZ-VW6L  D11  project/design/D11.md
 R-6YLW-9NXA  D11  project/design/D11.md
-R-6ZTS-NFNZ  D4  project/design/D04.md
 R-711P-17EO  D13  project/design/D13.md
 R-7CYE-KS40  D7  project/design/D07.md
-R-9QWF-E6VI  D22  project/design/D22.md
 R-9RQ8-9G3W  D23  project/design/D23.md
-R-9S4B-RYM7  D22  project/design/D22.md
 R-9SY4-N7UL  D23  project/design/D23.md
-R-9TC8-5QCW  D22  project/design/D22.md
-R-9UK4-JI3L  D22  project/design/D22.md
 R-B5BR-U5M1  D23  project/design/D23.md
 R-B6JO-7XCQ  D23  project/design/D23.md
 R-B7RK-LP3F  D23  project/design/D23.md
@@ -253,10 +250,6 @@ R-PVUO-X4DC  D16  project/design/D16.md
 R-PWEK-8JCV  D25  project/design/D25.md
 R-PX2L-AW41  D16  project/design/D16.md
 R-PXMG-MB3K  D25  project/design/D25.md
-R-SKVI-TSZQ  D22  project/design/D22.md
-R-SNBB-LCH4  D22  project/design/D22.md
-R-SOJ7-Z47T  D22  project/design/D22.md
-R-SX1B-XRK2  D4  project/design/D04.md
 R-SZH4-PB1G  D4  project/design/D04.md
 R-T06O-8SZX  D9  project/design/D09.md
 R-T40A-VZQ7  D6  project/design/D06.md
@@ -310,12 +303,26 @@ R-WM1E-ZA93  D13  project/design/D13.md
 R-WYZP-N2VB  D4  project/design/D04.md
 R-X07M-0UM0  D4  project/design/D04.md
 R-X1FI-EMCP  D4  project/design/D04.md
-R-X2NE-SE3E  D4  project/design/D04.md
-R-X3VB-65U3  D4  project/design/D04.md
+R-XLTO-JMIA  D34  project/design/D34.md
+R-XN1K-XE8Z  D34  project/design/D34.md
+R-XO9H-B5ZO  D34  project/design/D34.md
+R-XQPA-2PH2  D34  project/design/D34.md
 R-XR4M-U1ZT  D9  project/design/D09.md
+R-XRX6-GH7R  D34  project/design/D34.md
+R-XT52-U8YG  D22  project/design/D22.md
+R-XUCZ-80P5  D22  project/design/D22.md
+R-XVKV-LSFU  D22  project/design/D22.md
 R-XW08-D4YL  D3  project/design/D03.md
+R-XWSR-ZK6J  D22  project/design/D22.md
+R-XY0O-DBX8  D22  project/design/D22.md
+R-XZ8K-R3NX  D4  project/design/D04.md
 R-XZNX-IG6O  D10  project/design/D10.md
+R-Y0GH-4VEM  D4  project/design/D04.md
+R-Y1OD-IN5B  D4  project/design/D04.md
+R-Y2W9-WEW0  D4  project/design/D04.md
+R-Y446-A6MP  D27  project/design/D27.md
 R-Y4JJ-1J5G  D10  project/design/D10.md
+R-Y5C2-NYDE  D13  project/design/D13.md
 R-Y5RV-WB3T  D18  project/design/D18.md
 R-Y6ZS-A2UI  D18  project/design/D18.md
 R-Y810-TECF  D8  project/design/D08.md

@@ -132,7 +132,7 @@ usage := stream.Usage()
 Iterators beat channels (which leak goroutines on early `break` and force `select` plumbing) and callbacks (lose composability/early-exit). Early `break` makes `yield` return false → iterator returns and runs `defer` cleanup (close HTTP body) with no leak. Prefer the **terminal `Err()` accessor** over `iter.Seq2[Event,error]` (one stream error invalidates the whole sequence; `Seq2` is awkward and also can't carry setup/teardown errors). Pass `context.Context` as a normal arg, checked inside the loop. Go 1.26 changes no iterator semantics — stable.
 
 ### 4.3 Tool definition & JSON Schema
-Canonical internal representation = **JSON Schema as `json.RawMessage`**, cached, converted per-provider at the boundary. The typed edge derives the schema from the input struct via the approved `invopop/jsonschema` reflector; `RawTool` is the escape hatch for a hand-written schema. Generics live only at the registration edge, erased into a non-generic sealed interface:
+Canonical internal representation = **JSON Schema as `json.RawMessage`**, cached, rendered per-provider at the boundary. The typed edge derives the schema from the input struct by reflection; there is one constructor, no hand-written-schema escape hatch. Generics live only at the registration edge, erased into a non-generic sealed interface:
 
 ```go
 type Tool interface {
@@ -140,15 +140,14 @@ type Tool interface {
     Description() string
     JSONSchema() json.RawMessage
     Call(ctx context.Context, input json.RawMessage) (string, error)
-    isTool() // sealed: construct via NewTool or RawTool
+    isTool() // sealed: construct via NewTool
 }
 func NewTool[In any](name, description string, fn func(context.Context, In) (string, error)) Tool
-func RawTool(name, description string, schema json.RawMessage, fn func(context.Context, json.RawMessage) (string, error)) Tool
 ```
 
 `Call` returns `string`, not `any` — a tool result is text fed back to the model, so serializing at the tool boundary keeps the orchestrator free of reflection.
 
-Anthropic and OpenAI pass the schema through nearly verbatim. **Gemini needs a translation isolated in one place**, and it is *faithful*, not lossy-by-default: `$ref`/`$defs` are inlined, `oneOf` becomes `anyOf`, and only genuinely unconveyable residue (`additionalProperties`, `not`, `const`, unbounded recursion) is dropped — with a `WarnToolSchemaLossy` warning naming what was dropped, so a silently weakened schema is never shipped. The translation is schema-driven, never dispatched on provider name.
+**No single schema satisfies all three providers** (§18): `additionalProperties: false` is mandatory on every object for Anthropic and OpenAI under strict mode and a hard 400 on Gemini, so it can never be a keyword a tool author writes. Every provider therefore needs its own rendering, and the set of constructs a tool may use is the intersection of what all three dialects can express — derived from §18, not chosen. A construct outside it is rejected before any provider call rather than dropped, because §18.4 establishes that a non-strict provider accepting a keyword says nothing about whether it honors it.
 
 **Deferred tools** are a second tool source on the same surface: a consumer may register tools as *deferred*, in which case AgentKit synthesizes one built-in `load_tools` meta-tool whose description carries a generated catalog (per-group blurb + bare tool names). The model calls `load_tools` with exact tool or group names and they become ordinary live tools from the next round trip. The heavy per-tool descriptions and schemas stay out of the request until a tool is actually loaded.
 
@@ -1016,3 +1015,127 @@ All four returned identical prompt-token counts, meaning the image was tokenized
 | 114 | 559,805 | 158,051 | $0.2438 | 20.2s |
 
 Steady at roughly **$0.002 per page**. Note the scale gap between typical and tail: a bank statement is 2–8 pages and ~2–23k characters, while a scanned book is ~560k characters — roughly 19× any sane single tool-result cap. That gap is what forces extraction to disk rather than an inline return, and makes caching load-bearing rather than a nicety.
+
+## 18. Tool-schema dialects — measured, per provider (2026-07-30)
+
+Every row below was **measured against the live API**, not read from documentation. This matters:
+documentation was wrong in all three cases checked. Google's discovery document omits `allOf`/
+`oneOf`/`not`, which the API accepts. OpenAI's error text says `additionalProperties` "must be
+false" while schema-valued forms are accepted. Anthropic's published strict-mode keyword list
+implies `minLength`/`maxLength` are unsupported; both are accepted at any value. Treat this
+section as ground truth and the vendor prose as a lagging indicator.
+
+Probe substrates: Gemini `gemini-2.5-flash-lite` on `v1beta:generateContent` (~70 requests);
+OpenAI `gpt-4o-mini-2024-07-18` on Chat Completions (~45 schema fixtures, each run both
+model-chooses and forced `tool_choice`); Anthropic `claude-haiku-4-5-20251001` on `/v1/messages`
+with `anthropic-version: 2023-06-01`.
+
+### 18.1 Google Gemini — `functionDeclarations[].parameters`
+
+`parameters` is the protobuf message `google.ai.generativelanguage.v1beta.Schema`, parsed with
+strict protobuf-JSON. **Any key that is not a proto field fails the whole request with 400
+`INVALID_ARGUMENT` — "Unknown name … Cannot find field".** There is no lenient mode. This is the
+single most important fact about the Gemini dialect: an allowlist is mandatory, and a denylist
+breaks the moment a new JSON Schema keyword appears upstream.
+
+Accepted fields (22 documented): `type`, `description`, `title`, `nullable`, `format`, `enum`,
+`properties`, `required`, `items`, `minimum`, `maximum`, `minLength`, `maxLength`, `minItems`,
+`maxItems`, `minProperties`, `maxProperties`, `pattern`, `anyOf`, `propertyOrdering`, `default`
+(accepted and explicitly ignored per its own field doc), `example`. `allOf`, `oneOf` and `not`
+are also accepted and are real Schema-typed proto fields, but are **absent from the discovery
+document** — their semantics are unverified and they should not be relied on.
+
+Rejected with 400: `additionalProperties`, `$ref`, `$defs`, `definitions`, `$schema`, `$id`,
+`$anchor`, `$comment`, `const`, `patternProperties`, `propertyNames`, `if`/`then`/`else`,
+`dependentSchemas`, `dependentRequired`, `examples`, `exclusiveMinimum`, `exclusiveMaximum`,
+`prefixItems`, `uniqueItems`, `multipleOf`, `contains`, `unevaluatedProperties`,
+`unevaluatedItems`, `additionalItems`, `readOnly`, `writeOnly`, `deprecated`, `discriminator`.
+
+Details: `type` takes a single value only — `["string","null"]` is rejected, and nullability is
+expressed with `nullable: true`. `enum` is `string[]`; numeric enums have no representation.
+Both camelCase and snake_case parse (protobuf-JSON), but spelling is otherwise case-sensitive.
+
+Two facts that bound alternatives considered and not chosen. **`parametersJsonSchema`** is a
+mutually-exclusive sibling field taking untyped full JSON Schema; nothing is parse-rejected there,
+including invented keys, because unsupported keywords are dropped silently — it trades a loud
+failure for quiet semantic drift, which is why it is not used. **Vertex AI's `Schema` is a strict
+superset** of the Gemini API's, additionally accepting `additionalProperties`, `ref` and `defs`;
+the same schema therefore behaves differently on the two Google surfaces.
+
+### 18.2 OpenAI — `tools[].function.parameters` with `strict: true`
+
+Accepted **and grammar-enforced** (verified with adversarial prompts asking for violating values,
+e.g. `maxLength: 3` against a 26-character request returned `"abc"`): `minimum`, `maximum`,
+`exclusiveMinimum`, `exclusiveMaximum`, `multipleOf`, `minLength`, `maxLength`, `pattern`,
+`minItems`, `maxItems`, `enum`, `const` (only with a sibling `type`), `patternProperties`,
+`$ref`/`$defs` including **recursive** self-reference, `anyOf` inside a property, `title`,
+`default` (accepted, ignored), `$schema` at the root.
+
+Rejected: `allOf`, `oneOf`, `not`, `if`/`then`/`else`, `const` without `type`, root-level `anyOf`
+(rejected even without strict — `parameters` must be `type: "object"` unconditionally), and
+**`format: "uri"`**. The `uri` rejection is specific, not a general `format` restriction: `email`,
+`uuid`, `date`, `date-time`, `ipv4`, `duration`, `time`, `hostname` all pass.
+
+Two structural rules. **Every key in `properties` must appear in `required`** — there are no
+optional properties; optionality is expressed as `"type": ["T","null"]` or
+`anyOf: [{"type":"T"},{"type":"null"}]`, both accepted and both genuinely decoding `null`.
+**`additionalProperties` may not be omitted or `true`, at any nesting level** — a nested object
+missing it is a 400 — but a *schema-valued* `additionalProperties` is accepted despite the error
+text, and is enforced (an extra key was permitted with its value coerced to the declared type).
+
+### 18.3 Anthropic — `tools[].input_schema` with `strict: true`
+
+`strict` is a real sibling field of `name`/`description`/`input_schema` on a custom tool
+(an invented sibling returns "Extra inputs are not permitted"; `strict: true` returns 200).
+
+**Calibration that qualifies every "accepted" below:** the strict validator is type-keyed, and
+only the `object` branch validates its keyword set. `{"type":"string","zzzUnknown":true}` is
+accepted; the same unknown key on an object is rejected. So on non-object subschemas, "accepted"
+means "did not 400", not "is honored", unless the keyword was demonstrably inspected.
+
+Accepted: `minLength` and `maxLength` **at any value**, `pattern` (genuinely compiled — a
+lookahead is rejected as invalid regex, so the engine is RE2-like with no lookahead/lookbehind),
+`const`, `enum` (string, integer, or untyped), `allOf`, `anyOf`, `$ref` with `$defs` or draft-07
+`definitions`, `format` (allowlisted — `uri` and `date-time` pass, `zzz` is rejected), `title`,
+`default`, `minItems` with value 0 or 1.
+
+Rejected: `minimum`, `maximum`, `multipleOf`, `exclusiveMinimum` (all on numeric types),
+`maxItems`, `uniqueItems`, `minItems` with any value other than 0 or 1 (the error text leaks the
+allowlist), `oneOf`, `not`, `patternProperties`, and **recursive `$ref`** ("Circular reference
+detected … Self-referencing or mutually-referencing definitions are not supported").
+
+Structural rules, inverted from OpenAI's in two places. **Optional properties ARE allowed** — a
+property may be omitted from `required`, and `required` may be absent entirely. And
+**`additionalProperties: false` is mandatory on every object including nested ones**, with `true`
+*and schema-valued forms* both rejected — the opposite of OpenAI, which accepts a schema value.
+
+### 18.4 Non-strict mode — neither provider validates anything
+
+With `strict: false`, or `strict` absent, **every** form that 400s under strict is accepted by
+both Anthropic and OpenAI, and is silently ignored rather than enforced. Verified behaviourally
+rather than by status code: under non-strict OpenAI, `pattern: "^[0-9]{3}$"` emitted
+`"hello world"` and `minimum: 100` emitted `5`. Anthropic non-strict likewise accepted `minimum`,
+`oneOf`, `additionalProperties: true`, recursive `$ref`, and even `format: "zzz"`.
+
+This is the finding that forces strict mode on. Non-strict does not convey a constraint weakly —
+it does not convey it at all, while returning 200. A translation layer that treats "the provider
+accepted it" as "the provider honors it" would ship silently weakened tool contracts on two of
+three providers and never report it.
+
+### 18.5 The aggregators — no stable dialect of their own
+
+**OpenRouter** has no fixed dialect: it documents passing `parameters` through byte-for-byte to
+OpenAI-interface upstreams, *transforming* for custom-interface upstreams (Google, Anthropic), and
+falling back to rendering tools into a YAML prompt template for models with no native tool
+support. The effective dialect is therefore the routed upstream's, and the transform is
+undocumented and observed lossy: pydantic-ai ships an OpenRouter-only Gemini schema transformer
+because `$defs`/`$ref`/`anyOf` through OpenRouter produced **wrong tool arguments rather than a
+400**, while the same schema works against the Google API directly.
+
+**Z.ai** publishes no keyword contract at all — only "a JSON Schema object". Rich draft-07 schemas
+with `allOf`/`anyOf` are accepted, then under-honored by the model. It supports `tool_choice: auto`
+only, and has no `response_format: json_schema` and no per-function `strict`.
+
+Both fail silently and in opposite directions, so neither can serve as an oracle for whether a
+schema was too rich. The practical consequence is that a schema must be narrowed **before** it is
+sent, client-side, rather than discovered by probing.
