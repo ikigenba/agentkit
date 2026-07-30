@@ -51,6 +51,17 @@ boundary is load-bearing — it is what keeps the three from overlapping.
 
 ## Hard invariants (no writer relaxes these)
 
+- **Spec-first, direction-gated.** The spec is the only path by which the
+  codebase changes: behavior is never patched directly into application code —
+  it enters design as a Decision and the plan as a phase, and the build loop
+  implements it. The gate swings both ways: `project/**` itself is written only
+  inside an operator-invoked move (`$seal-spec` for authoring; the build loop's
+  completion mutations). In any other session `project/` is read-only
+  reference. Noticing the spec is stale, wrong, or incomplete is a finding to
+  report, never a license to edit it — and discussion is not direction:
+  however settled a conversation feels, reaching a conclusion is not an
+  instruction to act on it. Say what should change and wait for the operator
+  to invoke the move.
 - **Scope boundary.** A `project/` governs **only its own codebase** — the tree
   it sits at the root of, never a sibling service, the repo root, or shared
   tooling. No Decision may name a seam/file outside that tree; no phase may

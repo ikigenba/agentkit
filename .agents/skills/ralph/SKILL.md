@@ -60,6 +60,16 @@ ralph project/loops/gather.md project/loops/build.md project/loops/verify.md
                      (operator-launched, unattended: gather ─► build ─► verify ─► …)
 ```
 
+**The operator drives every arrow.** Each move starts only when the operator
+invokes it — the agent never advances the arc on its own initiative. In
+particular, concluding that the spec should change (however settled the
+discussion feels) is a finding to report, not permission to write: `project/**`
+is written only inside an operator-invoked `$seal-spec` pass (or by the build
+loop's completion mutations), and outside those moves it is read-only
+reference. This cuts both ways with spec-first: never patch application code
+directly to change behavior, and never edit the spec without the operator
+invoking the move.
+
 By convention the committed wrapper `project/loops/run` issues that full `ralph`
 invocation (with the operator's chosen harness/model flags), so launching the
 build is just `project/loops/run` — a typing-saver, nothing more.
