@@ -10,8 +10,8 @@ import (
 )
 
 type writeInput struct {
-	FilePath string `json:"file_path"`
-	Content  string `json:"content"`
+	FilePath string `json:"file_path" jsonschema:"description=Path of the file to write relative to the tool root."`
+	Content  string `json:"content,omitempty" jsonschema:"description=Complete content to write to the file."`
 }
 
 // Write returns a tool that creates or replaces files beneath root.

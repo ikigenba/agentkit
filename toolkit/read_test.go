@@ -7,6 +7,11 @@ import (
 	"testing"
 )
 
+func TestReadSchemaDescribesPropertiesAndRequiresFilePath(t *testing.T) {
+	// R-Y446-A6MP
+	assertToolSchema(t, Read(t.TempDir()), []string{"file_path"})
+}
+
 func TestReadReturnsExactContents(t *testing.T) {
 	// R-LXDD-7X8M
 	root := t.TempDir()

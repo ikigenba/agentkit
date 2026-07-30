@@ -10,10 +10,10 @@ import (
 )
 
 type editInput struct {
-	FilePath   string `json:"file_path"`
-	OldString  string `json:"old_string"`
-	NewString  string `json:"new_string"`
-	ReplaceAll bool   `json:"replace_all,omitempty"`
+	FilePath   string `json:"file_path" jsonschema:"description=Path of the file to edit relative to the tool root."`
+	OldString  string `json:"old_string,omitempty" jsonschema:"description=Exact text to replace."`
+	NewString  string `json:"new_string,omitempty" jsonschema:"description=Replacement text."`
+	ReplaceAll bool   `json:"replace_all,omitempty" jsonschema:"description=Replace every occurrence instead of requiring exactly one."`
 }
 
 // Edit returns a tool that replaces exact text in files beneath root.

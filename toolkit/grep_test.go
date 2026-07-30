@@ -6,6 +6,11 @@ import (
 	"testing"
 )
 
+func TestGrepSchemaDescribesPropertiesAndRequiresPattern(t *testing.T) {
+	// R-Y446-A6MP
+	assertToolSchema(t, Grep(t.TempDir()), []string{"pattern"})
+}
+
 func TestGrepDirectoryReturnsSortedMatchingLines(t *testing.T) {
 	// R-MKJG-HKBT
 	root := t.TempDir()

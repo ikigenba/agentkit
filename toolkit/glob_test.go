@@ -9,6 +9,11 @@ import (
 	"testing"
 )
 
+func TestGlobSchemaDescribesPropertiesAndRequiresPattern(t *testing.T) {
+	// R-Y446-A6MP
+	assertToolSchema(t, Glob(t.TempDir()), []string{"pattern"})
+}
+
 func TestGlobPlainPatternMatchesFilepathGlob(t *testing.T) {
 	// R-MEFY-KPMC
 	root := t.TempDir()

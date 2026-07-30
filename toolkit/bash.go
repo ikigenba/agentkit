@@ -16,8 +16,8 @@ import (
 const defaultBashTimeout = 120_000
 
 type bashInput struct {
-	Command string `json:"command"`
-	Timeout int    `json:"timeout,omitempty"`
+	Command string `json:"command" jsonschema:"description=Shell command to execute."`
+	Timeout int    `json:"timeout,omitempty" jsonschema:"description=Maximum execution time in milliseconds; defaults to 120000."`
 }
 
 // Bash returns a tool that runs shell commands with root as its working directory.

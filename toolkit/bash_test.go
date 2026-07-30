@@ -6,12 +6,20 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/ikigenba/agentkit"
 )
+
+func TestBashSchemaDescribesPropertiesAndRequiresCommand(t *testing.T) {
+	// R-Y446-A6MP
+	assertToolSchema(t, Bash(t.TempDir()), []string{"command"})
+}
 
 func TestBashRunsInRootWithCombinedOutput(t *testing.T) {
 	// R-M8CG-NUWV
@@ -22,6 +30,30 @@ func TestBashRunsInRootWithCombinedOutput(t *testing.T) {
 	}
 	if !strings.HasPrefix(got, root+"\n") || !strings.Contains(got, "stdout") || !strings.Contains(got, "stderr") {
 		t.Fatalf("Bash output = %q, want root and both streams", got)
+	}
+}
+
+func assertToolSchema(t *testing.T, tool agentkit.Tool, wantRequired []string) {
+	t.Helper()
+	var schema struct {
+		Properties map[string]struct {
+			Description string `json:"description"`
+		} `json:"properties"`
+		Required []string `json:"required"`
+	}
+	if err := json.Unmarshal(tool.JSONSchema(), &schema); err != nil {
+		t.Fatalf("unmarshal %s schema: %v", tool.Name(), err)
+	}
+	if len(schema.Properties) == 0 {
+		t.Fatalf("%s schema has no properties", tool.Name())
+	}
+	for name, property := range schema.Properties {
+		if strings.TrimSpace(property.Description) == "" {
+			t.Errorf("%s property %q has no description", tool.Name(), name)
+		}
+	}
+	if !reflect.DeepEqual(schema.Required, wantRequired) {
+		t.Errorf("%s required = %v, want %v", tool.Name(), schema.Required, wantRequired)
 	}
 }
 

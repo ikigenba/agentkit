@@ -16,9 +16,9 @@ import (
 )
 
 type grepInput struct {
-	Pattern string `json:"pattern"`
-	Path    string `json:"path,omitempty"`
-	Glob    string `json:"glob,omitempty"`
+	Pattern string `json:"pattern" jsonschema:"description=Regular expression to search for."`
+	Path    string `json:"path,omitempty" jsonschema:"description=File or directory beneath the tool root to search."`
+	Glob    string `json:"glob,omitempty" jsonschema:"description=Optional base-name glob used to select files."`
 }
 
 // Grep returns a tool that searches files beneath root line by line.

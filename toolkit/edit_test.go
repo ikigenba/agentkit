@@ -7,6 +7,11 @@ import (
 	"testing"
 )
 
+func TestEditSchemaDescribesPropertiesAndRequiresFilePath(t *testing.T) {
+	// R-Y446-A6MP
+	assertToolSchema(t, Edit(t.TempDir()), []string{"file_path"})
+}
+
 func TestEditReplacesUniqueOccurrence(t *testing.T) {
 	// R-M3GV-4RY3
 	root := t.TempDir()

@@ -12,9 +12,9 @@ import (
 )
 
 type readInput struct {
-	FilePath string `json:"file_path"`
-	Offset   int    `json:"offset,omitempty"`
-	Limit    int    `json:"limit,omitempty"`
+	FilePath string `json:"file_path" jsonschema:"description=Path of the file to read relative to the tool root."`
+	Offset   int    `json:"offset,omitempty" jsonschema:"description=One-based line number at which to start reading."`
+	Limit    int    `json:"limit,omitempty" jsonschema:"description=Maximum number of lines to return."`
 }
 
 // Read returns a tool that reads files beneath root.

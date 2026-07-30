@@ -6,6 +6,11 @@ import (
 	"testing"
 )
 
+func TestWriteSchemaDescribesPropertiesAndRequiresFilePath(t *testing.T) {
+	// R-Y446-A6MP
+	assertToolSchema(t, Write(t.TempDir()), []string{"file_path"})
+}
+
 func TestWriteCreatesParentsAndExactFile(t *testing.T) {
 	// R-M28Y-R07E
 	root := t.TempDir()

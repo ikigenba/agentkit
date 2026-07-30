@@ -14,8 +14,8 @@ import (
 )
 
 type globInput struct {
-	Pattern string `json:"pattern"`
-	Path    string `json:"path,omitempty"`
+	Pattern string `json:"pattern" jsonschema:"description=Glob pattern to match against paths."`
+	Path    string `json:"path,omitempty" jsonschema:"description=Directory beneath the tool root in which to search."`
 }
 
 // Glob returns a tool that finds paths beneath root matching a glob pattern.
