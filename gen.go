@@ -21,6 +21,5 @@ type WarningCode int
 
 const (
 	WarnToolChoiceForced WarningCode = iota
-	WarnToolSchemaLossy
 	WarnCostUnknown
 )

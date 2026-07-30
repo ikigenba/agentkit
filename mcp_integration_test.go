@@ -47,24 +47,6 @@ func (p *mcpTestProvider) Pricing(string) (Pricing, bool) {
 	return Pricing{Tiers: []RateTier{{InputUncached: 1, Output: 1}}}, true
 }
 
-type mcpSchemaTranslatorProvider struct {
-	mcpTestProvider
-	schemas []json.RawMessage
-}
-
-func (p *mcpSchemaTranslatorProvider) UntranslatableSchemaConstructs(schema json.RawMessage) []string {
-	p.schemas = append(p.schemas, append(json.RawMessage(nil), schema...))
-	var keywords []string
-	text := string(schema)
-	if strings.Count(text, `"$ref":"#/$defs/node"`) > 1 {
-		keywords = append(keywords, "$ref")
-	}
-	if strings.Contains(text, "additionalProperties") {
-		keywords = append(keywords, "additionalProperties")
-	}
-	return keywords
-}
-
 func TestMCPDiscoveryMergesToolsAndRoutesCalls(t *testing.T) {
 	// R-6GBE-J3SV
 	// R-6HJA-WVJK
@@ -545,18 +527,17 @@ func TestMCPDiscoveryRetriesButToolCallDoesNot(t *testing.T) {
 	}
 }
 
-func TestMCPToolsJoinDeterministicOrderAndSchemaWarnings(t *testing.T) {
+func TestMCPToolsJoinDeterministicOrder(t *testing.T) {
 	// R-6W63-I4FW
-	// R-6ZTS-NFNZ
 	serverA := newMCPListOnlyServer(t, "zeta", `{"type":"object","oneOf":[{"type":"object"}]}`)
 	defer serverA.Close()
-	serverB := newMCPListOnlyServer(t, "alpha", `{"type":"object","properties":{"x":{"$ref":"#/$defs/node"}},"additionalProperties":false,"$defs":{"node":{"type":"object","properties":{"x":{"$ref":"#/$defs/node"}}}}}`)
+	serverB := newMCPListOnlyServer(t, "alpha", `{"type":"object","properties":{"x":{"type":"string"}}}`)
 	defer serverB.Close()
 	serverM := newMCPListOnlyServer(t, "middle", `{"type":"object"}`)
 	defer serverM.Close()
 
 	custom := testRawTool("custom_mid", "custom", json.RawMessage(`{"type":"object"}`), func(context.Context, json.RawMessage) (string, error) { return "ok", nil })
-	provider := &mcpSchemaTranslatorProvider{mcpTestProvider: mcpTestProvider{name: "schema-translator"}}
+	provider := &mcpTestProvider{name: "fake"}
 	conv := &Conversation{
 		Provider: provider,
 		Model:    "mcp-model",
@@ -583,7 +564,6 @@ func TestMCPToolsJoinDeterministicOrderAndSchemaWarnings(t *testing.T) {
 			t.Fatalf("call %d tools = %v, want %v", i, got, want)
 		}
 	}
-	schemaWarnings := stream.Warnings()
 	conv.MCPServers = append(conv.MCPServers, MCPServer{Name: "srvM", URL: serverM.URL})
 	stream = conv.Send(context.Background(), "three")
 	drainMCP(stream)
@@ -607,43 +587,33 @@ func TestMCPToolsJoinDeterministicOrderAndSchemaWarnings(t *testing.T) {
 	if got := toolNames(provider.calls[3].Tools); !reflect.DeepEqual(got, want) {
 		t.Fatalf("detached-one tools = %v, want re-sorted remaining merged order %v", got, want)
 	}
-	if len(schemaWarnings) != 1 {
-		t.Fatalf("MCP schema warnings = %#v, want one warning", schemaWarnings)
-	}
-	for _, warning := range schemaWarnings {
-		if warning.Setting != "tool_schema" || warning.Code != WarnToolSchemaLossy {
-			t.Fatalf("MCP schema warning = %#v, want tool_schema/WarnToolSchemaLossy", warning)
-		}
-	}
-	// R-SKVI-TSZQ
-	if provider.Identity().Provider == ProviderGoogle {
-		t.Fatal("test provider name unexpectedly matched google")
-	}
-	detail := schemaWarnings[0].Detail
-	if !strings.Contains(detail, "srvA.alpha") {
-		t.Fatalf("warning %q does not attribute MCP tool srvA.alpha", detail)
-	}
-	if strings.Contains(detail, "srvZ.zeta") || strings.Contains(detail, "oneOf") {
-		t.Fatalf("warning %q should not include faithfully translatable srvZ.zeta oneOf schema", detail)
-	}
-	for _, keyword := range []string{"$ref", "additionalProperties"} {
-		if !strings.Contains(detail, keyword) {
-			t.Fatalf("warnings %q do not name dropped keyword %s", detail, keyword)
-		}
-	}
-	if len(provider.schemas) == 0 {
-		t.Fatalf("schema translator was not consulted")
-	}
+}
 
-	for _, name := range []string{"google", "anthropic", "openai"} {
-		nonLimiter := &mcpTestProvider{name: name}
-		conv = &Conversation{Provider: nonLimiter, Model: "mcp-model", Pricing: &Pricing{}, MCPServers: []MCPServer{{Name: "srvA", URL: serverB.URL}}}
-		stream = conv.Send(context.Background(), name)
-		drainMCP(stream)
-		// R-SNBB-LCH4
-		if len(stream.Warnings()) != 0 {
-			t.Fatalf("%s non-translator warnings = %#v, want none", name, stream.Warnings())
-		}
+func TestMCPSchemaOutsideSubsetIsAttributedAndRejectsWholeSend(t *testing.T) {
+	// R-XQPA-2PH2
+	server := newMCPListOnlyServer(t, "remote_tool", `{"type":"object","properties":{"count":{"type":"integer","minimum":1}}}`)
+	defer server.Close()
+	provider := &mcpTestProvider{}
+	history := []Message{{Role: RoleAssistant, Blocks: []Block{TextBlock{Text: "prior"}}}}
+	conv := &Conversation{
+		Provider:   provider,
+		Model:      "mcp-model",
+		History:    append([]Message(nil), history...),
+		MCPServers: []MCPServer{{Name: "inventory", URL: server.URL}},
+	}
+	stream := conv.Send(context.Background(), "hello")
+	drainMCP(stream)
+	if !errors.Is(stream.Err(), ErrInvalidConfig) {
+		t.Fatalf("Err() = %v, want ErrInvalidConfig", stream.Err())
+	}
+	if text := stream.Err().Error(); !strings.Contains(text, "inventory.remote_tool") || !strings.Contains(text, "minimum") || !strings.Contains(text, "#/properties/count/minimum") {
+		t.Fatalf("Err() = %q, want MCP attribution, construct, and location", text)
+	}
+	if !reflect.DeepEqual(conv.History, history) {
+		t.Fatalf("History changed: %#v", conv.History)
+	}
+	if len(provider.calls) != 0 {
+		t.Fatalf("provider calls = %d, want 0", len(provider.calls))
 	}
 }
 

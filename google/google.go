@@ -90,10 +90,6 @@ func (p *Provider) Identity() agentkit.Identity {
 	return agentkit.Identity{Provider: agentkit.ProviderGoogle, Auth: agentkit.AuthAPIKey}
 }
 
-func (p *Provider) UntranslatableSchemaConstructs(schema json.RawMessage) []string {
-	return untranslatableSchemaConstructs(schema)
-}
-
 func (p *Provider) RoundTrip(ctx context.Context, req *agentkit.Request) *agentkit.RoundTrip {
 	if req == nil {
 		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, nil, agentkit.ErrInvalidConfig, 0, false)
@@ -343,51 +339,6 @@ func convertSchemaArray(values []any, root any, stack map[string]bool) []any {
 		out = append(out, convertSchemaValue(value, root, stack))
 	}
 	return out
-}
-
-func untranslatableSchemaConstructs(raw json.RawMessage) []string {
-	var v any
-	if err := json.Unmarshal(raw, &v); err != nil {
-		return nil
-	}
-	seen := make(map[string]struct{})
-	collectUntranslatableSchemaConstructs(v, v, nil, seen)
-	keywords := make([]string, 0, len(seen))
-	for keyword := range seen {
-		keywords = append(keywords, keyword)
-	}
-	sort.Strings(keywords)
-	return keywords
-}
-
-func collectUntranslatableSchemaConstructs(v any, root any, stack map[string]bool, seen map[string]struct{}) {
-	switch v := v.(type) {
-	case map[string]any:
-		for k, child := range v {
-			switch k {
-			case "$ref":
-				ref, _ := child.(string)
-				resolved, ok := resolveLocalRef(root, ref)
-				if ref == "" || !ok || stack[ref] {
-					seen["$ref"] = struct{}{}
-					continue
-				}
-				nextStack := cloneRefStack(stack)
-				nextStack[ref] = true
-				collectUntranslatableSchemaConstructs(resolved, root, nextStack, seen)
-				continue
-			case "additionalProperties":
-				seen[k] = struct{}{}
-			case "$defs", "definitions":
-				continue
-			}
-			collectUntranslatableSchemaConstructs(child, root, stack, seen)
-		}
-	case []any:
-		for _, child := range v {
-			collectUntranslatableSchemaConstructs(child, root, stack, seen)
-		}
-	}
 }
 
 func cloneRefStack(stack map[string]bool) map[string]bool {

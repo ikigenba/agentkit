@@ -32,7 +32,7 @@ func (t loadToolsTool) Description() string {
 }
 
 func (t loadToolsTool) JSONSchema() json.RawMessage {
-	return json.RawMessage(`{"type":"object","properties":{"tools":{"type":"array","items":{"type":"string"}}},"required":["tools"],"additionalProperties":false}`)
+	return json.RawMessage(`{"type":"object","properties":{"tools":{"type":"array","items":{"type":"string"}}},"required":["tools"]}`)
 }
 
 func (t loadToolsTool) Call(context.Context, json.RawMessage) (string, error) {
@@ -84,8 +84,11 @@ func (c *Conversation) deferredToolCatalog(base []Tool) (*deferredCatalog, error
 
 	seen := make(map[string]struct{}, len(base)+1)
 	for _, tool := range base {
-		if tool == nil || tool.Name() == "" || !validJSONSchema(tool.JSONSchema()) {
+		if tool == nil || tool.Name() == "" {
 			return nil, ErrInvalidConfig
+		}
+		if err := validateToolSchema(tool.JSONSchema()); err != nil {
+			return nil, fmt.Errorf("%w: tool %s schema %v", ErrInvalidConfig, toolValidationName(tool), err)
 		}
 		name := tool.Name()
 		if name == loadToolsName {
@@ -110,8 +113,11 @@ func (c *Conversation) deferredToolCatalog(base []Tool) (*deferredCatalog, error
 			catalog.groups[group.Name] = nil
 		}
 		for _, tool := range group.Tools {
-			if tool == nil || tool.Name() == "" || !validJSONSchema(tool.JSONSchema()) {
+			if tool == nil || tool.Name() == "" {
 				return nil, ErrInvalidConfig
+			}
+			if err := validateToolSchema(tool.JSONSchema()); err != nil {
+				return nil, fmt.Errorf("%w: tool %s schema %v", ErrInvalidConfig, toolValidationName(tool), err)
 			}
 			name := tool.Name()
 			if _, ok := seen[name]; ok {

@@ -1,12 +1,16 @@
 package agentkit
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"regexp"
 	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ikigenba/agentkit/internal/mcp"
@@ -443,8 +447,8 @@ func validateAndSortTools(tools []Tool) ([]Tool, error) {
 			return nil, ErrInvalidConfig
 		}
 		seen[tool.Name()] = struct{}{}
-		if !validJSONSchema(tool.JSONSchema()) {
-			return nil, ErrInvalidConfig
+		if err := validateToolSchema(tool.JSONSchema()); err != nil {
+			return nil, fmt.Errorf("%w: tool %s schema %v", ErrInvalidConfig, toolValidationName(tool), err)
 		}
 	}
 	sort.SliceStable(sorted, func(i, j int) bool {
@@ -453,17 +457,256 @@ func validateAndSortTools(tools []Tool) ([]Tool, error) {
 	return sorted, nil
 }
 
-func validJSONSchema(schema json.RawMessage) bool {
-	var v any
-	if err := json.Unmarshal(schema, &v); err != nil {
-		return false
+func toolValidationName(tool Tool) string {
+	if tool, ok := tool.(*mcpTool); ok {
+		return tool.server + "." + tool.originalName
 	}
-	switch v.(type) {
-	case bool, map[string]any:
+	return tool.Name()
+}
+
+var toolSchemaFormats = map[string]struct{}{
+	"date-time": {},
+	"date":      {},
+	"time":      {},
+	"duration":  {},
+	"email":     {},
+	"hostname":  {},
+	"ipv4":      {},
+	"ipv6":      {},
+	"uuid":      {},
+}
+
+// validateToolSchema is the sole authority on membership in AgentKit's
+// provider-independent, canonical tool-schema subset.
+func validateToolSchema(schema json.RawMessage) error {
+	decoder := json.NewDecoder(bytes.NewReader(schema))
+	decoder.UseNumber()
+	var v any
+	if err := decoder.Decode(&v); err != nil {
+		return fmt.Errorf("at #: invalid JSON: %v", err)
+	}
+	if err := decoder.Decode(new(any)); err == nil {
+		return errors.New("at #: invalid JSON: multiple values")
+	} else if !errors.Is(err, io.EOF) {
+		return fmt.Errorf("at #: invalid JSON: %v", err)
+	}
+
+	root, ok := v.(map[string]any)
+	if !ok {
+		return fmt.Errorf("at #: root shape must be an object schema with type %q", "object")
+	}
+	if typ, ok := root["type"].(string); !ok || typ != "object" {
+		return fmt.Errorf("at #/type: root shape must have type %q", "object")
+	}
+	if err := validateSchemaObject(root, "#"); err != nil {
+		return err
+	}
+	return validateSchemaRefs(root, root, "#", nil)
+}
+
+func validateSchemaObject(schema map[string]any, pointer string) error {
+	keywords := make([]string, 0, len(schema))
+	for keyword := range schema {
+		keywords = append(keywords, keyword)
+	}
+	sort.Strings(keywords)
+	for _, keyword := range keywords {
+		value := schema[keyword]
+		location := pointer + "/" + escapeJSONPointer(keyword)
+		switch keyword {
+		case "type":
+			typ, ok := value.(string)
+			if !ok || !validSchemaType(typ) {
+				return fmt.Errorf("at %s: type must be one supported single string value", location)
+			}
+		case "description", "title":
+			if _, ok := value.(string); !ok {
+				return fmt.Errorf("at %s: %s must be a string", location, keyword)
+			}
+		case "properties", "$defs":
+			children, ok := value.(map[string]any)
+			if !ok {
+				return fmt.Errorf("at %s: %s must be an object", location, keyword)
+			}
+			for name, child := range children {
+				childSchema, ok := child.(map[string]any)
+				if !ok {
+					return fmt.Errorf("at %s/%s: schema must be an object", location, escapeJSONPointer(name))
+				}
+				if err := validateSchemaObject(childSchema, location+"/"+escapeJSONPointer(name)); err != nil {
+					return err
+				}
+			}
+		case "required":
+			if !stringArray(value) {
+				return fmt.Errorf("at %s: required must contain only strings", location)
+			}
+		case "items":
+			child, ok := value.(map[string]any)
+			if !ok {
+				return fmt.Errorf("at %s: items must be a schema object", location)
+			}
+			if err := validateSchemaObject(child, location); err != nil {
+				return err
+			}
+		case "enum":
+			if !stringArray(value) {
+				return fmt.Errorf("at %s: enum must contain only string values", location)
+			}
+		case "const":
+			if _, ok := value.(string); !ok {
+				return fmt.Errorf("at %s: const must be a string value", location)
+			}
+		case "anyOf", "oneOf":
+			children, ok := value.([]any)
+			if !ok || len(children) == 0 {
+				return fmt.Errorf("at %s: %s must be a non-empty schema array", location, keyword)
+			}
+			for i, child := range children {
+				childSchema, ok := child.(map[string]any)
+				childLocation := location + "/" + strconv.Itoa(i)
+				if !ok {
+					return fmt.Errorf("at %s: schema must be an object", childLocation)
+				}
+				if err := validateSchemaObject(childSchema, childLocation); err != nil {
+					return err
+				}
+			}
+		case "$ref":
+			if _, ok := value.(string); !ok {
+				return fmt.Errorf("at %s: $ref must be a string", location)
+			}
+		case "minLength", "maxLength":
+			if !nonnegativeInteger(value) {
+				return fmt.Errorf("at %s: %s must be a non-negative integer", location, keyword)
+			}
+		case "pattern":
+			pattern, ok := value.(string)
+			if !ok {
+				return fmt.Errorf("at %s: pattern must be a string", location)
+			}
+			if _, err := regexp.Compile(pattern); err != nil {
+				return fmt.Errorf("at %s: pattern is not RE2-safe: %v", location, err)
+			}
+		case "minItems":
+			number, ok := value.(json.Number)
+			if !ok || (number.String() != "0" && number.String() != "1") {
+				return fmt.Errorf("at %s: minItems must be 0 or 1", location)
+			}
+		case "format":
+			format, ok := value.(string)
+			if _, allowed := toolSchemaFormats[format]; !ok || !allowed {
+				return fmt.Errorf("at %s: format %q is outside the canonical allowlist", location, format)
+			}
+		case "default":
+			// Defaults are annotations and may carry any JSON value.
+		default:
+			return fmt.Errorf("at %s: construct %q is outside the canonical subset", location, keyword)
+		}
+	}
+	return nil
+}
+
+func validateSchemaRefs(schema, root map[string]any, pointer string, active map[string]bool) error {
+	if ref, ok := schema["$ref"].(string); ok {
+		location := pointer + "/$ref"
+		target, found := resolveToolSchemaRef(root, ref)
+		if !found {
+			return fmt.Errorf("at %s: $ref %q cannot be resolved", location, ref)
+		}
+		if active[ref] {
+			return fmt.Errorf("at %s: recursive $ref %q is outside the canonical subset", location, ref)
+		}
+		next := make(map[string]bool, len(active)+1)
+		for key, value := range active {
+			next[key] = value
+		}
+		next[ref] = true
+		if err := validateSchemaRefs(target, root, location, next); err != nil {
+			return err
+		}
+	}
+
+	for _, keyword := range []string{"properties", "$defs"} {
+		children, _ := schema[keyword].(map[string]any)
+		for name, child := range children {
+			if err := validateSchemaRefs(child.(map[string]any), root, pointer+"/"+escapeJSONPointer(keyword)+"/"+escapeJSONPointer(name), active); err != nil {
+				return err
+			}
+		}
+	}
+	if child, ok := schema["items"].(map[string]any); ok {
+		if err := validateSchemaRefs(child, root, pointer+"/items", active); err != nil {
+			return err
+		}
+	}
+	for _, keyword := range []string{"anyOf", "oneOf"} {
+		children, _ := schema[keyword].([]any)
+		for i, child := range children {
+			if err := validateSchemaRefs(child.(map[string]any), root, pointer+"/"+keyword+"/"+strconv.Itoa(i), active); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func resolveToolSchemaRef(root map[string]any, ref string) (map[string]any, bool) {
+	if ref == "#" {
+		return root, true
+	}
+	if !strings.HasPrefix(ref, "#/") {
+		return nil, false
+	}
+	var current any = root
+	for _, token := range strings.Split(strings.TrimPrefix(ref, "#/"), "/") {
+		token = strings.ReplaceAll(strings.ReplaceAll(token, "~1", "/"), "~0", "~")
+		object, ok := current.(map[string]any)
+		if !ok {
+			return nil, false
+		}
+		current, ok = object[token]
+		if !ok {
+			return nil, false
+		}
+	}
+	resolved, ok := current.(map[string]any)
+	return resolved, ok
+}
+
+func validSchemaType(typ string) bool {
+	switch typ {
+	case "object", "array", "string", "number", "integer", "boolean", "null":
 		return true
 	default:
 		return false
 	}
+}
+
+func stringArray(value any) bool {
+	values, ok := value.([]any)
+	if !ok {
+		return false
+	}
+	for _, value := range values {
+		if _, ok := value.(string); !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func nonnegativeInteger(value any) bool {
+	number, ok := value.(json.Number)
+	if !ok || strings.ContainsAny(number.String(), ".eE-") {
+		return false
+	}
+	_, err := strconv.ParseUint(number.String(), 10, 64)
+	return err == nil
+}
+
+func escapeJSONPointer(value string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(value, "~", "~0"), "/", "~1")
 }
 
 func toolUses(message Message) []ToolUseBlock {

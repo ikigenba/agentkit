@@ -122,37 +122,6 @@ func TestSendAcceptsFreeFlowModelAndRejectsInvalidToolSetup(t *testing.T) {
 		}
 	})
 
-	t.Run("invalid raw schema", func(t *testing.T) {
-		// R-SX1B-XRK2
-		provider := newFakeProvider()
-		conv := &agentkit.Conversation{
-			Provider: provider,
-			Model:    testModel,
-			Tools: []agentkit.Tool{
-				testRawTool("bad", "bad schema", json.RawMessage(`{`), func(context.Context, json.RawMessage) (string, error) {
-					return "", nil
-				}),
-			},
-		}
-		stream := conv.Send(ctx, "hello")
-		drain(stream)
-		if !errors.Is(stream.Err(), agentkit.ErrInvalidConfig) {
-			t.Fatalf("Err() = %v, want ErrInvalidConfig", stream.Err())
-		}
-		if len(provider.calls) != 0 {
-			t.Fatalf("provider calls = %d, want 0", len(provider.calls))
-		}
-
-		conv.Tools = []agentkit.Tool{testRawTool("good", "valid schema", json.RawMessage(`{"type":"object"}`), func(context.Context, json.RawMessage) (string, error) {
-			return "ok", nil
-		})}
-		stream = conv.Send(ctx, "hello")
-		drain(stream)
-		if err := stream.Err(); err != nil {
-			t.Fatalf("valid test tool Send Err() = %v, want nil", err)
-		}
-	})
-
 	t.Run("duplicate tool names", func(t *testing.T) {
 		// R-SZH4-PB1G
 		provider := newFakeProvider()

@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -26,12 +25,6 @@ type mcpTool struct {
 	server       string
 	originalName string
 	client       *mcp.Client
-}
-
-// ToolSchemaTranslator reports JSON Schema constructs a provider cannot carry
-// faithfully when serializing tools to its native API shape.
-type ToolSchemaTranslator interface {
-	UntranslatableSchemaConstructs(schema json.RawMessage) []string
 }
 
 func (t *mcpTool) Name() string {
@@ -87,7 +80,7 @@ func (c *Conversation) resolveTools(ctx context.Context) ([]Tool, []Warning, err
 	if err != nil {
 		return nil, nil, err
 	}
-	return tools, c.toolSchemaWarnings(tools), nil
+	return tools, nil, nil
 }
 
 func (c *Conversation) resolveMCPTools(ctx context.Context) ([]Tool, error) {
@@ -167,34 +160,6 @@ func (c *Conversation) discoverMCPTools(ctx context.Context, serverName string, 
 		}
 		return nil, mcpError(serverName, err)
 	}, retryDecision, nil)
-}
-
-func (c *Conversation) toolSchemaWarnings(tools []Tool) []Warning {
-	translator, ok := c.Provider.(ToolSchemaTranslator)
-	if c.Provider == nil || !ok {
-		return nil
-	}
-	var warnings []Warning
-	for _, tool := range tools {
-		constructs := append([]string(nil), translator.UntranslatableSchemaConstructs(tool.JSONSchema())...)
-		sort.Strings(constructs)
-		if len(constructs) == 0 {
-			continue
-		}
-		warnings = append(warnings, Warning{
-			Setting: "tool_schema",
-			Code:    WarnToolSchemaLossy,
-			Detail:  fmt.Sprintf("%s schema uses untranslatable constructs: %s", toolSchemaWarningName(tool), strings.Join(constructs, ", ")),
-		})
-	}
-	return warnings
-}
-
-func toolSchemaWarningName(tool Tool) string {
-	if mt, ok := tool.(*mcpTool); ok {
-		return mt.server + "." + mt.originalName
-	}
-	return tool.Name()
 }
 
 func (c *Conversation) closeMCP(ctx context.Context) {

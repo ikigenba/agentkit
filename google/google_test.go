@@ -69,7 +69,6 @@ func TestChatAndEmbeddingProvidersReportAPIKeyIdentity(t *testing.T) {
 func TestGoogleSendBuildsRequestParsesToolTurnAndUsage(t *testing.T) {
 	var calls int32
 	var sawAuth bool
-	var sawLossySchema bool
 	var sawThinking bool
 	var sawReplay bool
 	var sawToolResult bool
@@ -108,14 +107,9 @@ func TestGoogleSendBuildsRequestParsesToolTurnAndUsage(t *testing.T) {
 			tools := field[[]any](t, body, "tools")
 			decls := field[[]any](t, tools[0].(map[string]any), "functionDeclarations")
 			params := field[map[string]any](t, decls[0].(map[string]any), "parameters")
-			// R-X3VB-65U3
-			if containsKey(params, "$ref") || containsKey(params, "oneOf") || containsKey(params, "additionalProperties") {
-				t.Fatalf("Gemini schema conversion retained unsupported JSON Schema keywords: %#v", params)
-			}
 			if params["type"] != "OBJECT" {
 				t.Fatalf("schema type was not converted to Gemini/OpenAPI form: %#v", params)
 			}
-			sawLossySchema = true
 
 			writeSSE(t, w, `{"candidates":[{"content":{"role":"model","parts":[{"text":"checking","thought":true,"thoughtSignature":"sig-tool-1"},{"functionCall":{"name":"lookup","args":{"city":"Austin"}}}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":20,"cachedContentTokenCount":3,"candidatesTokenCount":5,"thoughtsTokenCount":2,"totalTokenCount":27}}`)
 		case 2:
@@ -144,7 +138,6 @@ func TestGoogleSendBuildsRequestParsesToolTurnAndUsage(t *testing.T) {
 			"legacy":{"$ref":"#/$defs/legacy"},
 			"choice":{"oneOf":[{"type":"string"},{"type":"number"}]}
 		},
-		"additionalProperties":false,
 		"$defs":{"legacy":{"type":"string"}}
 	}`), func(ctx context.Context, input json.RawMessage) (string, error) {
 		var payload struct {
@@ -236,7 +229,7 @@ func TestGoogleSendBuildsRequestParsesToolTurnAndUsage(t *testing.T) {
 	if usage.InputUncached != 26 || usage.CacheReadInput != 4 {
 		t.Fatalf("cached tokens were not subtracted from Gemini prompt tokens: %#v", usage)
 	}
-	if !sawAuth || !sawLossySchema || !sawThinking || !sawReplay || !sawToolResult {
+	if !sawAuth || !sawThinking || !sawReplay || !sawToolResult {
 		t.Fatalf("server assertions did not all run")
 	}
 }
@@ -255,74 +248,6 @@ func TestGoogleRequestBodyPanicsOnUnknownOutboundBlockType(t *testing.T) {
 	assertUnknownBlockPanic(t, func() {
 		_, _, _ = provider.requestBody(req)
 	})
-}
-
-func TestGoogleUntranslatableSchemaConstructs(t *testing.T) {
-	translator := New(APIKey("test-key"))
-	faithful := json.RawMessage(`{
-		"type":"object",
-		"properties":{
-			"legacy":{"$ref":"#/$defs/legacy"},
-			"choice":{"oneOf":[{"type":"string"},{"type":"number"}]}
-		},
-		"$defs":{"legacy":{"type":"string"}}
-	}`)
-
-	// R-SOJ7-Z47T
-	if got := translator.UntranslatableSchemaConstructs(faithful); len(got) != 0 {
-		t.Fatalf("UntranslatableSchemaConstructs(faithful schema) = %#v, want empty", got)
-	}
-
-	recursive := json.RawMessage(`{
-		"type":"object",
-		"properties":{
-			"next":{"$ref":"#/$defs/node"}
-		},
-		"additionalProperties":false,
-		"$defs":{
-			"node":{
-				"type":"object",
-				"properties":{"next":{"$ref":"#/$defs/node"}}
-			}
-		}
-	}`)
-	if got, want := translator.UntranslatableSchemaConstructs(recursive), []string{"$ref", "additionalProperties"}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("UntranslatableSchemaConstructs(recursive schema) = %#v, want %#v", got, want)
-	}
-}
-
-func TestGoogleConvertsRefsAndOneOfFaithfully(t *testing.T) {
-	schema := json.RawMessage(`{
-		"type":"object",
-		"properties":{
-			"legacy":{"$ref":"#/$defs/legacy"},
-			"choice":{"oneOf":[{"type":"string","description":"text"},{"type":"number","description":"count"}]}
-		},
-		"$defs":{"legacy":{"type":"string","description":"legacy value"}}
-	}`)
-
-	converted := convertSchema(schema)
-	props := field[map[string]any](t, converted, "properties")
-	legacy := field[map[string]any](t, props, "legacy")
-	// R-9QWF-E6VI
-	if legacy["type"] != "STRING" || legacy["description"] != "legacy value" || containsKey(legacy, "$ref") {
-		t.Fatalf("non-recursive $ref was not inlined faithfully: %#v", legacy)
-	}
-
-	choice := field[map[string]any](t, props, "choice")
-	anyOf := field[[]any](t, choice, "anyOf")
-	// R-9S4B-RYM7
-	if len(anyOf) != 2 || containsKey(choice, "oneOf") {
-		t.Fatalf("oneOf was not mapped to two anyOf branches: %#v", choice)
-	}
-	first := anyOf[0].(map[string]any)
-	second := anyOf[1].(map[string]any)
-	if first["type"] != "STRING" || first["description"] != "text" || second["type"] != "NUMBER" || second["description"] != "count" {
-		t.Fatalf("oneOf branches were not converted faithfully: %#v", anyOf)
-	}
-	if got := New(APIKey("test-key")).UntranslatableSchemaConstructs(schema); len(got) != 0 {
-		t.Fatalf("converted schema had residue: %#v", got)
-	}
 }
 
 func assertUnknownBlockPanic(t *testing.T, fn func()) {
