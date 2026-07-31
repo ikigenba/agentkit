@@ -4,5 +4,4 @@ The manifest, and a work **queue**: one line per **pending** phase, in build ord
 
 Next phase: 110
 
-- Phase 108 ⬜ realizes D38 (R-UNQN-ZAH5) — `anthropic`, `zai`, and `openrouter` report their own missing credential
 - Phase 109 ⬜ realizes — — changelog and the v0.15.0 minor release
