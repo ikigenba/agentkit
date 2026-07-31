@@ -13,6 +13,12 @@
       "skillPath": "create-gather-build-verify-prompts/SKILL.md",
       "computedHash": "ea7a041e86f8c179313663597002814b6d220f3ce49adc57cb50455583aaf4a7"
     },
+    "doctor": {
+      "source": "ikigenba/skills",
+      "sourceType": "github",
+      "skillPath": "doctor/SKILL.md",
+      "computedHash": "21834e88beb4b8d897dd2e903c2df6404636149951ace67205a06613ad44e8ff"
+    },
     "grill-me": {
       "source": "ikigenba/skills",
       "sourceType": "github",
