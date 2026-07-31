@@ -70,6 +70,8 @@ One line per Decision, in number order — file, label, and the Verification ids
   - ids: R-UJJV-4KZZ, R-UKRR-ICQO, R-ULZN-W4HD, R-UOFG-NNYR, R-UPND-1FPG
 - **D34** `project/design/D34.md` — The canonical tool-schema subset, owned by root
   - ids: R-XLTO-JMIA, R-XRX6-GH7R, R-XN1K-XE8Z, R-XO9H-B5ZO, R-XQPA-2PH2, R-ZPPN-6FV9, R-6QNT-WR7C, R-U3C5-4A1V
+- **D35** `project/design/D35.md` — The assembled message is transport-shape-independent
+  - ids: R-QUWY-MLCD, R-QW4V-0D32, R-QXCR-E4TR, R-QYKN-RWKG, R-QZSK-5OB5, R-R10G-JG1U
 
 ## Verification ids → Decision
 R-00IP-I9D7  D1  project/design/D01.md
@@ -256,6 +258,12 @@ R-PVUO-X4DC  D16  project/design/D16.md
 R-PWEK-8JCV  D25  project/design/D25.md
 R-PX2L-AW41  D16  project/design/D16.md
 R-PXMG-MB3K  D25  project/design/D25.md
+R-QUWY-MLCD  D35  project/design/D35.md
+R-QW4V-0D32  D35  project/design/D35.md
+R-QXCR-E4TR  D35  project/design/D35.md
+R-QYKN-RWKG  D35  project/design/D35.md
+R-QZSK-5OB5  D35  project/design/D35.md
+R-R10G-JG1U  D35  project/design/D35.md
 R-SZH4-PB1G  D4  project/design/D04.md
 R-T06O-8SZX  D9  project/design/D09.md
 R-T40A-VZQ7  D6  project/design/D06.md
