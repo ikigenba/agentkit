@@ -4,6 +4,5 @@ The manifest, and a work **queue**: one line per **pending** phase, in build ord
 
 Next phase: 103
 
-- Phase 100 ⬜ realizes R-1LWA-VRRX, R-1N47-9JIM, R-1OC3-NB9B, R-1QRW-EUQP, R-1RZS-SMHE, R-1T7P-6E83, R-1UFL-K5YS, R-1VNH-XXPH — `toolkit.WebFetch`: page fetch with in-house HTML→markdown
 - Phase 101 ⬜ realizes R-1EKW-L5BR, R-1FSS-YX2G, R-1H0P-COT5, R-1I8L-QGJU, R-1JGI-48AJ, R-1KOE-I018 — `toolkit.WebSearch`: Brave-backed web search
 - Phase 102 ⬜ realizes — — Changelog and the v0.14.0 minor release
