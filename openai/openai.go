@@ -102,12 +102,8 @@ func New(cred Credential, opts ...Option) *Provider {
 
 // NewEmbedder constructs an OpenAI embeddings provider.
 func NewEmbedder(cred Credential, opts ...Option) agentkit.EmbeddingProvider {
-	apiKey, ok := cred.(APIKey)
-	if !ok {
-		panic("openai: embeddings require an APIKey credential")
-	}
-	p := New(apiKey, opts...)
-	return &embeddingProvider{cfg: openaicompat.EmbeddingConfig{
+	p := New(cred, opts...)
+	embedder := &embeddingProvider{cfg: openaicompat.EmbeddingConfig{
 		Identity:   agentkit.Identity{Provider: agentkit.ProviderOpenAI, Auth: agentkit.AuthAPIKey},
 		BaseURL:    p.baseURL,
 		APIKey:     p.apiKey,
@@ -115,6 +111,10 @@ func NewEmbedder(cred Credential, opts ...Option) agentkit.EmbeddingProvider {
 		Now:        p.now,
 		Classify:   classifyEmbedding,
 	}}
+	if p.subscription {
+		embedder.credentialErr = fmt.Errorf("openai: a ChatGPT subscription credential cannot serve embeddings; an API key is required: %w", agentkit.ErrInvalidConfig)
+	}
+	return embedder
 }
 
 // Identity identifies the OpenAI package and selected credential mode.
@@ -127,8 +127,16 @@ func (p *Provider) Identity() agentkit.Identity {
 
 // RoundTrip performs one OpenAI Responses API model call.
 func (p *Provider) RoundTrip(ctx context.Context, req *agentkit.Request) *agentkit.RoundTrip {
-	if p == nil || (p.apiKey == "" && (!p.subscription || p.tokenSource == nil)) || req == nil {
+	if p == nil || req == nil {
 		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, nil, agentkit.ErrInvalidConfig, 0, false)
+	}
+	if p.subscription && p.tokenSource == nil {
+		err := fmt.Errorf("openai: ChatGPT subscription token source is absent: %w", agentkit.ErrMissingCredential)
+		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, nil, err, 0, false)
+	}
+	if !p.subscription && p.apiKey == "" {
+		err := fmt.Errorf("openai: API key is absent: %w", agentkit.ErrMissingCredential)
+		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, nil, err, 0, false)
 	}
 	bearer := p.apiKey
 	accountID := ""
@@ -189,7 +197,8 @@ func (p *Provider) RoundTrip(ctx context.Context, req *agentkit.Request) *agentk
 }
 
 type embeddingProvider struct {
-	cfg openaicompat.EmbeddingConfig
+	cfg           openaicompat.EmbeddingConfig
+	credentialErr error
 }
 
 func (p *embeddingProvider) Identity() agentkit.Identity {
@@ -202,6 +211,13 @@ func (p *embeddingProvider) Identity() agentkit.Identity {
 func (p *embeddingProvider) Embed(ctx context.Context, req *agentkit.EmbedRequest) *agentkit.EmbedRoundTrip {
 	if p == nil {
 		return agentkit.NewEmbedRoundTrip(nil, agentkit.EmbeddingUsage{}, nil, agentkit.ErrInvalidConfig)
+	}
+	if p.credentialErr != nil {
+		return agentkit.NewEmbedRoundTrip(nil, agentkit.EmbeddingUsage{}, nil, p.credentialErr)
+	}
+	if p.cfg.APIKey == "" {
+		err := fmt.Errorf("openai: API key is absent: %w", agentkit.ErrMissingCredential)
+		return agentkit.NewEmbedRoundTrip(nil, agentkit.EmbeddingUsage{}, nil, err)
 	}
 	return openaicompat.NewEmbeddingProvider(p.cfg).Embed(ctx, req)
 }

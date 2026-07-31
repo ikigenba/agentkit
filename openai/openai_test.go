@@ -464,6 +464,63 @@ func TestCredentialModesSelectIdentityAndProviderErrorAttribution(t *testing.T) 
 	}
 }
 
+func TestMissingChatCredentialsFailAtSendWithoutTransport(t *testing.T) {
+	// R-UIV2-G7ID
+	var requests int
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		requests++
+	}))
+	defer server.Close()
+
+	tests := []struct {
+		name       string
+		credential Credential
+		want       string
+	}{
+		{name: "API key", credential: APIKey(""), want: "openai: API key is absent"},
+		{name: "subscription", credential: Subscription(nil), want: "openai: ChatGPT subscription token source is absent"},
+	}
+	var messages []string
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			provider := New(tt.credential, WithBaseURL(server.URL), WithHTTPClient(server.Client()))
+			if provider == nil {
+				t.Fatal("New() returned nil")
+			}
+			conversation := &agentkit.Conversation{
+				Provider: provider,
+				Model:    "gpt-test",
+				Pricing:  &agentkit.Pricing{},
+			}
+			stream := conversation.Send(context.Background(), "hello")
+			for range stream.Events() {
+			}
+			err := stream.Err()
+			if !errors.Is(err, agentkit.ErrMissingCredential) {
+				t.Fatalf("Send() error = %v, want ErrMissingCredential", err)
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("Send() error = %q, want message containing %q", err, tt.want)
+			}
+			messages = append(messages, err.Error())
+		})
+	}
+	if messages[0] == messages[1] {
+		t.Fatalf("credential errors are identical: %q", messages[0])
+	}
+	if requests != 0 {
+		t.Fatalf("HTTP requests = %d, want 0", requests)
+	}
+
+	var nilProvider *Provider
+	if err := nilProvider.RoundTrip(context.Background(), &agentkit.Request{}).Err(); !errors.Is(err, agentkit.ErrInvalidConfig) {
+		t.Fatalf("nil provider error = %v, want ErrInvalidConfig", err)
+	}
+	if err := New(APIKey("key")).RoundTrip(context.Background(), nil).Err(); !errors.Is(err, agentkit.ErrInvalidConfig) {
+		t.Fatalf("nil request error = %v, want ErrInvalidConfig", err)
+	}
+}
+
 func TestProviderSendBuildsResponsesRequestsAndReplaysReasoning(t *testing.T) {
 	var mu sync.Mutex
 	var requests []map[string]any
@@ -1182,18 +1239,60 @@ func TestOpenAIEmbedderBatchesUsageOrderAndNormalizes(t *testing.T) {
 	}
 }
 
-func TestOpenAIEmbedderRejectsSubscriptionCredentialAtConstruction(t *testing.T) {
-	// R-D7QO-K6RZ
-	defer func() {
-		got := recover()
-		if got == nil {
-			t.Fatal("NewEmbedder(Subscription(...)) did not panic")
-		}
-		if !strings.Contains(fmt.Sprint(got), "APIKey") {
-			t.Fatalf("panic = %q, want APIKey requirement", got)
-		}
-	}()
-	_ = NewEmbedder(Subscription(staticTokenSource{bearer: "token", account: "account"}))
+func TestOpenAIEmbedderClassifiesMissingAndUnusableCredentialsWithoutTransport(t *testing.T) {
+	// R-ULAV-7QZR
+	var requests int
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		requests++
+	}))
+	defer server.Close()
+
+	tests := []struct {
+		name            string
+		credential      Credential
+		wantSentinel    error
+		wantMessage     string
+		notWantSentinel error
+	}{
+		{
+			name:         "missing API key",
+			credential:   APIKey(""),
+			wantSentinel: agentkit.ErrMissingCredential,
+			wantMessage:  "openai: API key is absent",
+		},
+		{
+			name:            "subscription cannot serve embeddings",
+			credential:      Subscription(staticTokenSource{bearer: "token", account: "account"}),
+			wantSentinel:    agentkit.ErrInvalidConfig,
+			wantMessage:     "a ChatGPT subscription credential cannot serve embeddings; an API key is required",
+			notWantSentinel: agentkit.ErrMissingCredential,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			provider := NewEmbedder(tt.credential, WithBaseURL(server.URL), WithHTTPClient(server.Client()))
+			if provider == nil {
+				t.Fatal("NewEmbedder() returned nil")
+			}
+			rt := provider.Embed(context.Background(), &agentkit.EmbedRequest{
+				Model:  EmbedModel3Small,
+				Inputs: []string{"hello"},
+			})
+			err := rt.Err()
+			if !errors.Is(err, tt.wantSentinel) {
+				t.Fatalf("Embed() error = %v, want %v", err, tt.wantSentinel)
+			}
+			if tt.notWantSentinel != nil && errors.Is(err, tt.notWantSentinel) {
+				t.Fatalf("Embed() error = %v, do not want %v", err, tt.notWantSentinel)
+			}
+			if !strings.Contains(err.Error(), tt.wantMessage) {
+				t.Fatalf("Embed() error = %q, want message containing %q", err, tt.wantMessage)
+			}
+		})
+	}
+	if requests != 0 {
+		t.Fatalf("HTTP requests = %d, want 0", requests)
+	}
 }
 
 func TestOpenAIEmbeddingsIgnoreInputTypeOnWire(t *testing.T) {
