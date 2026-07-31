@@ -204,8 +204,9 @@ prompts copy them verbatim so each turn is self-contained.
 - **Toolchain.** Go 1.26, module `github.com/ikigenba/agentkit`. The `agentkit`
   package lives at the module **root**, built across several phases. Leaf provider
   sub-packages: `anthropic/`, `openai/`, `zai/`, `google/`, `openrouter/`,
-  `openai/subscription/`; the advisory model catalog under `catalog/`.
-  Non-importable shared internals under `internal/`: `internal/httpx`,
+  `openai/subscription/`; the advisory model catalog under `catalog/`; the
+  standard coding tools under `toolkit/`; the document-text (OCR) tool under
+  `ocr/`. Non-importable shared internals under `internal/`: `internal/httpx`,
   `internal/sse`, `internal/openaicompat`, `internal/mcp`, `internal/retry`.
   Public symbols carry no package-name stutter (`agentkit.Conversation`, not
   `agentkit.AgentKitState`).

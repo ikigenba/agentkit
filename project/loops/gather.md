@@ -83,7 +83,8 @@ R-XXXX-XXXX — <full requirement text copied verbatim from the Decision's Verif
 [... the package + test files build will create or modify. Root-package files sit
 at the module root; provider adapters under anthropic/ openai/ zai/ google/
 openrouter/ openai/subscription/; the advisory model catalog under catalog/;
-shared internals under internal/httpx, internal/sse, internal/openaicompat,
+the toolkit/ standard coding tools and the ocr/ document-text tool; shared
+internals under internal/httpx, internal/sse, internal/openaicompat,
 internal/mcp, internal/retry. Unit tests are co-located with the code they
 exercise (package-local *_test.go, named for the behavior); never a per-phase or
 root-level test file.]
