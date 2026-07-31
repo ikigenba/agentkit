@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.16.0
+
+- Added the shared `toolkit.Option` constructor pattern across every toolkit
+  tool. Existing calls remain valid, while consumers can now configure the
+  network tools without package-global state.
+- Added `toolkit.WithBaseURL` for `WebSearch`, including consistent trailing
+  slash handling and an `agentkit.ErrInvalidConfig` error when an explicitly
+  supplied base URL is empty. This lets consumers route Brave searches through
+  a proxy or deterministic stand-in server.
+- Added `toolkit.WithHTTPClient` for `WebSearch` and `WebFetch`, allowing
+  consumers to supply timeout, proxy, TLS, redirect, recording, and other
+  transport policy through a standard `http.Client`. Both tools continue to
+  use `http.DefaultClient` when no client is supplied.
+- Kept the agent-visible request deadlines in force with injected clients:
+  `WebSearch` remains bounded to ten seconds and `WebFetch` continues to honor
+  its per-call `timeout_seconds` value.
+
 ## v0.15.0
 
 - Allowed anything needing a credential to be constructed without one. The
