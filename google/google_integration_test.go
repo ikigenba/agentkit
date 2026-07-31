@@ -43,6 +43,52 @@ func TestGoogleIntegrationPlainRoundTrip(t *testing.T) {
 	}
 }
 
+// R-R10G-JG1U
+func TestGoogleIntegrationR10GAssemblesReplyIntoOneTextBlock(t *testing.T) {
+	key := os.Getenv("GEMINI_API_KEY")
+	if key == "" {
+		key = os.Getenv("GOOGLE_API_KEY")
+	}
+	if key == "" {
+		t.Skip("GEMINI_API_KEY or GOOGLE_API_KEY is not set")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	stream := (&agentkit.Conversation{
+		Provider: New(APIKey(key)),
+		Model:    "gemini-2.5-flash",
+	}).Send(ctx, "Reply with three short sentences explaining why the sky appears blue.")
+
+	var completed agentkit.Message
+	var sawCompleted bool
+	for event := range stream.Events() {
+		if done, ok := event.(agentkit.MessageDone); ok {
+			completed = done.Message
+			sawCompleted = true
+		}
+	}
+	if err := stream.Err(); err != nil {
+		t.Fatalf("Err() = %v", err)
+	}
+	if !sawCompleted {
+		t.Fatal("stream completed without MessageDone")
+	}
+
+	var textBlocks []agentkit.TextBlock
+	for _, block := range completed.Blocks {
+		if text, ok := block.(agentkit.TextBlock); ok {
+			textBlocks = append(textBlocks, text)
+		}
+	}
+	if len(textBlocks) != 1 {
+		t.Fatalf("TextBlock count = %d, want 1; blocks = %#v", len(textBlocks), completed.Blocks)
+	}
+	if strings.TrimSpace(textBlocks[0].Text) == "" {
+		t.Fatal("completed TextBlock is empty")
+	}
+}
+
 func TestGoogleIntegrationToolRoundTrip(t *testing.T) {
 	// R-Y5C2-NYDE
 	key := os.Getenv("GEMINI_API_KEY")
