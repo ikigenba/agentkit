@@ -23,13 +23,13 @@
       "source": "ikigenba/skills",
       "sourceType": "github",
       "skillPath": "ikispec/SKILL.md",
-      "computedHash": "50a92258afed242f3c262169113923abc593b39ba523ac4fee97e7296348a849"
+      "computedHash": "98113bbbde8938c9b349eac54fea0bb5853d839562b5f531c27497df37abb46a"
     },
     "open-spec": {
       "source": "ikigenba/skills",
       "sourceType": "github",
       "skillPath": "open-spec/SKILL.md",
-      "computedHash": "fcd9f82ffd4cabf6f9892f497c4b218dafa03c6a54d69e1267b67e6223284fc9"
+      "computedHash": "3841eb55eb10faeab7a37091623520ffea2d1bf5a86c08d49e92d3f1300cc6f2"
     },
     "ralph": {
       "source": "ikigenba/skills",

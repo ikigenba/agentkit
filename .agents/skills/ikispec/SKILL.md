@@ -62,6 +62,14 @@ boundary is load-bearing — it is what keeps the three from overlapping.
   however settled a conversation feels, reaching a conclusion is not an
   instruction to act on it. Say what should change and wait for the operator
   to invoke the move.
+- **Sealed governs writes, not questions.** The direction gate restricts
+  *writing* `project/`; it never makes the spec's contents settled. Inside an
+  authoring move every existing Decision, Rejected entry, and invariant is a
+  proposal under review: input to the discussion, evidence of what was chosen
+  and why, never a constraint that closes a question. Do not cite an existing
+  Decision as reason a path is unavailable. Re-test it on its merits and say
+  so if it still wins. The implementing posture, where the spec is fixed input
+  and a flaw is a finding to report, applies only outside an authoring move.
 - **Scope boundary.** A `project/` governs **only its own codebase** — the tree
   it sits at the root of, never a sibling service, the repo root, or shared
   tooling. No Decision may name a seam/file outside that tree; no phase may

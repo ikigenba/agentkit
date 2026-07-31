@@ -24,6 +24,15 @@ An open session means:
   follow, and hold the goal at outcome altitude. Track what's settled and
   what's still open, but do not start writing spec documents — discussion is
   not authoring.
+- **Every existing Decision is open.** An extension session inherits a
+  `project/` full of prior choices; none of them are settled while authoring.
+  Read them as input: what was chosen, and the reasoning that produced it.
+  Never treat one as a closed door, and never answer the operator by saying a
+  path is unavailable because the spec already decided otherwise. If a prior
+  Decision or Rejected entry still holds, re-argue it on its merits here and
+  say so; if the goal on the table breaks it, that is a Decision to rewrite,
+  not an objection to raise. The gate is on writing `project/`, not on
+  reconsidering it (see `ikispec`, *Sealed governs writes, not questions*).
 - **The session has two named exits.** `$grill-me` interrogates the goal one
   question at a time until every unknown is resolved; `$seal-spec` writes the
   settled goal into `project/` (product, research, design, plan) in one
