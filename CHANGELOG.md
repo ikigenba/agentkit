@@ -2,6 +2,38 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.13.0
+
+- Normalized completed assistant messages so every provider, including Google,
+  returns each uninterrupted answer as a single `TextBlock` rather than one
+  block per SSE frame. Text separated by reasoning, tool use, or tool results
+  remains separate and ordered.
+- Fixed Google reasoning replay when Gemini sends a `thoughtSignature` and its
+  `functionCall` in different SSE frames. The signature now binds to the call
+  instead of being silently detached at the frame boundary.
+- Enforced adjacent-text normalization centrally for every current and future
+  provider adapter, so assembled messages no longer depend on how a transport
+  divides identical content into frames.
+
+## v0.12.0
+
+- Replaced raw tool schemas with AgentKit's canonical, provider-portable schema
+  subset. `NewTool` now derives schemas from Go input structs and rejects
+  unsupported shapes early, while request validation reports `ErrInvalidConfig`
+  instead of allowing a provider to silently ignore an untranslatable
+  constraint.
+- Rendered canonical tool schemas into each provider's native dialect. Anthropic
+  and OpenAI requests now enable strict schema handling, while Google receives
+  only the schema vocabulary it supports.
+- Made serialized tool definitions deterministic by ordering tools by name in
+  every provider request, regardless of the order supplied by the consumer.
+- Completed the generated schemas for all six `toolkit` tools with descriptions
+  for every input property and required fields aligned with each tool's
+  contract.
+- Removed `RawTool`, `ToolSchemaTranslator`, and lossy-schema warnings, along
+  with the external schema-reflection dependency; consumers now get one
+  validated schema path rather than provider-dependent degradation.
+
 ## v0.11.0
 
 - Completed every catalog offering with full pricing, reasoning specification,
