@@ -22,6 +22,9 @@ const defaultMaxToolIterations = 1000
 var (
 	// ErrInvalidConfig reports an unusable Conversation or Tool setup.
 	ErrInvalidConfig = errors.New("agentkit: invalid configuration")
+	// ErrMissingCredential reports that an operation needed a credential that
+	// was never supplied.
+	ErrMissingCredential = errors.New("agentkit: missing credential")
 	// ErrInvalidInput reports a bad Send argument.
 	ErrInvalidInput = errors.New("agentkit: invalid input")
 	// ErrToolLoopLimit reports a runaway automatic tool loop.

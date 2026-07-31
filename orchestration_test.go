@@ -105,6 +105,25 @@ func TestNewRoundTripMergesOnlyAdjacentTextBlocks(t *testing.T) {
 	})
 }
 
+func TestMissingCredentialSentinelIsDistinctAndBare(t *testing.T) {
+	// R-UF7D-AWAA
+	err := fmt.Errorf("%w: openai API key is absent", agentkit.ErrMissingCredential)
+	if !errors.Is(err, agentkit.ErrMissingCredential) {
+		t.Fatalf("errors.Is(%v, ErrMissingCredential) = false, want true", err)
+	}
+	if errors.Is(err, agentkit.ErrInvalidConfig) {
+		t.Fatalf("errors.Is(%v, ErrInvalidConfig) = true, want false", err)
+	}
+
+	var providerErr *agentkit.Error
+	if errors.As(err, &providerErr) {
+		t.Fatalf("errors.As(%v, *agentkit.Error) = true, want false", err)
+	}
+	if errors.Is(agentkit.ErrInvalidConfig, agentkit.ErrMissingCredential) {
+		t.Fatal("errors.Is(ErrInvalidConfig, ErrMissingCredential) = true, want false")
+	}
+}
+
 func TestSendBoundaryValidation(t *testing.T) {
 	ctx := context.Background()
 
