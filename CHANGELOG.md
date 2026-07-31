@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.14.0
+
+- Added `toolkit.WebSearch`, a Brave Search API-backed web search tool that
+  accepts a consumer-supplied key and supports count, freshness, locale,
+  safe-search, and result-type controls. Results are returned as clean, bounded
+  JSON containing the useful web and sibling result sections.
+- Added `toolkit.WebFetch`, which fetches `http` and `https` pages with a
+  per-call adjustable timeout, converts HTML to readable markdown, returns
+  other text content verbatim, and refuses binary content.
+- Kept both network tools opt-in: neither joins `toolkit.All`, which continues
+  to return exactly the six local coding tools. HTML parsing for `WebFetch`
+  adds `golang.org/x/net` as a module dependency.
+
 ## v0.13.0
 
 - Normalized completed assistant messages so every provider, including Google,
