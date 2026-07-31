@@ -1164,3 +1164,74 @@ only, and has no `response_format: json_schema` and no per-function `strict`.
 Both fail silently and in opposite directions, so neither can serve as an oracle for whether a
 schema was too rich. The practical consequence is that a schema must be narrowed **before** it is
 sent, client-side, rather than discovered by probing.
+
+## 19. Brave Search API — the web-search wire, measured (2026-07-30)
+
+The `toolkit` web-search tool sits directly on the Brave Search API. Everything below was
+measured live against the paid account's key on 2026-07-30, not taken from documentation
+alone. This section is the ground truth the unit tests encode; the normal suite performs no
+live Brave calls.
+
+### 19.1 The endpoint and auth
+
+- `GET https://api.search.brave.com/res/v1/web/search`
+- Auth is a single header: `X-Subscription-Token: <key>`. Send `Accept: application/json`.
+- The API is search-only. There is **no page-fetch/content endpoint** anywhere in the
+  product (the endpoint family is web/news/images/videos/suggest/spellcheck/summarizer/
+  local), which is why the page-fetch tool is implemented in-house rather than on Brave.
+
+### 19.2 Request parameters (the subset the tool mirrors)
+
+All parameters ride the query string. The ones the tool exposes, with Brave's semantics:
+
+| param | type | notes (verified) |
+|---|---|---|
+| `q` | string, required | max 400 chars / 50 words |
+| `count` | int 1–20, default 10 | `count=50` → 422 `VALIDATION` "Count should be less than or equal to 20" (measured) |
+| `offset` | int 0–9, default 0 | pagination |
+| `country` | 2-letter code or `ALL`, default `US` | |
+| `search_lang` | language code, default `en` | |
+| `freshness` | `pd`/`pw`/`pm`/`py` or `YYYY-MM-DDtoYYYY-MM-DD` | |
+| `safesearch` | `off`/`moderate`/`strict`, default `moderate` | |
+| `result_filter` | comma-joined list (`web`, `news`, `videos`, `discussions`, `faq`, `infobox`, `query`, …) | measured: a filtered request omits the excluded sections; a section also goes missing when Brave has nothing of that type for the query |
+| `extra_snippets` | bool | up to 5 additional excerpts per web result; plan-gated (works on the paid plan) |
+| `spellcheck` | bool, default true | |
+| `text_decorations` | bool, default true | the tool pins `text_decorations=0` so snippets arrive without highlight markers (verified clean) |
+
+Not mirrored (deliberately): `summary` (feeds the summarizer endpoint, not shipped),
+`goggles` (custom re-ranking), `ui_lang`/`units` (display-string concerns), and
+`text_decorations` (pinned off, not exposed).
+
+### 19.3 The 200 response shape (measured)
+
+Top level is an object keyed by section; only sections Brave produced are present. Observed
+top-level keys for an ordinary query: `type` (`"search"`), `query`, `mixed` (ranking info),
+`web`, plus `discussions`/`videos`/`news`/`faq`/`infobox` when the query warrants.
+
+- `web.results[]` (the core): each result carries `title`, `url`, `description`,
+  optional `extra_snippets[]` (when requested), plus fields the tool drops
+  (`meta_url`, `profile`, `language`, `family_friendly`, `is_source_*`, `subtype`, …).
+- `news.results[]` / `videos.results[]` / `discussions.results[]`: same `title`/`url`/
+  `description` core plus type-specific extras (`age`, `page_age`, `thumbnail`,
+  `video`, `data`).
+- `query`: spellcheck/locale metadata (`original`, `more_results_available`, …) — dropped.
+- `mixed`: Brave's display-ranking plan — dropped.
+
+### 19.4 Error and rate-limit shapes (measured)
+
+Errors are JSON `ErrorResponse` objects:
+
+```json
+{"type":"ErrorResponse","error":{"id":"…","status":422,"code":"VALIDATION",
+ "detail":"Count should be less than or equal to 20","meta":{"component":"api"}}}
+```
+
+- Invalid parameter → HTTP 422, `error.code: "VALIDATION"`, human-readable `error.detail`.
+- **An invalid key is also HTTP 422** (not 401), `error.code: "SUBSCRIPTION_TOKEN_INVALID"`,
+  `error.detail: "The provided subscription token is invalid."` — auth failures must be
+  recognized by body, not by status class.
+- Rate limiting: every response carries `x-ratelimit-limit` / `x-ratelimit-remaining` /
+  `x-ratelimit-reset` headers with two comma-separated windows (per-second, per-month;
+  measured `50;w=1` on the paid plan). Exceeding it yields HTTP 429; the standard
+  `Retry-After` header should be surfaced when present. The tool does not retry — the
+  agent decides.

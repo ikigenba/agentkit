@@ -72,6 +72,10 @@ One line per Decision, in number order — file, label, and the Verification ids
   - ids: R-XLTO-JMIA, R-XRX6-GH7R, R-XN1K-XE8Z, R-XO9H-B5ZO, R-XQPA-2PH2, R-ZPPN-6FV9, R-6QNT-WR7C, R-U3C5-4A1V
 - **D35** `project/design/D35.md` — The assembled message is transport-shape-independent
   - ids: R-QUWY-MLCD, R-QW4V-0D32, R-QXCR-E4TR, R-QYKN-RWKG, R-QZSK-5OB5, R-R10G-JG1U
+- **D36** `project/design/D36.md` — `toolkit`: `WebSearch` — Brave-backed web search
+  - ids: R-1EKW-L5BR, R-1FSS-YX2G, R-1H0P-COT5, R-1I8L-QGJU, R-1JGI-48AJ, R-1KOE-I018
+- **D37** `project/design/D37.md` — `toolkit`: `WebFetch` — page fetch to markdown
+  - ids: R-1LWA-VRRX, R-1N47-9JIM, R-1OC3-NB9B, R-1QRW-EUQP, R-1RZS-SMHE, R-1T7P-6E83, R-1UFL-K5YS, R-1VNH-XXPH
 
 ## Verification ids → Decision
 R-00IP-I9D7  D1  project/design/D01.md
@@ -79,6 +83,20 @@ R-01HL-I6TM  D9  project/design/D09.md
 R-02PH-VYKB  D9  project/design/D09.md
 R-03XE-9QB0  D9  project/design/D09.md
 R-055A-NI1P  D9  project/design/D09.md
+R-1EKW-L5BR  D36  project/design/D36.md
+R-1FSS-YX2G  D36  project/design/D36.md
+R-1H0P-COT5  D36  project/design/D36.md
+R-1I8L-QGJU  D36  project/design/D36.md
+R-1JGI-48AJ  D36  project/design/D36.md
+R-1KOE-I018  D36  project/design/D36.md
+R-1LWA-VRRX  D37  project/design/D37.md
+R-1N47-9JIM  D37  project/design/D37.md
+R-1OC3-NB9B  D37  project/design/D37.md
+R-1QRW-EUQP  D37  project/design/D37.md
+R-1RZS-SMHE  D37  project/design/D37.md
+R-1T7P-6E83  D37  project/design/D37.md
+R-1UFL-K5YS  D37  project/design/D37.md
+R-1VNH-XXPH  D37  project/design/D37.md
 R-2UV8-RBKS  D22  project/design/D22.md
 R-2W35-53BH  D22  project/design/D22.md
 R-2XB1-IV26  D22  project/design/D22.md

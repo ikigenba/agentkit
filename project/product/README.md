@@ -22,7 +22,7 @@ Go developers building applications that talk to LLMs. AgentKit's first and most
 
 ## Scope
 
-AgentKit covers **two capabilities — a chat surface and an embeddings surface** — sharing one set of foundations (explicit credentials, uniform errors, automatic retry, uniform usage, dollar-cost accounting, and an advisory model catalog), plus two bundled conveniences for consumers building agents: a **coding toolkit** of ready-made local tools, and a **document text extraction** tool that turns scans into text.
+AgentKit covers **two capabilities — a chat surface and an embeddings surface** — sharing one set of foundations (explicit credentials, uniform errors, automatic retry, uniform usage, dollar-cost accounting, and an advisory model catalog), plus three bundled conveniences for consumers building agents: a **coding toolkit** of ready-made local tools, **web tools** that let an agent search the web and read pages, and a **document text extraction** tool that turns scans into text.
 
 **How a capability picks its auth path.** AgentKit supports two ways of paying for a provider call, and which one a capability uses is a per-capability judgment on two axes. **Subscription auth** (a ChatGPT subscription today; others if and when their vendors permit it) gives flat-rate, subsidized usage and is preferred whenever it is adequate. **API-key auth goes through OpenRouter**, which reaches nearly every model and service, and is chosen when a capability exists only there or is materially better served there. Neither is "the" path, and the answer can change as prices and availability move. The standing boundary: **a new capability does not bring a new vendor account.** If something is unavailable on either existing path, that is a design problem to solve, not a reason to mint another credential — account proliferation is a cost we decline to pay.
 
@@ -61,6 +61,14 @@ AgentKit covers **two capabilities — a chat surface and an embeddings surface*
 - **Bounded output.** No tool floods the conversation: oversized results come back cut to a bounded size with a visible notice saying so, and the agent can narrow its request to see more.
 - **Edits fail loudly on ambiguity.** A text edit that could land in more than one place is refused rather than applied to a guessed location, so an unattended agent never silently corrupts a file it meant to change elsewhere.
 - **Reading a non-text file is refused, not garbled.** Asking to read a scan, an image, or any other binary gets a clear refusal naming what the file actually is, instead of megabytes of decoded gibberish flooding the conversation.
+
+### Web tools
+
+- **The web, as two ready-made tools.** An agent can search the web and fetch a page it found — the same pair every agent harness otherwise wires up itself — from the same shared toolkit every AgentKit consumer draws on, with no external tool server to install or run.
+- **Search is Brave, on the consumer's key.** Web search is served by the Brave Search API with a key the consumer supplies explicitly, like every other credential; AgentKit mints no account and reads no environment. The tool speaks the search vocabulary agents already know — result counts, freshness, country and language, safe-search, result-type filtering — and answers with the results' titles, addresses, and descriptions, free of vendor clutter.
+- **Fetched pages come back readable.** Fetching a page returns its content as readable text, not raw markup — links, headings, and structure preserved, scripts and styling noise gone. Plain-text resources come back as-is, and a URL pointing at an image or other binary is refused with a clear reason rather than garbled.
+- **Deliberately outside the local bundle.** The web tools reach the network — one on a paid key — so they are handed to a conversation explicitly, never smuggled inside the local coding set, and the coding toolkit's offline story stays honest.
+- **The agent stays in charge of failure.** A rate-limited search or an unreachable page comes back as a clear, bounded error the agent can read and act on — wait, retry, or move on; nothing hangs the conversation, and slow pages get more time only when the agent explicitly asks for it.
 
 ### Document text extraction
 
@@ -145,6 +153,14 @@ These fixed, promised values the design must use verbatim and never re-declare:
 - **Searches skip the noise.** Content searches skip version-control internals and binary files, so results reflect the code the agent actually works on.
 - **Non-text files are refused with a clear reason.** Reading a PDF, an image, or any other binary produces an error saying what the file actually is, rather than decoding it as text. What counts as text is judged from the file's contents, not its name, so an extensionless text file reads normally and a binary named `.txt` is still refused.
 
+### Web tools
+
+- **Search in one call.** A consumer hands its conversation the search tool, constructed with the consumer's Brave key, and the model can search the web — tuning result count, recency, country and language, safe-search, and result types — and receive the results' titles, addresses, descriptions, and extra excerpts when asked for, with vendor decoration and ranking clutter stripped out.
+- **Pages in one call.** With the fetch tool, the model names a web address and receives that page's content as readable text — headings, links, and lists preserved; scripts and styling gone. A plain-text resource arrives verbatim; an image, PDF, or other binary is refused with an error naming what it is.
+- **Bad news arrives usable.** A rate-limited search tells the agent it was rate-limited and how long to wait when the service says; a failed or over-large page fetch says what went wrong. Errors are bounded and informative — the agent decides what to do next.
+- **Slow pages are the agent's call.** A fetch gives up after a short default wait so a dead site never wedges the conversation; the agent can grant a specific fetch more time, within a sane ceiling.
+- **A misconfigured key fails at startup.** Constructing the search tool with an empty key fails immediately and loudly, not as a confusing mid-conversation authentication error.
+
 ### Document text extraction
 
 - **One call turns a scan into text.** A consumer hands the extraction tool a working directory and a directory to keep extractions in; the model then names a scanned PDF or an image and gets that document's text back, with its headings and tables intact.
@@ -212,6 +228,16 @@ These fixed, promised values the design must use verbatim and never re-declare:
 - A shell command that never finishes is stopped after its time limit along with the processes it spawned, and the agent sees that it timed out.
 - Content searches return matches from the working code, not from version-control internals or binary files.
 - Asking to read a PDF or an image returns a clear error naming what the file is, with no file content returned; an extensionless text file still reads normally, and a binary named `.txt` is still refused.
+
+### Web tools
+
+- A consumer can equip a conversation with the search tool built on its own Brave key, and the model can search the web and receive results carrying titles, addresses, and descriptions it can act on — having written no search code.
+- The model can narrow a search by result count, recency window, country, language, safe-search level, and result type, and ask for extra excerpts, and the results reflect the narrowing.
+- A consumer can equip a conversation with the fetch tool, and the model can name a page from those results and receive its content as readable text with headings, links, and lists intact and scripting/styling noise absent.
+- Fetching a plain-text resource returns it unchanged; fetching an image or other binary returns a clear refusal naming the content's type.
+- A rate-limited search reaches the model as an error stating the limit was hit, with the service's stated wait time when one was given, and the conversation continues.
+- A fetch of an unresponsive site fails within its wait time rather than hanging the conversation, and the model can grant a specific fetch a longer wait, up to a bounded maximum.
+- Constructing the search tool with an empty key fails immediately at construction.
 
 ### Document text extraction
 
