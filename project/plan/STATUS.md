@@ -4,5 +4,4 @@ The manifest, and a work **queue**: one line per **pending** phase, in build ord
 
 Next phase: 112
 
-- Phase 110 ⬜ realizes D27, D36, D37 — `toolkit` options: one constructor shape, a settable search endpoint, an injectable client
 - Phase 111 ⬜ realizes — changelog and the v0.16.0 minor release
