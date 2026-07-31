@@ -16,8 +16,9 @@ type editInput struct {
 	ReplaceAll bool   `json:"replace_all,omitempty" jsonschema:"description=Replace every occurrence instead of requiring exactly one."`
 }
 
-// Edit returns a tool that replaces exact text in files beneath root.
-func Edit(root string) agentkit.Tool {
+// Edit returns a tool that replaces exact text in files beneath root. It
+// currently honors no options.
+func Edit(root string, _ ...Option) agentkit.Tool {
 	return agentkit.NewTool("Edit", "Replace exact text in a file.", func(_ context.Context, in editInput) (string, error) {
 		if in.OldString == "" {
 			return "", fmt.Errorf("old_string must not be empty")

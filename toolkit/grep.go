@@ -21,8 +21,9 @@ type grepInput struct {
 	Glob    string `json:"glob,omitempty" jsonschema:"description=Optional base-name glob used to select files."`
 }
 
-// Grep returns a tool that searches files beneath root line by line.
-func Grep(root string) agentkit.Tool {
+// Grep returns a tool that searches files beneath root line by line. It
+// currently honors no options.
+func Grep(root string, _ ...Option) agentkit.Tool {
 	return agentkit.NewTool("Grep", "Search file contents for a pattern.", func(_ context.Context, in grepInput) (string, error) {
 		if strings.TrimSpace(in.Pattern) == "" {
 			return "", fmt.Errorf("pattern must not be blank")

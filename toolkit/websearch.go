@@ -12,9 +12,10 @@ import (
 	"time"
 
 	"github.com/ikigenba/agentkit"
+	"github.com/ikigenba/agentkit/internal/httpx"
 )
 
-var (
+const (
 	braveWebSearchBaseURL = "https://api.search.brave.com"
 	webSearchTimeout      = 10 * time.Second
 )
@@ -57,13 +58,19 @@ type webSearchOutput struct {
 
 // WebSearch returns a tool that searches the web via the Brave Search API.
 // An absent key constructs normally and fails when the tool is called.
-func WebSearch(apiKey BraveAPIKey) agentkit.Tool {
+// It honors WithBaseURL and WithHTTPClient; other options are ignored.
+func WebSearch(apiKey BraveAPIKey, opts ...Option) agentkit.Tool {
+	cfg := toolConfig(braveWebSearchBaseURL, opts...)
+	client := httpx.Client(cfg.httpClient)
 	return agentkit.NewTool("WebSearch", "Search the web via the Brave Search API.", func(ctx context.Context, in webSearchInput) (string, error) {
 		if apiKey == "" {
 			return "", fmt.Errorf("toolkit.WebSearch: Brave Search API key is absent: %w", agentkit.ErrMissingCredential)
 		}
+		if cfg.baseURL == "" {
+			return "", fmt.Errorf("toolkit.WebSearch: base URL is empty: %w", agentkit.ErrInvalidConfig)
+		}
 
-		requestURL, err := url.Parse(braveWebSearchBaseURL + "/res/v1/web/search")
+		requestURL, err := url.Parse(cfg.baseURL + "/res/v1/web/search")
 		if err != nil {
 			return "", fmt.Errorf("construct Brave web search URL: %w", err)
 		}
@@ -108,7 +115,7 @@ func WebSearch(apiKey BraveAPIKey) agentkit.Tool {
 		req.Header.Set("X-Subscription-Token", string(apiKey))
 		req.Header.Set("Accept", "application/json")
 
-		resp, err := http.DefaultClient.Do(req)
+		resp, err := client.Do(req)
 		if err != nil {
 			return "", fmt.Errorf("Brave web search request: %w", err)
 		}

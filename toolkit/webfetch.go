@@ -13,6 +13,7 @@ import (
 	"unicode"
 
 	"github.com/ikigenba/agentkit"
+	"github.com/ikigenba/agentkit/internal/httpx"
 	"golang.org/x/net/html"
 )
 
@@ -29,7 +30,10 @@ type webFetchInput struct {
 
 // WebFetch returns a tool that fetches a URL and returns its content,
 // converting HTML to markdown.
-func WebFetch() agentkit.Tool {
+// It honors WithHTTPClient; other options are ignored.
+func WebFetch(opts ...Option) agentkit.Tool {
+	cfg := toolConfig("", opts...)
+	client := httpx.Client(cfg.httpClient)
 	return agentkit.NewTool("WebFetch", "Fetch a web page, converting HTML to readable markdown.", func(ctx context.Context, in webFetchInput) (string, error) {
 		target, err := url.Parse(in.URL)
 		if err != nil || target.IsAbs() == false || (target.Scheme != "http" && target.Scheme != "https") || target.Host == "" {
@@ -49,7 +53,7 @@ func WebFetch() agentkit.Tool {
 		if err != nil {
 			return "", fmt.Errorf("create web fetch request: %w", err)
 		}
-		resp, err := http.DefaultClient.Do(req)
+		resp, err := client.Do(req)
 		if err != nil {
 			return "", fmt.Errorf("fetch %q: %w", target.String(), err)
 		}

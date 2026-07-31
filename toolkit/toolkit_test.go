@@ -1,6 +1,9 @@
 package toolkit
 
-import "testing"
+import (
+	"net/http"
+	"testing"
+)
 
 func TestAllReturnsStandardToolsInOrder(t *testing.T) {
 	// R-LQ1Y-XASG
@@ -19,16 +22,20 @@ func TestAllReturnsStandardToolsInOrder(t *testing.T) {
 func TestConstructorsDeclareMatchingNames(t *testing.T) {
 	// R-LR9V-B2J5
 	root := t.TempDir()
+	ignoredOptions := []Option{
+		WithBaseURL("https://ignored.example"),
+		WithHTTPClient(&http.Client{}),
+	}
 	tests := []struct {
 		name string
 		got  string
 	}{
-		{"Bash", Bash(root).Name()},
-		{"Read", Read(root).Name()},
-		{"Write", Write(root).Name()},
-		{"Edit", Edit(root).Name()},
-		{"Glob", Glob(root).Name()},
-		{"Grep", Grep(root).Name()},
+		{"Bash", Bash(root, ignoredOptions...).Name()},
+		{"Read", Read(root, ignoredOptions...).Name()},
+		{"Write", Write(root, ignoredOptions...).Name()},
+		{"Edit", Edit(root, ignoredOptions...).Name()},
+		{"Glob", Glob(root, ignoredOptions...).Name()},
+		{"Grep", Grep(root, ignoredOptions...).Name()},
 	}
 	for _, tt := range tests {
 		if tt.got != tt.name {

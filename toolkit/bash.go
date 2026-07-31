@@ -20,8 +20,9 @@ type bashInput struct {
 	Timeout int    `json:"timeout,omitempty" jsonschema:"description=Maximum execution time in milliseconds; defaults to 120000."`
 }
 
-// Bash returns a tool that runs shell commands with root as its working directory.
-func Bash(root string) agentkit.Tool {
+// Bash returns a tool that runs shell commands with root as its working
+// directory. It currently honors no options.
+func Bash(root string, _ ...Option) agentkit.Tool {
 	return agentkit.NewTool("Bash", "Run a shell command.", func(ctx context.Context, in bashInput) (string, error) {
 		if strings.TrimSpace(in.Command) == "" {
 			return "", fmt.Errorf("command must not be blank")

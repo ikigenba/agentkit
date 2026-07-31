@@ -19,7 +19,8 @@ type globInput struct {
 }
 
 // Glob returns a tool that finds paths beneath root matching a glob pattern.
-func Glob(root string) agentkit.Tool {
+// It currently honors no options.
+func Glob(root string, _ ...Option) agentkit.Tool {
 	return agentkit.NewTool("Glob", "Find files matching a glob pattern.", func(_ context.Context, in globInput) (string, error) {
 		if strings.TrimSpace(in.Pattern) == "" {
 			return "", fmt.Errorf("pattern must not be blank")

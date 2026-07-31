@@ -3,6 +3,7 @@ package toolkit
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -11,6 +12,73 @@ import (
 	"testing"
 	"time"
 )
+
+func TestWebFetchHTTPClient(t *testing.T) {
+	// R-1I1F-JRHF
+	oldTransport := http.DefaultClient.Transport
+	var defaultRequests atomic.Int32
+	http.DefaultClient.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		defaultRequests.Add(1)
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Status:     "200 OK",
+			Header:     http.Header{"Content-Type": []string{"text/plain"}},
+			Body:       io.NopCloser(strings.NewReader("default")),
+			Request:    req,
+		}, nil
+	})
+	t.Cleanup(func() { http.DefaultClient.Transport = oldTransport })
+
+	var injectedRequests atomic.Int32
+	injected := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		injectedRequests.Add(1)
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Status:     "200 OK",
+			Header:     http.Header{"Content-Type": []string{"text/plain"}},
+			Body:       io.NopCloser(strings.NewReader("injected")),
+			Request:    req,
+		}, nil
+	})}
+	got, err := callTool(t, WebFetch(WithHTTPClient(injected)), map[string]any{"url": "https://injected.example/page"})
+	if err != nil || got != "injected" {
+		t.Fatalf("injected client call = %q, %v", got, err)
+	}
+	if got := injectedRequests.Load(); got != 1 {
+		t.Fatalf("injected transport round trips = %d, want 1", got)
+	}
+	if got := defaultRequests.Load(); got != 0 {
+		t.Fatalf("default transport round trips during injected call = %d, want 0", got)
+	}
+
+	got, err = callTool(t, WebFetch(), map[string]any{"url": "https://default.example/page"})
+	if err != nil || got != "default" {
+		t.Fatalf("default client call = %q, %v", got, err)
+	}
+	if got := defaultRequests.Load(); got != 1 {
+		t.Fatalf("default transport round trips = %d, want 1", got)
+	}
+
+	started := make(chan struct{})
+	hanging := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		close(started)
+		<-r.Context().Done()
+	}))
+	t.Cleanup(hanging.Close)
+	start := time.Now()
+	got, err = callTool(t, WebFetch(WithHTTPClient(&http.Client{Timeout: 0})), map[string]any{
+		"url": hanging.URL, "timeout_seconds": 1,
+	})
+	elapsed := time.Since(start)
+	if err == nil || got != "" || elapsed > 3*time.Second {
+		t.Fatalf("zero-timeout injected client call = %q, %v after %v; want request timeout near one second", got, err, elapsed)
+	}
+	select {
+	case <-started:
+	default:
+		t.Fatal("hanging server never received injected-client request")
+	}
+}
 
 func TestWebFetchSchema(t *testing.T) {
 	// R-1LWA-VRRX

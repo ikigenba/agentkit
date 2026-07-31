@@ -14,8 +14,9 @@ type writeInput struct {
 	Content  string `json:"content,omitempty" jsonschema:"description=Complete content to write to the file."`
 }
 
-// Write returns a tool that creates or replaces files beneath root.
-func Write(root string) agentkit.Tool {
+// Write returns a tool that creates or replaces files beneath root. It
+// currently honors no options.
+func Write(root string, _ ...Option) agentkit.Tool {
 	return agentkit.NewTool("Write", "Write a file, creating its parent directories when needed.", func(_ context.Context, in writeInput) (string, error) {
 		path, err := confinePath(root, in.FilePath)
 		if err != nil {

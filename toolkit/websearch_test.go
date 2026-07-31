@@ -3,6 +3,7 @@ package toolkit
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -13,6 +14,117 @@ import (
 
 	"github.com/ikigenba/agentkit"
 )
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (fn roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return fn(req)
+}
+
+func successfulSearchResponse(req *http.Request) *http.Response {
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Status:     "200 OK",
+		Header:     make(http.Header),
+		Body:       io.NopCloser(strings.NewReader(`{"web":{"results":[]}}`)),
+		Request:    req,
+	}
+}
+
+func TestWebSearchBaseURL(t *testing.T) {
+	// R-1D5U-0OIN
+	var requestURLs []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestURLs = append(requestURLs, r.URL.String())
+		_, _ = w.Write([]byte(`{"web":{"results":[]}}`))
+	}))
+	t.Cleanup(server.Close)
+
+	for _, baseURL := range []string{server.URL, server.URL + "/"} {
+		_, err := callTool(t, WebSearch("key", WithBaseURL(baseURL)), map[string]any{"query": "same"})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(requestURLs) != 2 {
+		t.Fatalf("server received %d requests, want 2", len(requestURLs))
+	}
+	if requestURLs[0] != "/res/v1/web/search?q=same&text_decorations=0" {
+		t.Fatalf("request URL = %q, want Brave web search path", requestURLs[0])
+	}
+	if requestURLs[1] != requestURLs[0] {
+		t.Fatalf("trailing-slash request URL = %q, want byte-identical %q", requestURLs[1], requestURLs[0])
+	}
+
+	var defaultURL string
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		defaultURL = req.URL.String()
+		return successfulSearchResponse(req), nil
+	})}
+	if _, err := callTool(t, WebSearch("key", WithHTTPClient(client)), map[string]any{"query": "default"}); err != nil {
+		t.Fatal(err)
+	}
+	if defaultURL != braveWebSearchBaseURL+"/res/v1/web/search?q=default&text_decorations=0" {
+		t.Fatalf("default request URL = %q", defaultURL)
+	}
+}
+
+func TestWebSearchInvalidBaseURLAndCredentialPrecedence(t *testing.T) {
+	// R-1EDQ-EG9C
+	var requests atomic.Int32
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		requests.Add(1)
+		return successfulSearchResponse(req), nil
+	})}
+
+	got, err := callTool(t, WebSearch("key", WithBaseURL(""), WithHTTPClient(client)), map[string]any{"query": "test"})
+	if got != "" || !errors.Is(err, agentkit.ErrInvalidConfig) || errors.Is(err, agentkit.ErrMissingCredential) {
+		t.Fatalf("empty base URL call = %q, %v; want ErrInvalidConfig only", got, err)
+	}
+	if !strings.Contains(err.Error(), "base URL") {
+		t.Fatalf("error = %q, want base URL named", err)
+	}
+
+	got, err = callTool(t, WebSearch("", WithBaseURL(""), WithHTTPClient(client)), map[string]any{"query": "test"})
+	if got != "" || !errors.Is(err, agentkit.ErrMissingCredential) {
+		t.Fatalf("empty key and base URL call = %q, %v; want ErrMissingCredential", got, err)
+	}
+	if requests.Load() != 0 {
+		t.Fatalf("transport recorded %d requests, want zero", requests.Load())
+	}
+}
+
+func TestWebSearchHTTPClient(t *testing.T) {
+	// R-1FLM-S801
+	var injectedRequests atomic.Int32
+	injected := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		injectedRequests.Add(1)
+		if got := req.Header.Get("X-Subscription-Token"); got != "injected-key" {
+			t.Errorf("X-Subscription-Token = %q, want injected-key", got)
+		}
+		return successfulSearchResponse(req), nil
+	})}
+	if _, err := callTool(t, WebSearch("injected-key", WithHTTPClient(injected)), map[string]any{"query": "client"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := injectedRequests.Load(); got != 1 {
+		t.Fatalf("injected transport round trips = %d, want 1", got)
+	}
+
+	oldTransport := http.DefaultClient.Transport
+	var defaultRequests atomic.Int32
+	http.DefaultClient.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		defaultRequests.Add(1)
+		return successfulSearchResponse(req), nil
+	})
+	t.Cleanup(func() { http.DefaultClient.Transport = oldTransport })
+	if _, err := callTool(t, WebSearch("default-key"), map[string]any{"query": "default client"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := defaultRequests.Load(); got != 1 {
+		t.Fatalf("default client transport round trips = %d, want 1", got)
+	}
+}
 
 func TestWebSearchMissingCredential(t *testing.T) {
 	// R-UGF9-OO0Z
@@ -36,8 +148,8 @@ func TestWebSearchMissingCredential(t *testing.T) {
 		requests.Add(1)
 	}))
 	t.Cleanup(server.Close)
-	setWebSearchBaseURL(t, server.URL)
 
+	tool = WebSearch(BraveAPIKey(""), WithBaseURL(server.URL))
 	got, err := callTool(t, tool, map[string]any{"query": "agentkit"})
 	if got != "" {
 		t.Errorf("result = %q, want empty", got)
@@ -124,15 +236,13 @@ func TestWebSearchRequest(t *testing.T) {
 		_, _ = w.Write([]byte(`{"web":{"results":[]}}`))
 	}))
 	t.Cleanup(server.Close)
-	setWebSearchBaseURL(t, server.URL)
-
 	input := map[string]any{
 		"query": "brave search", "count": 20, "offset": 2, "country": "DE",
 		"search_lang": "de", "freshness": "pw", "safesearch": "strict",
 		"result_filter": []string{"web", "news"}, "extra_snippets": true,
 		"spellcheck": false,
 	}
-	if _, err := callTool(t, WebSearch("constructed-key"), input); err != nil {
+	if _, err := callTool(t, WebSearch("constructed-key", WithBaseURL(server.URL)), input); err != nil {
 		t.Fatal(err)
 	}
 	if requests.Load() != 1 {
@@ -145,8 +255,7 @@ func TestWebSearchRequest(t *testing.T) {
 		_, _ = w.Write([]byte(`{"web":{"results":[]}}`))
 	}))
 	t.Cleanup(omitted.Close)
-	setWebSearchBaseURL(t, omitted.URL)
-	if _, err := callTool(t, WebSearch("key"), map[string]any{"query": "minimal"}); err != nil {
+	if _, err := callTool(t, WebSearch("key", WithBaseURL(omitted.URL)), map[string]any{"query": "minimal"}); err != nil {
 		t.Fatal(err)
 	}
 	wantOmitted := map[string][]string{"q": {"minimal"}, "text_decorations": {"0"}}
@@ -169,9 +278,8 @@ func TestWebSearchReducesResponse(t *testing.T) {
 		"faq":{"results":[{"title":"What is it?","url":"https://example.com/faq","description":"A toolkit."}]}
 	}`
 	server := newWebSearchServer(t, http.StatusOK, payload, "")
-	setWebSearchBaseURL(t, server.URL)
 
-	got, err := callTool(t, WebSearch("key"), map[string]any{"query": "agentkit"})
+	got, err := callTool(t, WebSearch("key", WithBaseURL(server.URL)), map[string]any{"query": "agentkit"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -227,8 +335,7 @@ func TestWebSearchHTTPError(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			server := newWebSearchServer(t, tt.status, tt.body, tt.retryAfter)
-			setWebSearchBaseURL(t, server.URL)
-			got, err := callTool(t, WebSearch("key"), map[string]any{"query": "test"})
+			got, err := callTool(t, WebSearch("key", WithBaseURL(server.URL)), map[string]any{"query": "test"})
 			if err == nil || got != "" {
 				t.Fatalf("call = %q, %v; want empty result and error", got, err)
 			}
@@ -243,18 +350,18 @@ func TestWebSearchHTTPError(t *testing.T) {
 
 func TestWebSearchTimeout(t *testing.T) {
 	// R-1KOE-I018
+	// R-1GTJ-5ZQQ
 	started := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		close(started)
 		<-r.Context().Done()
 	}))
-	setWebSearchBaseURL(t, server.URL)
-	oldTimeout := webSearchTimeout
-	webSearchTimeout = 50 * time.Millisecond
-	t.Cleanup(func() { webSearchTimeout = oldTimeout })
 
 	start := time.Now()
-	got, err := callTool(t, WebSearch("key"), map[string]any{"query": "hang"})
+	got, err := callTool(t, WebSearch("key",
+		WithBaseURL(server.URL),
+		WithHTTPClient(&http.Client{Timeout: 50 * time.Millisecond}),
+	), map[string]any{"query": "hang"})
 	elapsed := time.Since(start)
 	if err == nil || got != "" {
 		t.Fatalf("call = %q, %v; want timeout error", got, err)
@@ -271,13 +378,24 @@ func TestWebSearchTimeout(t *testing.T) {
 		t.Fatal("server never received request")
 	}
 	server.CloseClientConnections()
-}
 
-func setWebSearchBaseURL(t *testing.T, baseURL string) {
-	t.Helper()
-	old := braveWebSearchBaseURL
-	braveWebSearchBaseURL = baseURL
-	t.Cleanup(func() { braveWebSearchBaseURL = old })
+	var observedDeadline time.Time
+	var observedAt time.Time
+	client := &http.Client{Timeout: 0, Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		observedAt = time.Now()
+		deadline, ok := req.Context().Deadline()
+		if !ok {
+			t.Fatal("request context has no deadline")
+		}
+		observedDeadline = deadline
+		return successfulSearchResponse(req), nil
+	})}
+	if _, err := callTool(t, WebSearch("key", WithHTTPClient(client)), map[string]any{"query": "deadline"}); err != nil {
+		t.Fatal(err)
+	}
+	if remaining := observedDeadline.Sub(observedAt); remaining <= 0 || remaining > webSearchTimeout {
+		t.Fatalf("request deadline remaining = %v, want within (0, %v]", remaining, webSearchTimeout)
+	}
 }
 
 func newWebSearchServer(t *testing.T, status int, body, retryAfter string) *httptest.Server {

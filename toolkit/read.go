@@ -17,8 +17,9 @@ type readInput struct {
 	Limit    int    `json:"limit,omitempty" jsonschema:"description=Maximum number of lines to return."`
 }
 
-// Read returns a tool that reads files beneath root.
-func Read(root string) agentkit.Tool {
+// Read returns a tool that reads files beneath root. It currently honors no
+// options.
+func Read(root string, _ ...Option) agentkit.Tool {
 	return agentkit.NewTool("Read", "Read a file, optionally selecting a range of lines.", func(_ context.Context, in readInput) (string, error) {
 		if in.Offset < 0 || in.Limit < 0 {
 			return "", fmt.Errorf("offset and limit must not be negative")
