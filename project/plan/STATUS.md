@@ -4,7 +4,6 @@ The manifest, and a work **queue**: one line per **pending** phase, in build ord
 
 Next phase: 110
 
-- Phase 106 ⬜ realizes D38 (R-UIV2-G7ID, R-ULAV-7QZR) — `openai` chat and embeddings report their own missing or unusable credential
 - Phase 107 ⬜ realizes D38 (R-UMIR-LIQG) — `google` chat and embeddings report their own missing credential
 - Phase 108 ⬜ realizes D38 (R-UNQN-ZAH5) — `anthropic`, `zai`, and `openrouter` report their own missing credential
 - Phase 109 ⬜ realizes — — changelog and the v0.15.0 minor release
