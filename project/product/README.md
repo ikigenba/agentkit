@@ -159,7 +159,8 @@ These fixed, promised values the design must use verbatim and never re-declare:
 - **Pages in one call.** With the fetch tool, the model names a web address and receives that page's content as readable text — headings, links, and lists preserved; scripts and styling gone. A plain-text resource arrives verbatim; an image, PDF, or other binary is refused with an error naming what it is.
 - **Bad news arrives usable.** A rate-limited search tells the agent it was rate-limited and how long to wait when the service says; a failed or over-large page fetch says what went wrong. Errors are bounded and informative — the agent decides what to do next.
 - **Slow pages are the agent's call.** A fetch gives up after a short default wait so a dead site never wedges the conversation; the agent can grant a specific fetch more time, within a sane ceiling.
-- **A misconfigured key fails at startup.** Constructing the search tool with an empty key fails immediately and loudly, not as a confusing mid-conversation authentication error.
+- **A missing key is reported at the call.** A search tool built without a key is still handed to the model, and calling it reports plainly that the Brave key is the credential missing, so an agent's tool set never varies with which credentials happen to be set.
+- **The consumer chooses where search goes and how it travels.** A consumer can point the search tool at an address other than Brave's — a stand-in server in its own test suite, or a proxy in front of the real service — and can supply the HTTP client either web tool uses, so timeouts, proxies, TLS trust, and traffic recording are the consumer's to set. Supplying neither keeps today's behavior exactly: Brave's own address, and a short bounded wait.
 
 ### Document text extraction
 
@@ -239,6 +240,9 @@ These fixed, promised values the design must use verbatim and never re-declare:
 - A rate-limited search reaches the model as an error stating the limit was hit, with the service's stated wait time when one was given, and the conversation continues.
 - A fetch of an unresponsive site fails within its wait time rather than hanging the conversation, and the model can grant a specific fetch a longer wait, up to a bounded maximum.
 - A search tool built without a key is still offered to the model, and calling it reports that the Brave key is the credential missing.
+- A consumer can point the search tool at an address of its own — a stand-in server it runs in its own tests — and a search driven against it returns results the same way a search against Brave does; a consumer that names no address still reaches Brave.
+- A consumer can supply the HTTP client either web tool uses, and its own settings for that client take effect, so it can shorten a wait, route through a proxy, or record what was sent; a consumer that supplies none keeps the default short bounded wait.
+- Naming an empty address reports that the search address is missing, and reports it as a configuration mistake distinct from a missing key.
 
 ### Document text extraction
 
