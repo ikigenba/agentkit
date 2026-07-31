@@ -4,13 +4,65 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
+
+	"github.com/ikigenba/agentkit"
 )
+
+func TestOpenRouterCredentialAndConfigurationErrorsAreDistinct(t *testing.T) {
+	// R-UHN6-2FRO
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	missingCredential := New(
+		APIKey(""),
+		WithBaseURL(server.URL),
+		WithHTTPClient(server.Client()),
+	)
+	_, credentialErr := missingCredential.Do(context.Background(), "document.pdf", []byte("%PDF-1.4"))
+	if !errors.Is(credentialErr, agentkit.ErrMissingCredential) {
+		t.Fatalf("missing credential error = %v, want ErrMissingCredential", credentialErr)
+	}
+	if !strings.Contains(credentialErr.Error(), "OpenRouter API key") {
+		t.Fatalf("missing credential error = %q, want OpenRouter API key named", credentialErr)
+	}
+	if errors.Is(credentialErr, agentkit.ErrInvalidConfig) {
+		t.Fatalf("missing credential error = %v, unexpectedly matches ErrInvalidConfig", credentialErr)
+	}
+
+	invalidConfig := New(
+		APIKey("test-key"),
+		WithBaseURL(""),
+		WithHTTPClient(server.Client()),
+	)
+	_, configErr := invalidConfig.Do(context.Background(), "document.pdf", []byte("%PDF-1.4"))
+	if !errors.Is(configErr, agentkit.ErrInvalidConfig) {
+		t.Fatalf("invalid configuration error = %v, want ErrInvalidConfig", configErr)
+	}
+	if !strings.Contains(configErr.Error(), "base URL") {
+		t.Fatalf("invalid configuration error = %q, want base URL named", configErr)
+	}
+	if errors.Is(configErr, agentkit.ErrMissingCredential) {
+		t.Fatalf("invalid configuration error = %v, unexpectedly matches ErrMissingCredential", configErr)
+	}
+	if credentialErr.Error() == configErr.Error() {
+		t.Fatalf("credential and configuration errors are identical: %q", credentialErr)
+	}
+	if got := requests.Load(); got != 0 {
+		t.Fatalf("HTTP requests = %d, want zero", got)
+	}
+}
 
 func TestOpenRouterRequestUsesFileParserFloor(t *testing.T) {
 	// R-UQV9-F7G5

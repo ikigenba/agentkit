@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ikigenba/agentkit"
 	"github.com/ikigenba/agentkit/internal/retry"
 )
 
@@ -105,8 +106,14 @@ type openRouterPDFPlugin struct {
 // Do sends document to OpenRouter and returns the raw response body. Call
 // Transcript to derive readable Markdown from the body.
 func (c *Client) Do(ctx context.Context, filename string, document []byte) ([]byte, error) {
-	if c == nil || c.apiKey == "" || c.baseURL == "" {
-		return nil, errors.New("ocr: invalid OpenRouter configuration")
+	if c == nil {
+		return nil, fmt.Errorf("ocr: OpenRouter client is nil: %w", agentkit.ErrInvalidConfig)
+	}
+	if c.apiKey == "" {
+		return nil, fmt.Errorf("ocr: OpenRouter API key is absent: %w", agentkit.ErrMissingCredential)
+	}
+	if c.baseURL == "" {
+		return nil, fmt.Errorf("ocr: OpenRouter base URL is absent: %w", agentkit.ErrInvalidConfig)
 	}
 	pdf, err := wrapImage(document)
 	if err != nil {
