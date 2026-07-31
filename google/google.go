@@ -523,6 +523,7 @@ func parseResponse(contentType string, raw []byte) (agentkit.Message, agentkit.F
 	message := agentkit.Message{Role: agentkit.RoleAssistant}
 	finish := agentkit.FinishStop
 	var usage agentkit.Usage
+	var parts []part
 
 	for _, response := range responses {
 		if response.PromptFeedback.BlockReason != "" {
@@ -531,11 +532,11 @@ func parseResponse(contentType string, raw []byte) (agentkit.Message, agentkit.F
 		if len(response.Candidates) > 0 {
 			candidate := response.Candidates[0]
 			finish = mergeFinish(finish, candidate.FinishReason)
-			blocks := parseParts(candidate.Content.Parts)
-			message.Blocks = append(message.Blocks, blocks...)
+			parts = append(parts, candidate.Content.Parts...)
 		}
 		usage = addUsage(usage, mapUsage(response.UsageMetadata))
 	}
+	message.Blocks = parseParts(parts)
 	if hasToolUse(message) {
 		finish = agentkit.FinishToolUse
 	}
@@ -606,6 +607,13 @@ func parseParts(parts []part) []agentkit.Block {
 		if part.Text != nil {
 			text := *part.Text
 			if text != "" {
+				if len(blocks) > 0 {
+					if previous, ok := blocks[len(blocks)-1].(agentkit.TextBlock); ok {
+						previous.Text += text
+						blocks[len(blocks)-1] = previous
+						continue
+					}
+				}
 				blocks = append(blocks, agentkit.TextBlock{Text: text})
 			}
 			continue

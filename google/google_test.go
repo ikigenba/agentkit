@@ -723,6 +723,86 @@ func TestGoogleSignatureOnTextPartPreservesVisibleText(t *testing.T) {
 	}
 }
 
+func TestGoogleSSETextAssemblyIsIndependentOfFrameBoundaries(t *testing.T) {
+	// R-QUWY-MLCD
+	multiFrame := parseGoogleSSEMessage(t,
+		`{"candidates":[{"content":{"role":"model","parts":[{"text":"I ha"}]}}]}`,
+		`{"candidates":[{"content":{"role":"model","parts":[{"text":"ve access"}]}}]}`,
+		`{"candidates":[{"content":{"role":"model","parts":[{"text":" to tools."}]},"finishReason":"STOP"}]}`,
+	)
+	singleFrame := parseGoogleSSEMessage(t,
+		`{"candidates":[{"content":{"role":"model","parts":[{"text":"I ha"},{"text":"ve access"},{"text":" to tools."}]},"finishReason":"STOP"}]}`,
+	)
+
+	want := agentkit.Message{
+		Role:   agentkit.RoleAssistant,
+		Blocks: []agentkit.Block{agentkit.TextBlock{Text: "I have access to tools."}},
+	}
+	if !reflect.DeepEqual(multiFrame, want) {
+		t.Fatalf("multi-frame message = %#v, want %#v", multiFrame, want)
+	}
+	if !reflect.DeepEqual(multiFrame, singleFrame) {
+		t.Fatalf("transport-equivalent messages differ:\nmulti:  %#v\nsingle: %#v", multiFrame, singleFrame)
+	}
+}
+
+func TestGoogleSSEAdjacentTextPartsMergeWithinFrame(t *testing.T) {
+	// R-QW4V-0D32
+	message := parseGoogleSSEMessage(t,
+		`{"candidates":[{"content":{"role":"model","parts":[{"text":"joined"},{"text":" verbatim"}]},"finishReason":"STOP"}]}`,
+	)
+
+	want := []agentkit.Block{agentkit.TextBlock{Text: "joined verbatim"}}
+	if !reflect.DeepEqual(message.Blocks, want) {
+		t.Fatalf("blocks = %#v, want %#v", message.Blocks, want)
+	}
+}
+
+func TestGoogleSSEBindsThoughtSignatureAcrossFrames(t *testing.T) {
+	// R-QXCR-E4TR
+	message := parseGoogleSSEMessage(t,
+		`{"candidates":[{"content":{"role":"model","parts":[{"thought":true,"thoughtSignature":"cross-frame-signature"}]}}]}`,
+		`{"candidates":[{"content":{"role":"model","parts":[{"functionCall":{"name":"lookup","args":{"city":"Austin"}}}]},"finishReason":"STOP"}]}`,
+	)
+
+	if len(message.Blocks) != 2 {
+		t.Fatalf("blocks = %#v, want reasoning followed by tool use", message.Blocks)
+	}
+	reasoning, reasoningOK := message.Blocks[0].(agentkit.ReasoningBlock)
+	use, useOK := message.Blocks[1].(agentkit.ToolUseBlock)
+	if !reasoningOK || !useOK {
+		t.Fatalf("block types = %T, %T, want ReasoningBlock, ToolUseBlock", message.Blocks[0], message.Blocks[1])
+	}
+	if use.ID == "" || reasoning.BoundToID != use.ID {
+		t.Fatalf("cross-frame reasoning was not bound to tool use: reasoning=%#v use=%#v", reasoning, use)
+	}
+	if got := decodeThoughtSignature(reasoning.Opaque); got != "cross-frame-signature" {
+		t.Fatalf("thought signature = %q, want cross-frame-signature", got)
+	}
+}
+
+func TestGoogleSSETextRunsRemainSeparatedByToolUse(t *testing.T) {
+	// R-QYKN-RWKG
+	message := parseGoogleSSEMessage(t,
+		`{"candidates":[{"content":{"role":"model","parts":[{"text":"before"}]}}]}`,
+		`{"candidates":[{"content":{"role":"model","parts":[{"functionCall":{"name":"lookup","args":{}}}]}}]}`,
+		`{"candidates":[{"content":{"role":"model","parts":[{"text":"after"}]},"finishReason":"STOP"}]}`,
+	)
+
+	if len(message.Blocks) != 3 {
+		t.Fatalf("blocks = %#v, want exactly text, tool use, text", message.Blocks)
+	}
+	before, beforeOK := message.Blocks[0].(agentkit.TextBlock)
+	use, useOK := message.Blocks[1].(agentkit.ToolUseBlock)
+	after, afterOK := message.Blocks[2].(agentkit.TextBlock)
+	if !beforeOK || !useOK || !afterOK {
+		t.Fatalf("block types = %T, %T, %T, want TextBlock, ToolUseBlock, TextBlock", message.Blocks[0], message.Blocks[1], message.Blocks[2])
+	}
+	if before.Text != "before" || use.Name != "lookup" || after.Text != "after" {
+		t.Fatalf("blocks lost order or content: %#v", message.Blocks)
+	}
+}
+
 func TestGoogleReplayedToolUsePlacesThoughtSignatureOnPart(t *testing.T) {
 	var calls int32
 	var sawReplay bool
@@ -1180,12 +1260,25 @@ func decodeRequest(t *testing.T, r *http.Request, dst any) {
 	}
 }
 
-func writeSSE(t *testing.T, w http.ResponseWriter, data string) {
+func writeSSE(t *testing.T, w http.ResponseWriter, data ...string) {
 	t.Helper()
 	w.Header().Set("Content-Type", "text/event-stream")
-	if _, err := fmt.Fprintf(w, "data: %s\n\n", data); err != nil {
-		t.Fatalf("write sse: %v", err)
+	for _, frame := range data {
+		if _, err := fmt.Fprintf(w, "data: %s\n\n", frame); err != nil {
+			t.Fatalf("write sse: %v", err)
+		}
 	}
+}
+
+func parseGoogleSSEMessage(t *testing.T, data ...string) agentkit.Message {
+	t.Helper()
+	response := httptest.NewRecorder()
+	writeSSE(t, response, data...)
+	message, _, _, err := parseResponse(response.Header().Get("Content-Type"), response.Body.Bytes())
+	if err != nil {
+		t.Fatalf("parseResponse() error = %v", err)
+	}
+	return message
 }
 
 func field[T any](t *testing.T, m map[string]any, name string) T {
