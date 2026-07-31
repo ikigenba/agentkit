@@ -2,6 +2,7 @@ package toolkit
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -9,21 +10,49 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/ikigenba/agentkit"
 )
 
-func TestWebSearchConstruction(t *testing.T) {
-	// R-1EKW-L5BR
-	if tool := WebSearch("key"); tool == nil {
-		t.Fatal("WebSearch(non-empty key) returned nil")
-	}
+func TestWebSearchMissingCredential(t *testing.T) {
+	// R-UGF9-OO0Z
+	var tool agentkit.Tool
+	var recovered any
 	func() {
 		defer func() {
-			if recover() == nil {
-				t.Fatal(`WebSearch("") did not panic`)
-			}
+			recovered = recover()
 		}()
-		WebSearch("")
+		tool = WebSearch(BraveAPIKey(""))
 	}()
+	if recovered != nil {
+		t.Fatalf("WebSearch with an absent key panicked: %v", recovered)
+	}
+	if tool == nil {
+		t.Fatal("WebSearch with an absent key returned nil")
+	}
+
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		requests.Add(1)
+	}))
+	t.Cleanup(server.Close)
+	setWebSearchBaseURL(t, server.URL)
+
+	got, err := callTool(t, tool, map[string]any{"query": "agentkit"})
+	if got != "" {
+		t.Errorf("result = %q, want empty", got)
+	}
+	if !errors.Is(err, agentkit.ErrMissingCredential) {
+		t.Fatalf("error = %v, want ErrMissingCredential", err)
+	}
+	for _, part := range []string{"WebSearch", "Brave Search API key"} {
+		if !strings.Contains(err.Error(), part) {
+			t.Errorf("error = %q, want it to name %q", err, part)
+		}
+	}
+	if got := requests.Load(); got != 0 {
+		t.Fatalf("requests = %d, want 0", got)
+	}
 }
 
 func TestWebSearchSchema(t *testing.T) {

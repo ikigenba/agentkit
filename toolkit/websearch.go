@@ -19,6 +19,9 @@ var (
 	webSearchTimeout      = 10 * time.Second
 )
 
+// BraveAPIKey is the toolkit's closed credential type for Brave Search.
+type BraveAPIKey string
+
 type webSearchInput struct {
 	Query         string   `json:"query" jsonschema:"description=Search query (maximum 400 characters and 50 words)."`
 	Count         int      `json:"count,omitempty" jsonschema:"description=Number of results to return from 1 to 20 (default 10)."`
@@ -53,13 +56,13 @@ type webSearchOutput struct {
 }
 
 // WebSearch returns a tool that searches the web via the Brave Search API.
-// It panics if apiKey is empty.
-func WebSearch(apiKey string) agentkit.Tool {
-	if apiKey == "" {
-		panic("toolkit.WebSearch: apiKey must not be empty")
-	}
-
+// An absent key constructs normally and fails when the tool is called.
+func WebSearch(apiKey BraveAPIKey) agentkit.Tool {
 	return agentkit.NewTool("WebSearch", "Search the web via the Brave Search API.", func(ctx context.Context, in webSearchInput) (string, error) {
+		if apiKey == "" {
+			return "", fmt.Errorf("toolkit.WebSearch: Brave Search API key is absent: %w", agentkit.ErrMissingCredential)
+		}
+
 		requestURL, err := url.Parse(braveWebSearchBaseURL + "/res/v1/web/search")
 		if err != nil {
 			return "", fmt.Errorf("construct Brave web search URL: %w", err)
@@ -102,7 +105,7 @@ func WebSearch(apiKey string) agentkit.Tool {
 		if err != nil {
 			return "", fmt.Errorf("create Brave web search request: %w", err)
 		}
-		req.Header.Set("X-Subscription-Token", apiKey)
+		req.Header.Set("X-Subscription-Token", string(apiKey))
 		req.Header.Set("Accept", "application/json")
 
 		resp, err := http.DefaultClient.Do(req)
