@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.15.0
+
+- Allowed anything needing a credential to be constructed without one. The
+  operation that needs it now returns an error naming the missing credential
+  instead of panicking or failing during wiring, so tool sets keep the same
+  shape regardless of which credentials are configured.
+- Added `agentkit.ErrMissingCredential` for absent credentials. A credential
+  that is present but unusable for an operation still reports
+  `agentkit.ErrInvalidConfig`; in particular, embeddings now explain that a
+  ChatGPT subscription credential cannot serve embeddings instead of reporting
+  it as missing.
+- Changed `toolkit.WebSearch` to accept `toolkit.BraveAPIKey` instead of a bare
+  `string`.
+- Changed `openai.NewEmbedder` so a ChatGPT subscription credential no longer
+  causes a panic at construction; `Embed` reports the invalid configuration
+  when that credential is used.
+
 ## v0.14.0
 
 - Added `toolkit.WebSearch`, a Brave Search API-backed web search tool that
