@@ -97,6 +97,51 @@ func TestChatAndEmbeddingProvidersReportAPIKeyIdentity(t *testing.T) {
 	}
 }
 
+func TestGoogleChatAndEmbedderReportMissingAPIKeyWithoutTransport(t *testing.T) {
+	// R-UMIR-LIQG
+	var calls int32
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		atomic.AddInt32(&calls, 1)
+	}))
+	defer server.Close()
+
+	t.Run("chat", func(t *testing.T) {
+		provider := New(APIKey(""), WithBaseURL(server.URL), WithHTTPClient(server.Client()))
+		conv := &agentkit.Conversation{Provider: provider, Model: "gemini-test"}
+		stream := conv.Send(context.Background(), "hello")
+		for range stream.Events() {
+		}
+
+		err := stream.Err()
+		if !errors.Is(err, agentkit.ErrMissingCredential) {
+			t.Fatalf("Send() error = %v, want ErrMissingCredential", err)
+		}
+		if !strings.Contains(err.Error(), "API key") {
+			t.Fatalf("Send() error = %q, want Google API key named", err)
+		}
+	})
+
+	t.Run("embedding", func(t *testing.T) {
+		provider := NewEmbedder(APIKey(""), WithBaseURL(server.URL), WithHTTPClient(server.Client()))
+		rt := provider.Embed(context.Background(), &agentkit.EmbedRequest{
+			Model:  EmbedModelGemini001,
+			Inputs: []string{"hello"},
+		})
+
+		err := rt.Err()
+		if !errors.Is(err, agentkit.ErrMissingCredential) {
+			t.Fatalf("Embed() error = %v, want ErrMissingCredential", err)
+		}
+		if !strings.Contains(err.Error(), "API key") {
+			t.Fatalf("Embed() error = %q, want Google API key named", err)
+		}
+	})
+
+	if got := atomic.LoadInt32(&calls); got != 0 {
+		t.Fatalf("HTTP requests = %d, want 0", got)
+	}
+}
+
 func TestGoogleSendBuildsRequestParsesToolTurnAndUsage(t *testing.T) {
 	var calls int32
 	var sawAuth bool

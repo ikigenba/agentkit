@@ -91,6 +91,10 @@ func (p *Provider) Identity() agentkit.Identity {
 }
 
 func (p *Provider) RoundTrip(ctx context.Context, req *agentkit.Request) *agentkit.RoundTrip {
+	if p.apiKey == "" {
+		err := fmt.Errorf("google: API key is absent: %w", agentkit.ErrMissingCredential)
+		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, nil, err, 0, false)
+	}
 	if req == nil {
 		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, nil, agentkit.ErrInvalidConfig, 0, false)
 	}
@@ -722,7 +726,14 @@ func (p *embeddingProvider) Identity() agentkit.Identity {
 }
 
 func (p *embeddingProvider) Embed(ctx context.Context, req *agentkit.EmbedRequest) *agentkit.EmbedRoundTrip {
-	if p == nil || p.apiKey == "" || p.baseURL == "" || req == nil {
+	if p == nil {
+		return agentkit.NewEmbedRoundTrip(nil, agentkit.EmbeddingUsage{}, nil, agentkit.ErrInvalidConfig)
+	}
+	if p.apiKey == "" {
+		err := fmt.Errorf("google: API key is absent: %w", agentkit.ErrMissingCredential)
+		return agentkit.NewEmbedRoundTrip(nil, agentkit.EmbeddingUsage{}, nil, err)
+	}
+	if p.baseURL == "" || req == nil {
 		return agentkit.NewEmbedRoundTrip(nil, agentkit.EmbeddingUsage{}, nil, agentkit.ErrInvalidConfig)
 	}
 	if len(req.Inputs) == 0 {
