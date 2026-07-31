@@ -73,9 +73,11 @@ One line per Decision, in number order — file, label, and the Verification ids
 - **D35** `project/design/D35.md` — The assembled message is transport-shape-independent
   - ids: R-QUWY-MLCD, R-QW4V-0D32, R-QXCR-E4TR, R-QYKN-RWKG, R-QZSK-5OB5, R-R10G-JG1U
 - **D36** `project/design/D36.md` — `toolkit`: `WebSearch` — Brave-backed web search
-  - ids: R-1EKW-L5BR, R-1FSS-YX2G, R-1H0P-COT5, R-1I8L-QGJU, R-1JGI-48AJ, R-1KOE-I018
+  - ids: R-1FSS-YX2G, R-1H0P-COT5, R-1I8L-QGJU, R-1JGI-48AJ, R-1KOE-I018
 - **D37** `project/design/D37.md` — `toolkit`: `WebFetch` — page fetch to markdown
   - ids: R-1LWA-VRRX, R-1N47-9JIM, R-1OC3-NB9B, R-1QRW-EUQP, R-1RZS-SMHE, R-1T7P-6E83, R-1UFL-K5YS, R-1VNH-XXPH
+- **D38** `project/design/D38.md` — Credentials: absent at construction, named at the call
+  - ids: R-UF7D-AWAA, R-UGF9-OO0Z, R-UHN6-2FRO, R-UIV2-G7ID, R-ULAV-7QZR, R-UMIR-LIQG, R-UNQN-ZAH5
 
 ## Verification ids → Decision
 R-00IP-I9D7  D1  project/design/D01.md
@@ -83,7 +85,6 @@ R-01HL-I6TM  D9  project/design/D09.md
 R-02PH-VYKB  D9  project/design/D09.md
 R-03XE-9QB0  D9  project/design/D09.md
 R-055A-NI1P  D9  project/design/D09.md
-R-1EKW-L5BR  D36  project/design/D36.md
 R-1FSS-YX2G  D36  project/design/D36.md
 R-1H0P-COT5  D36  project/design/D36.md
 R-1I8L-QGJU  D36  project/design/D36.md
@@ -289,10 +290,17 @@ R-T587-9RGW  D6  project/design/D06.md
 R-T6G3-NJ7L  D6  project/design/D06.md
 R-TQ77-6QLK  D9  project/design/D09.md
 R-U3C5-4A1V  D34  project/design/D34.md
+R-UF7D-AWAA  D38  project/design/D38.md
+R-UGF9-OO0Z  D38  project/design/D38.md
+R-UHN6-2FRO  D38  project/design/D38.md
+R-UIV2-G7ID  D38  project/design/D38.md
 R-UJJV-4KZZ  D33  project/design/D33.md
 R-UJNS-PFLL  D9  project/design/D09.md
 R-UKRR-ICQO  D33  project/design/D33.md
+R-ULAV-7QZR  D38  project/design/D38.md
 R-ULZN-W4HD  D33  project/design/D33.md
+R-UMIR-LIQG  D38  project/design/D38.md
+R-UNQN-ZAH5  D38  project/design/D38.md
 R-UOFG-NNYR  D33  project/design/D33.md
 R-UPND-1FPG  D33  project/design/D33.md
 R-UQV9-F7G5  D32  project/design/D32.md

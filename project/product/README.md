@@ -174,6 +174,7 @@ These fixed, promised values the design must use verbatim and never re-declare:
 
 - **Uniform, inspectable errors.** Failures arrive as a uniform, classifiable set of errors so the consumer never needs provider-specific error knowledge, and each error carries the raw provider error response inside it for inspection.
 - **Automatic resilience.** Transient failures and rate limits are retried by AgentKit; the consumer only sees an error after retries are exhausted.
+- **A missing credential is reported, never fatal at wiring time.** Anything that needs a credential can be built without one, so a consumer's capabilities are the same on every machine regardless of which keys happen to be set. The failure arrives when the thing is actually used, and it says which credential is missing rather than surfacing as an unexplained rejection from the provider. A credential that is present but cannot serve the operation it was given is reported as exactly that.
 - **Uniform usage accounting.** Each result carries token-usage information in a uniform shape — for embeddings, the input tokens consumed — so consumption can be tracked without provider-specific parsing.
 - **Dollar-cost accounting, honest at the edges.** Every result reports a dollar cost, per call and cumulatively for the life of the object. Where the provider reports the true charge (OpenRouter), that is the figure used. Otherwise the figure is computed from rates the consumer supplies — a single catalog lookup for models the catalog tracks. When neither source exists — typically a brand-new model before its rates are published — the call still succeeds, reports zero cost, and carries a clear warning that cost is unknown, on every affected result, until a rate is supplied. Spend is never silently misstated, and no model is ever blocked from running for lack of price data.
 - **A maintained catalog, kept advisory — and complete for every route it lists.** The catalog's model data (providers, routes, rates, reasoning vocabularies, capabilities) is maintained with the library so the common path — pick a known model, get correct defaults and correct cost — needs no consumer-maintained data. Nothing in the catalog is a partial answer: every route a cataloged model lists carries that route's full terms, including routes through an aggregator. Its absence for a given model never restricts what runs.
@@ -237,7 +238,7 @@ These fixed, promised values the design must use verbatim and never re-declare:
 - Fetching a plain-text resource returns it unchanged; fetching an image or other binary returns a clear refusal naming the content's type.
 - A rate-limited search reaches the model as an error stating the limit was hit, with the service's stated wait time when one was given, and the conversation continues.
 - A fetch of an unresponsive site fails within its wait time rather than hanging the conversation, and the model can grant a specific fetch a longer wait, up to a bounded maximum.
-- Constructing the search tool with an empty key fails immediately at construction.
+- A search tool built without a key is still offered to the model, and calling it reports that the Brave key is the credential missing.
 
 ### Document text extraction
 
@@ -256,4 +257,6 @@ These fixed, promised values the design must use verbatim and never re-declare:
 - Transient failures and rate limits are retried automatically, and the consumer sees an error only after retries are exhausted.
 - Each result carries uniform token-usage information (for embeddings, input tokens consumed).
 - Every result reports a dollar cost: the provider-reported charge where the provider states one, a figure computed from consumer-supplied rates otherwise, and — when neither exists — zero accompanied by a visible cost-unknown warning on every affected result; the call is never blocked and spend is never silently misstated.
+- Anything built without the credential it needs is still built and still offered, and the first use of it reports which credential is missing; nothing fails at wiring time and no tool disappears from an agent's tool set because a key was absent.
+- A credential that is real but cannot serve the operation it is given — a ChatGPT subscription handed to embeddings — is reported as unusable for that operation specifically, not as a missing credential.
 - Looking up a cataloged model by name yields everything needed to run it on **every route it lists** — each serving provider with that route's wire id, rates, reasoning vocabulary and default, and context size, with no listed route missing any of it — and listing what is reachable via a given provider works without constructing any client; an uncataloged model remains fully runnable.
