@@ -64,6 +64,47 @@ func (p *fakeProvider) Identity() agentkit.Identity {
 	return agentkit.Identity{Provider: agentkit.ProviderID(p.name), Auth: agentkit.AuthAPIKey}
 }
 
+func TestNewRoundTripMergesOnlyAdjacentTextBlocks(t *testing.T) {
+	// R-QZSK-5OB5
+	t.Run("adjacent text joins verbatim", func(t *testing.T) {
+		message := agentkit.Message{
+			Role: agentkit.RoleAssistant,
+			Blocks: []agentkit.Block{
+				agentkit.TextBlock{Text: "  I have"},
+				agentkit.TextBlock{Text: " access to"},
+				agentkit.TextBlock{Text: " tools  "},
+			},
+		}
+
+		got := agentkit.NewRoundTrip(message, agentkit.FinishStop, agentkit.Usage{}, nil, nil, 0, false).Message()
+		want := agentkit.Message{
+			Role:   agentkit.RoleAssistant,
+			Blocks: []agentkit.Block{agentkit.TextBlock{Text: "  I have access to tools  "}},
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("Message() = %#v, want adjacent text joined verbatim as %#v", got, want)
+		}
+	})
+
+	t.Run("non-text blocks preserve text boundaries", func(t *testing.T) {
+		message := agentkit.Message{
+			Role: agentkit.RoleAssistant,
+			Blocks: []agentkit.Block{
+				agentkit.TextBlock{Text: "before tool"},
+				agentkit.ToolUseBlock{ID: testToolUseID, Name: "lookup", Input: json.RawMessage(`{"query":"value"}`)},
+				agentkit.TextBlock{Text: "after tool"},
+				agentkit.ReasoningBlock{Opaque: json.RawMessage(`{"thought":"opaque"}`), Summary: "reasoning", BoundToID: secondToolUseID},
+				agentkit.TextBlock{Text: "after reasoning"},
+			},
+		}
+
+		got := agentkit.NewRoundTrip(message, agentkit.FinishToolUse, agentkit.Usage{}, nil, nil, 0, false).Message()
+		if !reflect.DeepEqual(got, message) {
+			t.Fatalf("Message() = %#v, want separated text blocks intact and ordered as %#v", got, message)
+		}
+	})
+}
+
 func TestSendBoundaryValidation(t *testing.T) {
 	ctx := context.Background()
 

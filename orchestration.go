@@ -80,10 +80,13 @@ type RoundTrip struct {
 	reportedCostOK bool
 }
 
-// NewRoundTrip builds a provider SPI result.
+// NewRoundTrip builds a provider SPI result. It normalizes the assembled
+// message so adjacent TextBlocks are joined verbatim before storage.
 func NewRoundTrip(message Message, finish FinishReason, usage Usage, warnings []Warning, err error, reportedCost Cost, reportedCostOK bool) *RoundTrip {
+	message = cloneMessage(message)
+	message.Blocks = mergeAdjacentText(message.Blocks)
 	return &RoundTrip{
-		message:        cloneMessage(message),
+		message:        message,
 		finish:         finish,
 		usage:          usage,
 		warnings:       append([]Warning(nil), warnings...),
@@ -91,6 +94,30 @@ func NewRoundTrip(message Message, finish FinishReason, usage Usage, warnings []
 		reportedCost:   reportedCost,
 		reportedCostOK: reportedCostOK,
 	}
+}
+
+// mergeAdjacentText replaces each maximal run of TextBlocks with one block
+// containing their verbatim concatenation. Empty runs are omitted.
+func mergeAdjacentText(blocks []Block) []Block {
+	merged := make([]Block, 0, len(blocks))
+	var text strings.Builder
+	flushText := func() {
+		if text.Len() > 0 {
+			merged = append(merged, TextBlock{Text: text.String()})
+		}
+		text.Reset()
+	}
+
+	for _, block := range blocks {
+		if block, ok := block.(TextBlock); ok {
+			text.WriteString(block.Text)
+			continue
+		}
+		flushText()
+		merged = append(merged, block)
+	}
+	flushText()
+	return merged
 }
 
 // Message returns the assembled assistant message.
