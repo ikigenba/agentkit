@@ -4,7 +4,6 @@ The manifest, and a work **queue**: one line per **pending** phase, in build ord
 
 Next phase: 110
 
-- Phase 104 ⬜ realizes D38 (R-UGF9-OO0Z), D36 — `toolkit.WebSearch` takes a typed `BraveAPIKey` and reports an absent key at the call
 - Phase 105 ⬜ realizes D38 (R-UHN6-2FRO) — `ocr` separates a missing credential from a bad configuration
 - Phase 106 ⬜ realizes D38 (R-UIV2-G7ID, R-ULAV-7QZR) — `openai` chat and embeddings report their own missing or unusable credential
 - Phase 107 ⬜ realizes D38 (R-UMIR-LIQG) — `google` chat and embeddings report their own missing credential
