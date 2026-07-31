@@ -4,7 +4,6 @@ The manifest, and a work **queue**: one line per **pending** phase, in build ord
 
 Next phase: 100
 
-- Phase 96 ⬜ realizes D35 (R-QUWY-MLCD, R-QW4V-0D32, R-QXCR-E4TR, R-QYKN-RWKG) — Google adapter parses the whole SSE stream once instead of per frame
 - Phase 97 ⬜ realizes D35 (R-QZSK-5OB5) — the adjacent-text invariant enforced centrally in NewRoundTrip
 - Phase 98 ⬜ realizes D35 (R-R10G-JG1U) — live Gemini proof that a real reply assembles to one TextBlock
 - Phase 99 ⬜ realizes — CHANGELOG v0.13.0 (plus the missing v0.12.0) and the annotated minor release tag
