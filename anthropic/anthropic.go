@@ -76,8 +76,12 @@ func (p *Provider) Identity() agentkit.Identity {
 }
 
 func (p *Provider) RoundTrip(ctx context.Context, req *agentkit.Request) *agentkit.RoundTrip {
-	if req == nil {
+	if p == nil || req == nil {
 		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, nil, agentkit.ErrInvalidConfig, 0, false)
+	}
+	if p.apiKey == "" {
+		err := fmt.Errorf("anthropic: API key is absent: %w", agentkit.ErrMissingCredential)
+		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, nil, err, 0, false)
 	}
 	body, warnings, err := buildRequest(req)
 	if err != nil {

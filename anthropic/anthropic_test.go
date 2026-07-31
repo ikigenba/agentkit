@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"github.com/ikigenba/agentkit"
+	"github.com/ikigenba/agentkit/openrouter"
+	"github.com/ikigenba/agentkit/zai"
 )
 
 var updateGolden = flag.Bool("update", false, "update golden files")
@@ -69,6 +71,65 @@ func TestNewProviderSendsAuthenticatedRequestToInjectedServer(t *testing.T) {
 	}
 	if gotKey != "test-key" {
 		t.Fatalf("X-API-Key = %q, want test-key", gotKey)
+	}
+}
+
+func TestEmptyAPIKeyFailsAtSendWithoutHTTPRequest(t *testing.T) {
+	// R-UNQN-ZAH5
+	tests := []struct {
+		name string
+		new  func(baseURL string, client *http.Client) agentkit.Provider
+	}{
+		{
+			name: "anthropic",
+			new: func(baseURL string, client *http.Client) agentkit.Provider {
+				return New(APIKey(""), WithBaseURL(baseURL), WithHTTPClient(client))
+			},
+		},
+		{
+			name: "zai",
+			new: func(baseURL string, client *http.Client) agentkit.Provider {
+				return zai.New(zai.APIKey(""), zai.WithBaseURL(baseURL), zai.WithHTTPClient(client))
+			},
+		},
+		{
+			name: "openrouter",
+			new: func(baseURL string, client *http.Client) agentkit.Provider {
+				return openrouter.New(openrouter.APIKey(""), openrouter.WithBaseURL(baseURL), openrouter.WithHTTPClient(client))
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			requests := 0
+			server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+				requests++
+			}))
+			defer server.Close()
+
+			provider := tt.new(server.URL, server.Client())
+			if provider == nil {
+				t.Fatal("New returned nil")
+			}
+			stream := (&agentkit.Conversation{
+				Provider: provider,
+				Model:    "test-model",
+			}).Send(context.Background(), "hello")
+			drain(stream)
+
+			err := stream.Err()
+			if !errors.Is(err, agentkit.ErrMissingCredential) {
+				t.Fatalf("Err() = %v, want ErrMissingCredential", err)
+			}
+			lower := strings.ToLower(err.Error())
+			if !strings.Contains(lower, tt.name) || !strings.Contains(lower, "api key") {
+				t.Fatalf("Err() = %q, want package %q and API key named", err, tt.name)
+			}
+			if requests != 0 {
+				t.Fatalf("HTTP requests = %d, want 0", requests)
+			}
+		})
 	}
 }
 

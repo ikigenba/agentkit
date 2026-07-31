@@ -4,6 +4,7 @@ package zai
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -55,6 +56,7 @@ func WithHTTPClient(client *http.Client) Option {
 // Provider is a Z.ai GLM provider.
 type Provider struct {
 	compat *openaicompat.Provider
+	apiKey string
 }
 
 // New constructs a Z.ai provider. The Z.ai API root is baked into the provider;
@@ -76,7 +78,7 @@ func New(cred Credential, opts ...Option) *Provider {
 		Classify:                 classify,
 		WarnForcedToolChoiceAuto: true,
 		ReasoningEncoder:         encodeReasoning,
-	})}
+	}), apiKey: auth.apiKey}
 }
 
 // Identity identifies the Z.ai package and API-key credential mode.
@@ -86,6 +88,13 @@ func (p *Provider) Identity() agentkit.Identity {
 
 // RoundTrip performs one Z.ai Chat-Completions model call.
 func (p *Provider) RoundTrip(ctx context.Context, req *agentkit.Request) *agentkit.RoundTrip {
+	if p == nil || req == nil || p.compat == nil {
+		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, nil, agentkit.ErrInvalidConfig, 0, false)
+	}
+	if p.apiKey == "" {
+		err := fmt.Errorf("zai: API key is absent: %w", agentkit.ErrMissingCredential)
+		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, nil, err, 0, false)
+	}
 	return p.compat.RoundTrip(ctx, req)
 }
 

@@ -4,6 +4,7 @@ package openrouter
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"math"
 	"net/http"
 	"strings"
@@ -56,6 +57,7 @@ func WithHTTPClient(client *http.Client) Option {
 // Provider is an OpenRouter Chat-Completions provider.
 type Provider struct {
 	compat *openaicompat.Provider
+	apiKey string
 }
 
 // New constructs an OpenRouter provider. The API root is baked into the
@@ -77,7 +79,7 @@ func New(cred Credential, opts ...Option) *Provider {
 		Classify:         classify,
 		ReasoningEncoder: encodeReasoning,
 		CostExtractor:    extractCost,
-	})}
+	}), apiKey: auth.apiKey}
 }
 
 // Identity identifies the OpenRouter package and API-key credential mode.
@@ -87,6 +89,13 @@ func (p *Provider) Identity() agentkit.Identity {
 
 // RoundTrip performs one OpenRouter Chat-Completions model call.
 func (p *Provider) RoundTrip(ctx context.Context, req *agentkit.Request) *agentkit.RoundTrip {
+	if p == nil || req == nil || p.compat == nil {
+		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, nil, agentkit.ErrInvalidConfig, 0, false)
+	}
+	if p.apiKey == "" {
+		err := fmt.Errorf("openrouter: API key is absent: %w", agentkit.ErrMissingCredential)
+		return agentkit.NewRoundTrip(agentkit.Message{}, agentkit.FinishOther, agentkit.Usage{}, nil, err, 0, false)
+	}
 	return p.compat.RoundTrip(ctx, req)
 }
 
