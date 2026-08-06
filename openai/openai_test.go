@@ -88,8 +88,7 @@ func TestBuildRequestToolsSortedByName(t *testing.T) {
 	}
 }
 
-func TestProviderSendsStrictToolsWithClosedObjectsAndNullableOptionals(t *testing.T) {
-	// R-XUCZ-80P5
+func TestProviderOmitsStrictAndPreservesCanonicalOptionality(t *testing.T) {
 	schema := json.RawMessage(`{
 		"$schema":"https://json-schema.org/draft/2020-12/schema",
 		"$defs":{"unused":{"type":"string"}},
@@ -130,26 +129,33 @@ func TestProviderSendsStrictToolsWithClosedObjectsAndNullableOptionals(t *testin
 		t.Fatalf("recorded tools = %#v, want one tool", recorded["tools"])
 	}
 	tool := tools[0].(map[string]any)
-	if tool["strict"] != true {
-		t.Fatalf("strict = %#v, want true", tool["strict"])
+	if _, exists := tool["strict"]; exists {
+		t.Fatalf("tool unexpectedly contains strict: %#v", tool)
 	}
 	parameters := tool["parameters"].(map[string]any)
-	assertStrictObjectSchemas(t, parameters)
+	assertClosedObjectSchemas(t, parameters)
 	assertNoSchemaMetadata(t, parameters)
+	if got, want := parameters["required"], []any{"query", "filter"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("required = %#v, want %#v", got, want)
+	}
 
 	properties := parameters["properties"].(map[string]any)
-	if got := properties["limit"].(map[string]any)["type"]; !reflect.DeepEqual(got, []any{"integer", "null"}) {
-		t.Fatalf("optional limit type = %#v, want [integer null]", got)
+	if got := properties["limit"].(map[string]any)["type"]; got != "integer" {
+		t.Fatalf("optional limit type = %#v, want integer", got)
 	}
 	filter := properties["filter"].(map[string]any)
+	if got, want := filter["required"], []any{"field"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("nested required = %#v, want %#v", got, want)
+	}
 	exact := filter["properties"].(map[string]any)["exact"].(map[string]any)
-	if got := exact["type"]; !reflect.DeepEqual(got, []any{"boolean", "null"}) {
-		t.Fatalf("nested optional exact type = %#v, want [boolean null]", got)
+	if got := exact["type"]; got != "boolean" {
+		t.Fatalf("nested optional exact type = %#v, want boolean", got)
 	}
 }
 
 func TestOpenAIRendererPreservesConstructCompleteSchemaAndMatchesCompat(t *testing.T) {
-	// R-2W35-53BH
+	// R-836K-ZH1P
+	// R-84EH-D8SE
 	schema := constructCompleteOpenAISchema()
 	request, _, err := (&Provider{}).buildRequest(&agentkit.Request{
 		Model: "gpt-test",
@@ -163,11 +169,11 @@ func TestOpenAIRendererPreservesConstructCompleteSchemaAndMatchesCompat(t *testi
 	if err != nil {
 		t.Fatalf("buildRequest() error = %v", err)
 	}
-	if len(request.Tools) != 1 || !request.Tools[0].Strict {
-		t.Fatalf("rendered tools = %#v, want one strict tool", request.Tools)
+	if len(request.Tools) != 1 {
+		t.Fatalf("rendered tools = %#v, want one tool", request.Tools)
 	}
 	parameters := request.Tools[0].Parameters
-	assertStrictObjectSchemas(t, parameters)
+	assertClosedObjectSchemas(t, parameters)
 	assertNoSchemaMetadata(t, parameters)
 
 	properties := parameters["properties"].(map[string]any)
@@ -212,8 +218,11 @@ func TestOpenAIRendererPreservesConstructCompleteSchemaAndMatchesCompat(t *testi
 	if got := address["properties"].(map[string]any)["zip"].(map[string]any)["pattern"]; got != "^[0-9]{5}$" {
 		t.Errorf("inlined address zip pattern = %#v", got)
 	}
-	if got := properties["optional"].(map[string]any)["type"]; !reflect.DeepEqual(got, []any{"integer", "null"}) {
-		t.Errorf("optional type = %#v, want [integer null]", got)
+	if got := properties["optional"].(map[string]any)["type"]; got != "integer" {
+		t.Errorf("optional type = %#v, want integer", got)
+	}
+	if required := stringSliceSet(parameters["required"]); required["optional"] {
+		t.Errorf("optional property appears in required: %#v", parameters["required"])
 	}
 	if got := properties["nullable"].(map[string]any)["type"]; !reflect.DeepEqual(got, []any{"string", "null"}) {
 		t.Errorf("nullable type = %#v, want [string null]", got)
@@ -258,6 +267,9 @@ func TestOpenAIRendererPreservesConstructCompleteSchemaAndMatchesCompat(t *testi
 	if err := json.Unmarshal(openAIToolRaw, &openAITool); err != nil {
 		t.Fatalf("decode OpenAI tool: %v", err)
 	}
+	if _, exists := openAITool["strict"]; exists {
+		t.Fatalf("OpenAI tool unexpectedly contains strict: %#v", openAITool)
+	}
 	delete(openAITool, "type")
 	if len(compatBodies) != 2 {
 		t.Fatalf("compat request count = %d, want 2", len(compatBodies))
@@ -265,6 +277,9 @@ func TestOpenAIRendererPreservesConstructCompleteSchemaAndMatchesCompat(t *testi
 	for i, compatBody := range compatBodies {
 		compatTools := compatBody["tools"].([]any)
 		compatFunction := compatTools[0].(map[string]any)["function"].(map[string]any)
+		if _, exists := compatFunction["strict"]; exists {
+			t.Fatalf("compat function %d unexpectedly contains strict: %#v", i, compatFunction)
+		}
 		if !reflect.DeepEqual(openAITool, compatFunction) {
 			t.Fatalf("OpenAI tool payload differs from compat request %d:\nOpenAI: %#v\ncompat: %#v", i, openAITool, compatFunction)
 		}
@@ -300,41 +315,31 @@ func constructCompleteOpenAISchema() json.RawMessage {
 	}`)
 }
 
-func assertStrictObjectSchemas(t *testing.T, value any) {
+func assertClosedObjectSchemas(t *testing.T, value any) {
 	t.Helper()
 	switch value := value.(type) {
 	case map[string]any:
-		if properties, ok := value["properties"].(map[string]any); ok {
+		if _, ok := value["properties"].(map[string]any); ok {
 			if value["additionalProperties"] != false {
 				t.Errorf("object additionalProperties = %#v, want false", value["additionalProperties"])
 			}
-			requiredSet := make(map[string]bool)
-			switch required := value["required"].(type) {
-			case []any:
-				for _, name := range required {
-					requiredSet[name.(string)] = true
-				}
-			case []string:
-				for _, name := range required {
-					requiredSet[name] = true
-				}
-			default:
-				t.Errorf("object required = %#v, want array", value["required"])
-			}
-			for name := range properties {
-				if !requiredSet[name] {
-					t.Errorf("property %q absent from required: %#v", name, value["required"])
-				}
-			}
 		}
 		for _, child := range value {
-			assertStrictObjectSchemas(t, child)
+			assertClosedObjectSchemas(t, child)
 		}
 	case []any:
 		for _, child := range value {
-			assertStrictObjectSchemas(t, child)
+			assertClosedObjectSchemas(t, child)
 		}
 	}
+}
+
+func stringSliceSet(value any) map[string]bool {
+	set := make(map[string]bool)
+	for _, item := range value.([]any) {
+		set[item.(string)] = true
+	}
+	return set
 }
 
 func assertNoSchemaMetadata(t *testing.T, value any) {

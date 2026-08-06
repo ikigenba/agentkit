@@ -506,8 +506,8 @@ func TestAnthropicDropsForeignReasoningBlocksFromRequest(t *testing.T) {
 	}
 }
 
-func TestAnthropicToolSchemaUsesStrictClosedObjectsAndCanonicalOptionality(t *testing.T) {
-	// R-XT52-U8YG
+func TestAnthropicToolSchemaOmitsStrictAndUsesClosedObjectsWithCanonicalOptionality(t *testing.T) {
+	// R-80QS-7XKB
 	tool := schemaTool{
 		name:        "lookup",
 		description: "look up a record",
@@ -548,8 +548,8 @@ func TestAnthropicToolSchemaUsesStrictClosedObjectsAndCanonicalOptionality(t *te
 	}
 
 	wire := body["tools"].([]any)[0].(map[string]any)
-	if wire["strict"] != true {
-		t.Fatalf("tool strict = %#v, want true", wire["strict"])
+	if _, exists := wire["strict"]; exists {
+		t.Fatalf("tool unexpectedly contains strict: %#v", wire)
 	}
 	schema := wire["input_schema"].(map[string]any)
 	if schema["additionalProperties"] != false {

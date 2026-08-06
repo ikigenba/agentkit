@@ -161,7 +161,6 @@ type wireTool struct {
 	Name         string         `json:"name"`
 	Description  string         `json:"description,omitempty"`
 	InputSchema  map[string]any `json:"input_schema"`
-	Strict       bool           `json:"strict"`
 	CacheControl *cacheControl  `json:"cache_control,omitempty"`
 }
 
@@ -209,7 +208,6 @@ func buildRequest(req *agentkit.Request) (messageRequest, []agentkit.Warning, er
 			Name:        tool.Name(),
 			Description: tool.Description(),
 			InputSchema: renderSchema(tool.JSONSchema()),
-			Strict:      true,
 		})
 	}
 	for _, msg := range req.Messages {

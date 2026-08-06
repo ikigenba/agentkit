@@ -52,8 +52,7 @@ func TestBuildRequestToolsSortedByName(t *testing.T) {
 	}
 }
 
-func TestBuildRequestRendersStrictOpenAISchema(t *testing.T) {
-	// R-2W35-53BH
+func TestBuildRequestRendersOpenAISchemaWithoutStrict(t *testing.T) {
 	schema := json.RawMessage(`{
 		"$schema":"https://json-schema.org/draft/2020-12/schema",
 		"$defs":{"detail":{"type":"object","properties":{"code":{"type":"string","pattern":"^[A-Z]+$"}}}},
@@ -80,9 +79,6 @@ func TestBuildRequestRendersStrictOpenAISchema(t *testing.T) {
 		t.Fatalf("tool count = %d, want 1", len(request.Tools))
 	}
 	function := request.Tools[0].Function
-	if !function.Strict {
-		t.Fatal("function strict = false, want true")
-	}
 	if want := RenderSchema(schema); !reflect.DeepEqual(function.Parameters, want) {
 		t.Fatalf("parameters = %#v, want %#v", function.Parameters, want)
 	}
@@ -99,5 +95,17 @@ func TestBuildRequestRendersStrictOpenAISchema(t *testing.T) {
 	}
 	if _, exists := choice["anyOf"]; !exists {
 		t.Fatal("rendered choice omitted anyOf")
+	}
+	raw, err := json.Marshal(request.Tools[0])
+	if err != nil {
+		t.Fatalf("marshal tool: %v", err)
+	}
+	var wire map[string]any
+	if err := json.Unmarshal(raw, &wire); err != nil {
+		t.Fatalf("decode tool: %v", err)
+	}
+	functionWire := wire["function"].(map[string]any)
+	if _, exists := functionWire["strict"]; exists {
+		t.Fatalf("function unexpectedly contains strict: %#v", functionWire)
 	}
 }
