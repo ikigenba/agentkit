@@ -45,7 +45,7 @@ One line per Decision, in number order — file, label, and the Verification ids
 - **D21** `project/design/D21.md` — The shared retry executor (`internal/retry`)
   - ids: R-IUBG-95CC, R-IWR9-0OTQ, R-IXZ5-EGKF, R-IZ71-S8B4, R-J0EY-601T
 - **D22** `project/design/D22.md` — Per-provider schema rendering at the adapter boundary
-  - ids: R-XT52-U8YG, R-XUCZ-80P5, R-XVKV-LSFU, R-XWSR-ZK6J, R-XY0O-DBX8, R-2UV8-RBKS, R-2W35-53BH, R-2XB1-IV26
+  - ids: R-XVKV-LSFU, R-XWSR-ZK6J, R-XY0O-DBX8, R-2UV8-RBKS, R-2XB1-IV26, R-80QS-7XKB, R-836K-ZH1P, R-84EH-D8SE, R-85MD-R0J3, R-86UA-4S9S
 - **D23** `project/design/D23.md` — Deferred tools & the built-in `load_tools` meta-tool
   - ids: R-9RQ8-9G3W, R-9SY4-N7UL, R-D5PT-82VU, R-D6XP-LUMJ, R-D85L-ZMD8, R-D9DI-DE3X, R-DALE-R5UM, R-DE93-WH2P, R-DBTB-4XLB, R-DD17-IPC0, R-B5BR-U5M1, R-B6JO-7XCQ, R-B7RK-LP3F, R-DFH0-A8TE
 - **D24** `project/design/D24.md` — The `openrouter` provider
@@ -78,6 +78,8 @@ One line per Decision, in number order — file, label, and the Verification ids
   - ids: R-1LWA-VRRX, R-1N47-9JIM, R-1OC3-NB9B, R-1QRW-EUQP, R-1RZS-SMHE, R-1T7P-6E83, R-1UFL-K5YS, R-1VNH-XXPH, R-1I1F-JRHF
 - **D38** `project/design/D38.md` — Credentials: absent at construction, named at the call
   - ids: R-UF7D-AWAA, R-UGF9-OO0Z, R-UHN6-2FRO, R-UIV2-G7ID, R-ULAV-7QZR, R-UMIR-LIQG, R-UNQN-ZAH5
+- **D39** `project/design/D39.md` — Runtime tool-argument validation
+  - ids: R-7M3Z-MONZ, R-7NBW-0GEO, R-7OJS-E85D, R-7PRO-RZW2, R-7QZL-5RMR, R-7S7H-JJDG, R-7TFD-XB45, R-7UNA-B2UU, R-7VV6-OULJ, R-7X33-2MC8, R-7YAZ-GE2X, R-7ZIV-U5TM
 
 ## Verification ids → Decision
 R-00IP-I9D7  D1  project/design/D01.md
@@ -104,7 +106,6 @@ R-1T7P-6E83  D37  project/design/D37.md
 R-1UFL-K5YS  D37  project/design/D37.md
 R-1VNH-XXPH  D37  project/design/D37.md
 R-2UV8-RBKS  D22  project/design/D22.md
-R-2W35-53BH  D22  project/design/D22.md
 R-2XB1-IV26  D22  project/design/D22.md
 R-4NJ4-SJ41  D26  project/design/D26.md
 R-4YSE-6YBS  D9  project/design/D09.md
@@ -126,6 +127,23 @@ R-6XDZ-VW6L  D11  project/design/D11.md
 R-6YLW-9NXA  D11  project/design/D11.md
 R-711P-17EO  D13  project/design/D13.md
 R-7CYE-KS40  D7  project/design/D07.md
+R-7M3Z-MONZ  D39  project/design/D39.md
+R-7NBW-0GEO  D39  project/design/D39.md
+R-7OJS-E85D  D39  project/design/D39.md
+R-7PRO-RZW2  D39  project/design/D39.md
+R-7QZL-5RMR  D39  project/design/D39.md
+R-7S7H-JJDG  D39  project/design/D39.md
+R-7TFD-XB45  D39  project/design/D39.md
+R-7UNA-B2UU  D39  project/design/D39.md
+R-7VV6-OULJ  D39  project/design/D39.md
+R-7X33-2MC8  D39  project/design/D39.md
+R-7YAZ-GE2X  D39  project/design/D39.md
+R-7ZIV-U5TM  D39  project/design/D39.md
+R-80QS-7XKB  D22  project/design/D22.md
+R-836K-ZH1P  D22  project/design/D22.md
+R-84EH-D8SE  D22  project/design/D22.md
+R-85MD-R0J3  D22  project/design/D22.md
+R-86UA-4S9S  D22  project/design/D22.md
 R-9RQ8-9G3W  D23  project/design/D23.md
 R-9SY4-N7UL  D23  project/design/D23.md
 R-AIWI-P5JP  D4  project/design/D04.md
@@ -355,8 +373,6 @@ R-XO9H-B5ZO  D34  project/design/D34.md
 R-XQPA-2PH2  D34  project/design/D34.md
 R-XR4M-U1ZT  D9  project/design/D09.md
 R-XRX6-GH7R  D34  project/design/D34.md
-R-XT52-U8YG  D22  project/design/D22.md
-R-XUCZ-80P5  D22  project/design/D22.md
 R-XVKV-LSFU  D22  project/design/D22.md
 R-XW08-D4YL  D3  project/design/D03.md
 R-XWSR-ZK6J  D22  project/design/D22.md

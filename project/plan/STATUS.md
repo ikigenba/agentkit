@@ -2,4 +2,9 @@
 
 The manifest, and a work **queue**: one line per **pending** phase, in build order — the only place a phase's status marker lives. Each phase line is a Markdown bullet beginning with `- Phase` and carries the pending-marker (U+2B1C); there is no done-marker, because **completion is deletion** — when a phase passes, the build loop removes its line here and `git rm`s its `project/plan/phase-NN.md` in the completion commit, so the plan never holds finished work and the record of what was built lives in git. The build loop finds the next work with `grep -nE '^- Phase .* ⬜' project/plan/STATUS.md | head -1` and reads only that phase's `project/plan/phase-NN.md`. The `Next phase` counter below is the number the next appended phase takes; `$seal-spec` bumps it on every append, it is never decremented, and a number is never reused — so a phase number names one phase forever, even after its files are gone. (This paragraph and the counter line deliberately carry no bare status glyph, so the anchored grep matches only phase lines.)
 
-Next phase: 112
+Next phase: 116
+
+- Phase 112 ⬜ realizes D39 — runtime tool-argument validation in root, wired ahead of every tool call
+- Phase 113 ⬜ realizes D22 — drop strict from the Anthropic and OpenAI wire, render optionality honestly
+- Phase 114 ⬜ realizes D22 (live slice) — real-provider proof that the non-strict wire is accepted
+- Phase 115 ⬜ realizes — — changelog for v0.17.0

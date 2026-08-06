@@ -1165,6 +1165,37 @@ Both fail silently and in opposite directions, so neither can serve as an oracle
 schema was too rich. The practical consequence is that a schema must be narrowed **before** it is
 sent, client-side, rather than discovered by probing.
 
+### 18.6 Anthropic strict mode has per-request caps that §18.3 did not probe
+
+The §18.3 measurements varied the *schema* against a small tool set and never varied the *tool
+count*, so they missed two hard caps that make `strict: true` unusable for any consumer with a
+large tool inventory. Both are documented by Anthropic (structured outputs, "explicit limits", and
+the strict-tool-use page); the first was also hit in production on 2026-08-04:
+
+- **At most 20 strict tools per request.** Exceeding it is a 400 whose text is exactly
+  `Too many strict tools (N). The maximum number of strict tools supported is 20.` The observed
+  failure carried `N = 146`, from a conversation attaching 7 in-process tools plus fourteen MCP
+  servers. The cap is enforced identically on the first-party API and on Bedrock; pydantic-ai hit
+  the same wall and resolved it by never auto-promoting a tool to strict.
+- **At most 24 optional parameters aggregated across all strict tools in a request.** This one
+  binds well below the tool cap: a handful of realistic tools with a few optional fields each
+  exhausts it, so even a request under 20 strict tools can fail on schemas that are individually
+  fine.
+
+Two further facts bound the workarounds. Strict is implemented as grammar-constrained sampling,
+the grammar is compiled from the **full** toolset with an internal compiled-size limit and a 180s
+compilation timeout (compiled grammars are cached 24h), so **deferring a tool's definition does not
+exempt it from the caps**: no discovery or lazy-loading mechanism can rescue blanket strict at
+scale. And the caps are Anthropic-specific. OpenAI publishes no equivalent per-request strict-tool
+limit, and Gemini has no strict mode at all, so this is not a symmetric constraint across the
+three dialects.
+
+The consequence for AgentKit is not that strict is worth rationing but that it cannot be the
+enforcement mechanism at all: a library that marks tools strict is correct only below a tool count
+it does not control, and the failure mode above that count is a hard 400 rather than a degradation.
+Enforcement therefore has to be client-side, where no cap applies and the behavior is the same on
+every provider.
+
 ## 19. Brave Search API — the web-search wire, measured (2026-07-30)
 
 The `toolkit` web-search tool sits directly on the Brave Search API. Everything below was
