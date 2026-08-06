@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.17.0
+
+- Stopped sending strict tool-definition flags to every provider, improving
+  compatibility without changing the tool declarations consumers provide.
+- Added AgentKit-side validation of tool arguments against each tool's declared
+  schema before invocation. Invalid arguments are not passed to the tool;
+  instead, the model receives an error tool result and can correct its request.
+- Rendered optional tool properties as optional in OpenAI requests rather than
+  representing them as required properties that also accept `null`.
+- Fixed Anthropic requests with large tool inventories so the conversation no
+  longer fails merely because its tool definitions exceed a provider request
+  header limit.
+- This is a minor version bump with no exported API changes.
+
 ## v0.16.0
 
 - Added the shared `toolkit.Option` constructor pattern across every toolkit
