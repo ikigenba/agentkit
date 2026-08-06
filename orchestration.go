@@ -417,12 +417,19 @@ func (c *Conversation) runTurn(ctx context.Context, history *[]Message, tools []
 
 			var result ToolResultBlock
 			var newlyLoaded []Tool
-			if use.Name == loadToolsName && len(c.DeferredTools) > 0 {
+			knownTool := toolByName[use.Name]
+			if knownTool != nil {
+				if validationErr := validateToolArguments(knownTool.JSONSchema(), use.Input); validationErr != nil {
+					result = invalidToolArgumentsResult(use, validationErr)
+				} else if use.Name == loadToolsName && len(c.DeferredTools) > 0 {
+					result, newlyLoaded, err = c.runLoadTools(ctx, deferredByName, use)
+				} else {
+					result, err = runTool(ctx, knownTool, use)
+				}
+			} else if use.Name == loadToolsName && len(c.DeferredTools) > 0 {
 				result, newlyLoaded, err = c.runLoadTools(ctx, deferredByName, use)
-			} else if toolByName[use.Name] == nil {
-				result, newlyLoaded, err = c.runDeferredToolMiss(ctx, deferredByName, use)
 			} else {
-				result, err = runTool(ctx, toolByName[use.Name], use)
+				result, newlyLoaded, err = c.runDeferredToolMiss(ctx, deferredByName, use)
 			}
 			if err != nil {
 				return false, err
@@ -534,6 +541,245 @@ func validateToolSchema(schema json.RawMessage) error {
 	return validateSchemaRefs(root, root, "#", nil)
 }
 
+// validateToolArguments checks raw model-emitted arguments against a tool's
+// canonical schema without changing either input.
+func validateToolArguments(schema json.RawMessage, args json.RawMessage) error {
+	rootValue, err := decodeSingleJSON(schema)
+	if err != nil {
+		return fmt.Errorf("at /: invalid schema JSON: %v", err)
+	}
+	root, ok := rootValue.(map[string]any)
+	if !ok {
+		return errors.New("at /: schema is not an object")
+	}
+
+	value, err := decodeSingleJSON(args)
+	if err != nil {
+		return fmt.Errorf("at /: arguments are malformed JSON: %v", err)
+	}
+	if _, ok := value.(map[string]any); !ok {
+		return fmt.Errorf("at /: arguments must be an object, received %s", jsonValueType(value))
+	}
+	return validateToolArgumentValue(root, root, value, "", nil)
+}
+
+func decodeSingleJSON(raw json.RawMessage) (any, error) {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	var value any
+	if err := decoder.Decode(&value); err != nil {
+		return nil, err
+	}
+	if err := decoder.Decode(new(any)); err == nil {
+		return nil, errors.New("multiple JSON values")
+	} else if !errors.Is(err, io.EOF) {
+		return nil, err
+	}
+	return value, nil
+}
+
+func validateToolArgumentValue(schema, root map[string]any, value any, pointer string, active map[string]bool) error {
+	if ref, ok := schema["$ref"].(string); ok {
+		target, found := resolveToolSchemaRef(root, ref)
+		if !found {
+			return fmt.Errorf("at %s: unresolved $ref %q", argumentPointer(pointer), ref)
+		}
+		if active[ref] {
+			return fmt.Errorf("at %s: recursive $ref %q", argumentPointer(pointer), ref)
+		}
+		next := make(map[string]bool, len(active)+1)
+		for key, set := range active {
+			next[key] = set
+		}
+		next[ref] = true
+		if err := validateToolArgumentValue(target, root, value, pointer, next); err != nil {
+			return err
+		}
+	}
+
+	for _, keyword := range []string{"anyOf", "oneOf"} {
+		branches, ok := schema[keyword].([]any)
+		if !ok {
+			continue
+		}
+		matched := false
+		for _, branch := range branches {
+			if validateToolArgumentValue(branch.(map[string]any), root, value, pointer, active) == nil {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return fmt.Errorf("at %s: value matches no %s branch", argumentPointer(pointer), keyword)
+		}
+	}
+
+	if declared, ok := schema["type"]; ok && !argumentMatchesType(value, declared) {
+		return fmt.Errorf("at %s: type must be %s, received %s", argumentPointer(pointer), declaredTypeName(declared), jsonValueType(value))
+	}
+
+	if allowed, ok := schema["enum"].([]any); ok {
+		matched := false
+		for _, candidate := range allowed {
+			if reflectJSONEqual(value, candidate) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return fmt.Errorf("at %s: enum requires one of %s", argumentPointer(pointer), renderJSONValues(allowed))
+		}
+	}
+	if expected, ok := schema["const"]; ok && !reflectJSONEqual(value, expected) {
+		return fmt.Errorf("at %s: const requires %s", argumentPointer(pointer), renderJSONValue(expected))
+	}
+
+	if text, ok := value.(string); ok {
+		length := len([]rune(text))
+		if minimum, ok := schemaInteger(schema["minLength"]); ok && length < minimum {
+			return fmt.Errorf("at %s: minLength %d violated by length %d", argumentPointer(pointer), minimum, length)
+		}
+		if maximum, ok := schemaInteger(schema["maxLength"]); ok && length > maximum {
+			return fmt.Errorf("at %s: maxLength %d violated by length %d", argumentPointer(pointer), maximum, length)
+		}
+		if pattern, ok := schema["pattern"].(string); ok {
+			matched, err := regexp.MatchString(pattern, text)
+			if err != nil {
+				return fmt.Errorf("at %s: pattern %q could not compile: %v", argumentPointer(pointer), pattern, err)
+			}
+			if !matched {
+				return fmt.Errorf("at %s: pattern %q not matched", argumentPointer(pointer), pattern)
+			}
+		}
+	}
+
+	if values, ok := value.([]any); ok {
+		if minimum, ok := schemaInteger(schema["minItems"]); ok && len(values) < minimum {
+			return fmt.Errorf("at %s: minItems %d violated by size %d", argumentPointer(pointer), minimum, len(values))
+		}
+		if itemSchema, ok := schema["items"].(map[string]any); ok {
+			for index, item := range values {
+				if err := validateToolArgumentValue(itemSchema, root, item, pointer+"/"+strconv.Itoa(index), active); err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	if object, ok := value.(map[string]any); ok {
+		properties, _ := schema["properties"].(map[string]any)
+		_, closesObject := schema["properties"]
+		if required, ok := schema["required"].([]any); ok {
+			for _, rawName := range required {
+				name := rawName.(string)
+				if _, present := object[name]; !present {
+					return fmt.Errorf("at %s: required property %q is missing", argumentPointer(pointer), name)
+				}
+			}
+		}
+		names := make([]string, 0, len(object))
+		for name := range object {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			child, known := properties[name]
+			if !known && closesObject {
+				return fmt.Errorf("at %s: unknown property %q", argumentPointer(pointer+"/"+escapeJSONPointer(name)), name)
+			}
+			if !known {
+				continue
+			}
+			if err := validateToolArgumentValue(child.(map[string]any), root, object[name], pointer+"/"+escapeJSONPointer(name), active); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func argumentMatchesType(value any, declared any) bool {
+	types := []any{declared}
+	if union, ok := declared.([]any); ok {
+		types = union
+	}
+	actual := jsonValueType(value)
+	for _, candidate := range types {
+		want, ok := candidate.(string)
+		if ok && (actual == want || want == "number" && actual == "integer") {
+			return true
+		}
+	}
+	return false
+}
+
+func jsonValueType(value any) string {
+	switch value := value.(type) {
+	case nil:
+		return "null"
+	case map[string]any:
+		return "object"
+	case []any:
+		return "array"
+	case string:
+		return "string"
+	case bool:
+		return "boolean"
+	case json.Number:
+		if !strings.ContainsAny(value.String(), ".eE") {
+			return "integer"
+		}
+		return "number"
+	default:
+		return fmt.Sprintf("%T", value)
+	}
+}
+
+func declaredTypeName(value any) string {
+	if values, ok := value.([]any); ok {
+		names := make([]string, len(values))
+		for i, item := range values {
+			names[i], _ = item.(string)
+		}
+		return strings.Join(names, " or ")
+	}
+	name, _ := value.(string)
+	return name
+}
+
+func argumentPointer(pointer string) string {
+	if pointer == "" {
+		return "/"
+	}
+	return pointer
+}
+
+func schemaInteger(value any) (int, bool) {
+	number, ok := value.(json.Number)
+	if !ok {
+		return 0, false
+	}
+	parsed, err := strconv.Atoi(number.String())
+	return parsed, err == nil
+}
+
+func reflectJSONEqual(left, right any) bool {
+	return renderJSONValue(left) == renderJSONValue(right)
+}
+
+func renderJSONValues(values []any) string {
+	rendered := make([]string, len(values))
+	for i, value := range values {
+		rendered[i] = renderJSONValue(value)
+	}
+	return strings.Join(rendered, ", ")
+}
+
+func renderJSONValue(value any) string {
+	data, _ := json.Marshal(value)
+	return string(data)
+}
+
 func validateSchemaObject(schema map[string]any, pointer string) error {
 	keywords := make([]string, 0, len(schema))
 	for keyword := range schema {
@@ -545,8 +791,7 @@ func validateSchemaObject(schema map[string]any, pointer string) error {
 		location := pointer + "/" + escapeJSONPointer(keyword)
 		switch keyword {
 		case "type":
-			typ, ok := value.(string)
-			if !ok || !validSchemaType(typ) {
+			if !validSchemaTypeDeclaration(value) {
 				return fmt.Errorf("at %s: type must be one supported single string value", location)
 			}
 		case "description", "title":
@@ -713,6 +958,22 @@ func validSchemaType(typ string) bool {
 	}
 }
 
+func validSchemaTypeDeclaration(value any) bool {
+	if typ, ok := value.(string); ok {
+		return validSchemaType(typ)
+	}
+	union, ok := value.([]any)
+	if !ok || len(union) != 2 {
+		return false
+	}
+	first, firstOK := union[0].(string)
+	second, secondOK := union[1].(string)
+	if !firstOK || !secondOK || first == second || !validSchemaType(first) || !validSchemaType(second) {
+		return false
+	}
+	return first == "null" || second == "null"
+}
+
 func stringArray(value any) bool {
 	values, ok := value.([]any)
 	if !ok {
@@ -762,6 +1023,9 @@ func runTool(ctx context.Context, tool Tool, use ToolUseBlock) (ToolResultBlock,
 			IsError:   true,
 		}, nil
 	}
+	if err := validateToolArguments(tool.JSONSchema(), use.Input); err != nil {
+		return invalidToolArgumentsResult(use, err), nil
+	}
 
 	output, err := tool.Call(ctx, use.Input)
 	if err != nil {
@@ -781,6 +1045,15 @@ func runTool(ctx context.Context, tool Tool, use ToolUseBlock) (ToolResultBlock,
 		Name:      use.Name,
 		Content:   output,
 	}, nil
+}
+
+func invalidToolArgumentsResult(use ToolUseBlock, err error) ToolResultBlock {
+	return ToolResultBlock{
+		ToolUseID: use.ID,
+		Name:      use.Name,
+		Content:   "invalid tool arguments: " + err.Error(),
+		IsError:   true,
+	}
 }
 
 func cloneMessages(messages []Message) []Message {

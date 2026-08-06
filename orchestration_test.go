@@ -448,6 +448,243 @@ func TestToolLoopRunsToolsAndContinuesToFinalMessage(t *testing.T) {
 	}
 }
 
+func TestToolArgumentsRequiredPropertyIsCorrective(t *testing.T) {
+	// R-7M3Z-MONZ
+	result, calls, _, err := runToolArgumentCase(t,
+		json.RawMessage(`{"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}`),
+		json.RawMessage(`{}`),
+	)
+	assertRejectedToolArguments(t, result, calls, err, "city", "required")
+}
+
+func TestToolArgumentsWrongTypeIsCorrective(t *testing.T) {
+	// R-7NBW-0GEO
+	result, calls, _, err := runToolArgumentCase(t,
+		json.RawMessage(`{"type":"object","properties":{"city":{"type":"string"}}}`),
+		json.RawMessage(`{"city":7}`),
+	)
+	assertRejectedToolArguments(t, result, calls, err, "/city", "string", "integer")
+}
+
+func TestToolArgumentsRejectUnknownProperty(t *testing.T) {
+	// R-7OJS-E85D
+	result, calls, _, err := runToolArgumentCase(t,
+		json.RawMessage(`{"type":"object","properties":{"city":{"type":"string"}}}`),
+		json.RawMessage(`{"city":"Tokyo","invented":true}`),
+	)
+	assertRejectedToolArguments(t, result, calls, err, "/invented", "unknown property")
+}
+
+func TestToolArgumentsEnumAndConst(t *testing.T) {
+	// R-7PRO-RZW2
+	cases := []struct {
+		name       string
+		schema     json.RawMessage
+		input      json.RawMessage
+		wantReject bool
+		wantText   string
+	}{
+		{"enum reject", json.RawMessage(`{"type":"object","properties":{"unit":{"type":"string","enum":["c","f"]}}}`), json.RawMessage(`{"unit":"k"}`), true, "enum"},
+		{"enum accept", json.RawMessage(`{"type":"object","properties":{"unit":{"type":"string","enum":["c","f"]}}}`), json.RawMessage(`{"unit":"c"}`), false, ""},
+		{"const reject", json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string","const":"forecast"}}}`), json.RawMessage(`{"kind":"history"}`), true, "const"},
+		{"const accept", json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string","const":"forecast"}}}`), json.RawMessage(`{"kind":"forecast"}`), false, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			result, calls, _, err := runToolArgumentCase(t, tc.schema, tc.input)
+			if tc.wantReject {
+				assertRejectedToolArguments(t, result, calls, err, tc.wantText)
+			} else {
+				assertDispatchedToolArguments(t, result, calls, err)
+			}
+		})
+	}
+}
+
+func TestToolArgumentsLengthAndSizeBoundaries(t *testing.T) {
+	// R-7QZL-5RMR
+	cases := []struct {
+		name       string
+		schema     json.RawMessage
+		input      json.RawMessage
+		wantReject bool
+	}{
+		{"minLength below", json.RawMessage(`{"type":"object","properties":{"v":{"type":"string","minLength":3}}}`), json.RawMessage(`{"v":"ab"}`), true},
+		{"minLength boundary", json.RawMessage(`{"type":"object","properties":{"v":{"type":"string","minLength":3}}}`), json.RawMessage(`{"v":"abc"}`), false},
+		{"maxLength above", json.RawMessage(`{"type":"object","properties":{"v":{"type":"string","maxLength":3}}}`), json.RawMessage(`{"v":"abcd"}`), true},
+		{"maxLength boundary", json.RawMessage(`{"type":"object","properties":{"v":{"type":"string","maxLength":3}}}`), json.RawMessage(`{"v":"abc"}`), false},
+		{"minItems below", json.RawMessage(`{"type":"object","properties":{"v":{"type":"array","items":{"type":"string"},"minItems":1}}}`), json.RawMessage(`{"v":[]}`), true},
+		{"minItems boundary", json.RawMessage(`{"type":"object","properties":{"v":{"type":"array","items":{"type":"string"},"minItems":1}}}`), json.RawMessage(`{"v":["x"]}`), false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			result, calls, _, err := runToolArgumentCase(t, tc.schema, tc.input)
+			if tc.wantReject {
+				assertRejectedToolArguments(t, result, calls, err, strings.Fields(tc.name)[0])
+			} else {
+				assertDispatchedToolArguments(t, result, calls, err)
+			}
+		})
+	}
+}
+
+func TestToolArgumentsPattern(t *testing.T) {
+	// R-7S7H-JJDG
+	schema := json.RawMessage(`{"type":"object","properties":{"code":{"type":"string","pattern":"^[A-Z]{2}-[0-9]+$"}}}`)
+	rejected, calls, _, err := runToolArgumentCase(t, schema, json.RawMessage(`{"code":"wrong"}`))
+	assertRejectedToolArguments(t, rejected, calls, err, "/code", "^[A-Z]{2}-[0-9]+$")
+	accepted, calls, _, err := runToolArgumentCase(t, schema, json.RawMessage(`{"code":"US-7"}`))
+	assertDispatchedToolArguments(t, accepted, calls, err)
+}
+
+func TestToolArgumentsCompositionRefsAndNullableUnion(t *testing.T) {
+	// R-7TFD-XB45
+	cases := []struct {
+		name       string
+		schema     json.RawMessage
+		input      json.RawMessage
+		wantReject bool
+	}{
+		{"anyOf match", json.RawMessage(`{"type":"object","properties":{"v":{"anyOf":[{"type":"string"},{"type":"integer"}]}}}`), json.RawMessage(`{"v":2}`), false},
+		{"anyOf no match", json.RawMessage(`{"type":"object","properties":{"v":{"anyOf":[{"type":"string"},{"type":"integer"}]}}}`), json.RawMessage(`{"v":true}`), true},
+		{"oneOf match", json.RawMessage(`{"type":"object","properties":{"v":{"oneOf":[{"type":"string"},{"type":"boolean"}]}}}`), json.RawMessage(`{"v":true}`), false},
+		{"oneOf no match", json.RawMessage(`{"type":"object","properties":{"v":{"oneOf":[{"type":"string"},{"type":"boolean"}]}}}`), json.RawMessage(`{"v":[]}`), true},
+		{"ref rejects", json.RawMessage(`{"type":"object","properties":{"v":{"$ref":"#/$defs/code"}},"$defs":{"code":{"type":"string","pattern":"^ok$"}}}`), json.RawMessage(`{"v":"bad"}`), true},
+		{"nullable null", json.RawMessage(`{"type":"object","properties":{"v":{"type":["string","null"]}}}`), json.RawMessage(`{"v":null}`), false},
+		{"nullable string", json.RawMessage(`{"type":"object","properties":{"v":{"type":["string","null"]}}}`), json.RawMessage(`{"v":"yes"}`), false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			result, calls, _, err := runToolArgumentCase(t, tc.schema, tc.input)
+			if tc.wantReject {
+				assertRejectedToolArguments(t, result, calls, err, "/v")
+			} else {
+				assertDispatchedToolArguments(t, result, calls, err)
+			}
+		})
+	}
+}
+
+func TestToolArgumentsIgnoreFormatAndDoNotApplyDefault(t *testing.T) {
+	// R-7UNA-B2UU
+	schema := json.RawMessage(`{"type":"object","properties":{"email":{"type":"string","format":"email"},"limit":{"type":"integer","default":10}},"required":["email"]}`)
+	input := json.RawMessage(`{"email":"not-an-email"}`)
+	result, calls, got, err := runToolArgumentCase(t, schema, input)
+	assertDispatchedToolArguments(t, result, calls, err)
+	if string(got) != string(input) || bytes.Contains(got, []byte("limit")) {
+		t.Fatalf("tool input = %s, want omitted default preserved as %s", got, input)
+	}
+}
+
+func TestToolArgumentsReachCallByteIdentical(t *testing.T) {
+	// R-7VV6-OULJ
+	schema := json.RawMessage(`{"type":"object","properties":{"z":{"type":"integer"},"a":{"type":"string"}},"required":["z","a"]}`)
+	input := json.RawMessage("{ \"z\" : 7, \"a\": \"kept\" }")
+	result, calls, got, err := runToolArgumentCase(t, schema, input)
+	assertDispatchedToolArguments(t, result, calls, err)
+	if !bytes.Equal(got, input) {
+		t.Fatalf("tool input bytes = %q, want byte-identical %q", got, input)
+	}
+}
+
+func TestMCPToolArgumentsRejectedBeforeCallRequest(t *testing.T) {
+	// R-7X33-2MC8
+	var callRequests int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			ID     int64  `json:"id"`
+			Method string `json:"method"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatalf("decode MCP request: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		switch request.Method {
+		case "initialize":
+			fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%d,"result":{"protocolVersion":"2025-11-25"}}`, request.ID)
+		case "notifications/initialized":
+			w.WriteHeader(http.StatusAccepted)
+		case "tools/list":
+			fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%d,"result":{"tools":[{"name":"weather","inputSchema":{"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}}]}}`, request.ID)
+		case "tools/call":
+			callRequests++
+			fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%d,"result":{"content":[]}}`, request.ID)
+		default:
+			t.Fatalf("unexpected MCP method %q", request.Method)
+		}
+	}))
+	defer server.Close()
+
+	provider := newFakeProvider(
+		newRoundTrip(assistant(agentkit.ToolUseBlock{ID: testToolUseID, Name: "srv_weather", Input: json.RawMessage(`{}`)}), agentkit.FinishToolUse, agentkit.Usage{}, nil),
+		textRoundTrip("corrected"),
+	)
+	stream := (&agentkit.Conversation{Provider: provider, Model: testModel, MCPServers: []agentkit.MCPServer{{Name: "srv", URL: server.URL}}}).Send(context.Background(), "weather")
+	events := drain(stream)
+	result := firstEvent[agentkit.ToolResult](t, events)
+	assertRejectedToolArguments(t, result, callRequests, stream.Err(), "city", "required")
+}
+
+func TestToolArgumentsNestedViolationUsesJSONPointer(t *testing.T) {
+	// R-7YAZ-GE2X
+	schema := json.RawMessage(`{"type":"object","properties":{"filters":{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}}}}`)
+	result, calls, _, err := runToolArgumentCase(t, schema, json.RawMessage(`{"filters":[{"name":"a"},{"name":"b"},{"name":3}]}`))
+	assertRejectedToolArguments(t, result, calls, err, "/filters/2/name", "string", "integer")
+}
+
+func TestToolArgumentsRootMustBeValidObject(t *testing.T) {
+	// R-7ZIV-U5TM
+	for _, input := range []json.RawMessage{json.RawMessage(`[]`), json.RawMessage(`"text"`), json.RawMessage(`null`), json.RawMessage(`{"broken"`)} {
+		t.Run(string(input), func(t *testing.T) {
+			result, calls, _, err := runToolArgumentCase(t, json.RawMessage(`{"type":"object","properties":{}}`), input)
+			assertRejectedToolArguments(t, result, calls, err, "arguments")
+		})
+	}
+}
+
+func runToolArgumentCase(t *testing.T, schema, input json.RawMessage) (agentkit.ToolResult, int, json.RawMessage, error) {
+	t.Helper()
+	var calls int
+	var received json.RawMessage
+	tool := testRawTool("validate", "validate arguments", schema, func(_ context.Context, raw json.RawMessage) (string, error) {
+		calls++
+		received = append(json.RawMessage(nil), raw...)
+		return "called", nil
+	})
+	provider := newFakeProvider(
+		newRoundTrip(assistant(agentkit.ToolUseBlock{ID: testToolUseID, Name: "validate", Input: input}), agentkit.FinishToolUse, agentkit.Usage{}, nil),
+		textRoundTrip("continued"),
+	)
+	stream := (&agentkit.Conversation{Provider: provider, Model: testModel, Tools: []agentkit.Tool{tool}}).Send(context.Background(), "validate")
+	events := drain(stream)
+	return firstEvent[agentkit.ToolResult](t, events), calls, received, stream.Err()
+}
+
+func assertRejectedToolArguments(t *testing.T, result agentkit.ToolResult, calls int, err error, contains ...string) {
+	t.Helper()
+	if err != nil {
+		t.Fatalf("Stream.Err() = %v, want nil corrective continuation", err)
+	}
+	if calls != 0 {
+		t.Fatalf("tool calls = %d, want 0", calls)
+	}
+	if !result.IsError {
+		t.Fatalf("ToolResult = %#v, want IsError true", result)
+	}
+	for _, text := range contains {
+		if !strings.Contains(result.Output, text) {
+			t.Fatalf("ToolResult.Output = %q, want text %q", result.Output, text)
+		}
+	}
+}
+
+func assertDispatchedToolArguments(t *testing.T, result agentkit.ToolResult, calls int, err error) {
+	t.Helper()
+	if err != nil || calls != 1 || result.IsError || result.Output != "called" {
+		t.Fatalf("Err/calls/result = %v/%d/%#v, want nil/1/successful called result", err, calls, result)
+	}
+}
+
 func TestMessageDoneMirrorsHistoryForRichToolUseMessage(t *testing.T) {
 	tool := testRawTool("lookup", "look up", json.RawMessage(`{"type":"object"}`), func(context.Context, json.RawMessage) (string, error) {
 		return "sunny", nil
