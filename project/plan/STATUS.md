@@ -4,5 +4,4 @@ The manifest, and a work **queue**: one line per **pending** phase, in build ord
 
 Next phase: 116
 
-- Phase 114 ⬜ realizes D22 (live slice) — real-provider proof that the non-strict wire is accepted
 - Phase 115 ⬜ realizes — — changelog for v0.17.0
