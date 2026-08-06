@@ -5,6 +5,7 @@ package anthropic
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -111,6 +112,47 @@ func TestAnthropicIntegrationToolRoundTrip(t *testing.T) {
 	}
 	if !sawUse || !sawResult || !sawFinal {
 		t.Fatalf("incomplete tool round trip: use=%v result=%v final=%v", sawUse, sawResult, sawFinal)
+	}
+}
+
+func TestAnthropicIntegrationManyToolsRoundTrip(t *testing.T) {
+	// R-85MD-R0J3
+	key := os.Getenv("ANTHROPIC_API_KEY")
+	if key == "" {
+		t.Skip("ANTHROPIC_API_KEY is not set")
+	}
+
+	tools := make([]agentkit.Tool, 30)
+	for i := range tools {
+		tools[i] = testRawTool(
+			fmt.Sprintf("integration_tool_%02d", i),
+			"Return a confirmation if explicitly requested.",
+			json.RawMessage(`{"type":"object","properties":{"value":{"type":"string"}},"required":["value"]}`),
+			func(_ context.Context, _ json.RawMessage) (string, error) {
+				return "anthropic-many-tools-ok", nil
+			},
+		)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	stream := (&agentkit.Conversation{
+		Provider: New(APIKey(key)),
+		Model:    "claude-haiku-4-5",
+		Tools:    tools,
+	}).Send(ctx, "Reply with one short sentence without calling a tool.")
+
+	var sawFinal bool
+	for event := range stream.Events() {
+		if done, ok := event.(agentkit.MessageDone); ok && strings.TrimSpace(anthropicMessageText(done.Message)) != "" {
+			sawFinal = true
+		}
+	}
+	if err := stream.Err(); err != nil {
+		t.Fatalf("Err() = %v", err)
+	}
+	if !sawFinal {
+		t.Fatal("completed stream has no assistant text")
 	}
 }
 

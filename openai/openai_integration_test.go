@@ -51,6 +51,31 @@ func TestOpenAIIntegrationToolRoundTrip(t *testing.T) {
 	assertOpenAIToolRoundTrip(t, stream, "openai-tool-ok")
 }
 
+func TestOpenAIIntegrationPartialRequiredToolRoundTrip(t *testing.T) {
+	// R-86UA-4S9S
+	key := os.Getenv("OPENAI_API_KEY")
+	if key == "" {
+		t.Skip("OPENAI_API_KEY is not set")
+	}
+
+	tool := testRawTool(
+		"integration_echo",
+		"Return the required value; the note is optional.",
+		json.RawMessage(`{"type":"object","properties":{"value":{"type":"string"},"note":{"type":"string"}},"required":["value"],"additionalProperties":false}`),
+		func(_ context.Context, _ json.RawMessage) (string, error) {
+			return "openai-partial-required-ok", nil
+		},
+	)
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	stream := (&agentkit.Conversation{
+		Provider: New(APIKey(key)),
+		Model:    "gpt-5.4-mini",
+		Tools:    []agentkit.Tool{tool},
+	}).Send(ctx, "Call integration_echo with value test and omit note, then report its result.")
+	assertOpenAIToolRoundTrip(t, stream, "openai-partial-required-ok")
+}
+
 func assertOpenAIToolRoundTrip(t *testing.T, stream *agentkit.Stream, output string) {
 	t.Helper()
 	var sawUse, sawResult, sawFinal bool
