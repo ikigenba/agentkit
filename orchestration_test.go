@@ -224,7 +224,7 @@ func TestTextOnlyTurnStreamsAndCommitsHistory(t *testing.T) {
 		t.Fatalf("Err() = %v, want nil", err)
 	}
 
-	// R-HUZX-7N2W, R-C7MI-HRFI
+	// R-HUZX-7N2W
 	if len(events) != 1 {
 		t.Fatalf("events = %#v, want exactly one MessageDone", events)
 	}

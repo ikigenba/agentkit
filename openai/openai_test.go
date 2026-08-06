@@ -582,8 +582,8 @@ func TestProviderSendBuildsResponsesRequestsAndReplaysReasoning(t *testing.T) {
 		Tools: []agentkit.Tool{tool},
 	}
 
-	// R-H3PK-QFG3, R-XR4M-U1ZT, R-XW08-D4YL, R-C8UE-VJ67,
-	// R-P5U3-5CFZ, R-T40A-VZQ7, R-ELUQ-VJIQ
+	// R-XR4M-U1ZT, R-XW08-D4YL, R-C8UE-VJ67,
+	// R-P5U3-5CFZ, R-T40A-VZQ7
 	stream := c.Send(context.Background(), "weather?")
 	var toolUseIndex, toolResultIndex int = -1, -1
 	var toolUse agentkit.ToolUse
@@ -1212,7 +1212,7 @@ func TestOpenAIEmbedderBatchesUsageOrderAndNormalizes(t *testing.T) {
 	embedder := &agentkit.Embedder{Provider: provider, Model: EmbedModel3Small, Dimensions: 2}
 
 	result, err := embedder.Embed(context.Background(), inputs, agentkit.InputQuery)
-	// R-D7QO-K6RZ, R-YGQZ-C8S2, R-YJ6S-3S9G, R-YPAA-0MYX, R-Y5RV-WB3T, R-YHYV-Q0IR
+	// R-D7QO-K6RZ, R-YJ6S-3S9G, R-YPAA-0MYX, R-Y5RV-WB3T, R-YHYV-Q0IR
 	if err != nil {
 		t.Fatalf("Embed() error = %v, want nil", err)
 	}

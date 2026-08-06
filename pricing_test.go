@@ -7,7 +7,6 @@ import (
 )
 
 func TestPricingCostRatesEveryUsageBucketWithIntegerMath(t *testing.T) {
-	// R-PTEW-5KVY
 	pricing := agentkit.Pricing{
 		Tiers: []agentkit.RateTier{{
 			MinInputTokens: 0,

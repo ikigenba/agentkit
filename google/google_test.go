@@ -156,7 +156,6 @@ func TestGoogleSendBuildsRequestParsesToolTurnAndUsage(t *testing.T) {
 
 		switch call {
 		case 1:
-			// R-H3PK-QFG3
 			// R-CQO3-7EE9
 			if r.Header.Get("X-Goog-Api-Key") != "test-key" {
 				t.Fatalf("missing Gemini API key header: %q", r.Header.Get("X-Goog-Api-Key"))
@@ -174,7 +173,6 @@ func TestGoogleSendBuildsRequestParsesToolTurnAndUsage(t *testing.T) {
 			}
 			thinking := field[map[string]any](t, gen, "thinkingConfig")
 			// R-T40A-VZQ7
-			// R-ELUQ-VJIQ
 			if thinking["thinkingBudget"] != float64(8192) || thinking["thinkingLevel"] != nil || thinking["includeThoughts"] != true {
 				t.Fatalf("native reasoning budget not mapped for Gemini 2.5: %#v", thinking)
 			}
@@ -990,7 +988,7 @@ func TestGoogleEmbedderBatchesUsageOrderAndRequestShape(t *testing.T) {
 	embedder := &agentkit.Embedder{Provider: provider, Model: EmbedModelGemini001, Dimensions: 128}
 
 	result, err := embedder.Embed(context.Background(), inputs, agentkit.InputQuery)
-	// R-D7QO-K6RZ, R-YGQZ-C8S2, R-YJ6S-3S9G, R-YPAA-0MYX
+	// R-D7QO-K6RZ, R-YJ6S-3S9G, R-YPAA-0MYX
 	if err != nil {
 		t.Fatalf("Embed() error = %v, want nil", err)
 	}

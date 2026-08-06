@@ -137,8 +137,6 @@ func TestEmbedRejectsMismatchedReturnedDimensions(t *testing.T) {
 
 func TestEmbedAccountsUsageAndCostAcrossSuccessfulCalls(t *testing.T) {
 	// R-D2V3-13T7
-	// R-YFJ2-YH1D
-	// R-YQI6-EEPM
 	firstUsage := EmbeddingUsage{InputTokens: 3, Total: 5}
 	secondUsage := EmbeddingUsage{InputTokens: 7, Total: 9}
 	provider := newFakeEmbeddingProvider(
@@ -245,7 +243,6 @@ func TestEmbedWarnsForUnknownCostOnEveryUnpricedCall(t *testing.T) {
 
 func TestEmbeddingPricingCostUsesInputTokensOnly(t *testing.T) {
 	// R-D8YK-XYIO
-	// R-YQI6-EEPM
 	pricing := EmbeddingPricing{InputToken: 13}
 	usage := EmbeddingUsage{InputTokens: 17, Total: 999}
 	want := Cost(17 * 13)

@@ -40,7 +40,6 @@ func (t schemaTool) JSONSchema() json.RawMessage { return t.schema }
 
 func TestNewProviderSendsAuthenticatedRequestToInjectedServer(t *testing.T) {
 	// R-CQO3-7EE9
-	// R-H3PK-QFG3
 	// R-WKTI-LIIE
 	// R-LK0H-9AXO
 	var provider agentkit.Provider = New(APIKey("test-key"))
@@ -736,7 +735,6 @@ func TestAnthropicRequestMapsGenerationSettingsAndWarnings(t *testing.T) {
 		// R-P5U3-5CFZ
 		// R-PBXL-275G
 		// R-T40A-VZQ7
-		// R-ELUQ-VJIQ
 		temp, topP := 0.2, 0.9
 		var body map[string]any
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -808,7 +806,6 @@ func TestAnthropicRequestMapsGenerationSettingsAndWarnings(t *testing.T) {
 				// R-CUBS-CPMC
 				// R-CVJO-QHD1
 				// R-T40A-VZQ7
-				// R-ELUQ-VJIQ
 				name:      "haiku budget",
 				model:     "claude-haiku-4-5",
 				reasoning: agentkit.Budget(5000),
