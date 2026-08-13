@@ -4,6 +4,5 @@ The manifest, and a work **queue**: one line per **pending** phase, in build ord
 
 Next phase: 121
 
-- Phase 118 ⬜ realizes D26 — ProviderXAI and native-first grok catalog offerings
 - Phase 119 ⬜ realizes D40 D38 — The `xai` chat provider (API key and Subscription credential)
 - Phase 120 ⬜ realizes D41 — `xai/subscription` store
