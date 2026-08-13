@@ -330,12 +330,13 @@ The catalog (D26) carries maintained rates for the models we track; this subsect
 
 **OpenRouter-routed vendors — xAI (Grok), DeepSeek, Moonshot (Kimi).** These three have no native AgentKit adapter, so the aggregator is their only route: each entry's default provider **is** `openrouter` and its wire id is the vendor-namespaced slug. Because OpenRouter reports the true charge on every response (§14.2), these rates are advisory display data that the reported figure overrides in practice.
 
-Where OpenRouter and the vendor's own page disagree, **the OpenRouter figure is authoritative here**, since that is the route actually billed. Where OpenRouter publishes no discrete cached-read rate — which is the case for every Grok and DeepSeek model, and for Kimi K2.6 — the vendor-direct cache rate is carried instead and flagged; those cells mix sources deliberately.
+Where OpenRouter and the vendor's own page disagree, **the OpenRouter figure is authoritative here**, since that is the route actually billed. Where OpenRouter publishes no discrete cached-read rate — DeepSeek, and Kimi K2.6 — the vendor-direct cache rate is carried instead and flagged; those cells mix sources deliberately.
 
-xAI Grok — all four are tiered above 200K input tokens; cached-read is xAI-direct (OpenRouter publishes none). Grok's headline OpenRouter price matches xAI's low tier exactly, so there is no conflict to resolve.
+xAI Grok — all five cataloged models are tiered above 200K input tokens. OpenRouter now publishes cache-read on these routes and it matches xAI exactly (re-checked 2026-08-13 for `grok-4.5` and `grok-4.6`; the 4.3 / 4.20 / 4.20-multi-agent cache cells already agreed). Headline OpenRouter input/output matches xAI's low tier, so there is no conflict to resolve. OpenRouter still publishes a single price per route (no context tiering); the 200K long-context band is xAI's, carried because that is how the billed route actually charges.
 
 | Model | OpenRouter slug | Context | InputUncached | CacheReadInput | Output | high tier (>200K) |
 |---|---|---|---|---|---|---|
+| grok-4.6 | `x-ai/grok-4.6` | 500000 | 2000 | 500 | 6000 | 4000 / 1000 / 12000 |
 | grok-4.5 | `x-ai/grok-4.5` | 500000 | 2000 | 300 | 6000 | 4000 / 600 / 12000 |
 | grok-4.3 | `x-ai/grok-4.3` | 1000000 | 1250 | 200 | 2500 | 2500 / 400 / 5000 |
 | grok-4.20 | `x-ai/grok-4.20` | 2000000 | 1250 | 200 | 2500 | 2500 / 400 / 5000 |
@@ -439,7 +440,8 @@ The third answer is not expressible in the vocabulary of the first. "Dynamic" is
 | **glm-5.1** | `thinking` on/off | on/off only | `enabled` / `disabled` (**no effort**) | dynamic, reasons (measured) | yes | **yes** |
 | **glm-4.7** | `thinking` on/off | on/off only | `enabled` / `disabled` (**no effort**) | dynamic, reasons (measured) | yes | **yes** |
 | **glm-4.6** | `thinking` on/off | on/off only | `enabled` / `disabled` (**no effort**) | dynamic, reasons (measured) | yes | **yes** |
-| **grok-4.5** | `reasoning` on/off (`reasoning.enabled`) | on/off | `enabled:true` accepted; `enabled:false` **rejected** | **dynamic** (measured: reasons 3/3) | **yes** | **no** (measured: 400 *"Reasoning is mandatory for this endpoint and cannot be disabled"*) |
+| **grok-4.6** | effort (`reasoning.effort`) | enum | `low` `medium` `high` `xhigh` | fixed `high` (xAI + OpenRouter descriptor, 2026-08-13) | n/a | **no** (mandatory; no `none`) |
+| **grok-4.5** | effort (`reasoning.effort`) | enum | `low` `medium` `high` (**no `xhigh`**) | fixed `high` (xAI + OpenRouter descriptor, 2026-08-13) | n/a | **no** (mandatory; no `none`; native treats `xhigh` as `high`, not a listed value) |
 | **grok-4.3** | `reasoning` on/off (`reasoning.enabled`) | on/off | `enabled:true` / `enabled:false` | **dynamic** (measured: reasons 3/3) | **yes** | **yes** (measured: 200, 0 reasoning tokens) |
 | **grok-4.20** | `reasoning` on/off (`reasoning.enabled`) | on/off | `enabled:true` / `enabled:false` | **off** (measured: 0 reasoning tokens 6/6) | **yes** (measured: 399/438 reasoning tokens) | **yes** |
 | **grok-4.20-multi-agent** | `reasoning` on/off (`reasoning.enabled`) | on/off | `enabled:true` accepted; `enabled:false` **rejected** | **dynamic** (measured: 1424–2401 reasoning tokens) | **yes** | **no** (measured: 400, mandatory) |
@@ -455,7 +457,7 @@ Rows marked *(measured)* were probed against the live API with a novel prompt (s
 
 **Off-ness is shape-dependent, and that is why it must be recorded rather than derived.** On a toggle it is an explicit off-form the model may reject. On a range it is whether zero is reachable: `gemini-2.5-flash` has `Min: 0` and an off sentinel, while `gemini-2.5-pro` has `Min: 128`, so every legal request still thinks — the range floor, not a separate switch, is what makes reasoning mandatory there. On an enum it is whether the level set contains a genuine off value, and nothing but convention distinguishes `gpt-5.4`'s `none` (which is off) from `gemini-3.5-flash`'s `minimal` (which is not). Only the range case is mechanically derivable; enum and toggle off-ness must be measured.
 
-**Two-axis models collapse cleanly into one spec.** GLM 5.2 and DeepSeek V4 each expose an on/off toggle *plus* an effort enum; both are modelled as `Kind: Enum` with the level set and `CanDisable: true`, since a toggle is exactly "the disabled value is accepted." A toggle pinned *on* (Kimi K2.7-code, Grok 4.5, Grok 4.20-multi-agent) is `Kind: Toggle, CanEnable: true, CanDisable: false`. No fourth shape is needed.
+**Two-axis models collapse cleanly into one spec.** GLM 5.2 and DeepSeek V4 each expose an on/off toggle *plus* an effort enum; both are modelled as `Kind: Enum` with the level set and `CanDisable: true`, since a toggle is exactly "the disabled value is accepted." A toggle pinned *on* (Kimi K2.7-code, Grok 4.20-multi-agent) is `Kind: Toggle, CanEnable: true, CanDisable: false`. No fourth shape is needed.
 
 Two vendor behaviors deliberately do **not** survive into the spec, because the spec's job is to say which values are accepted, not what the vendor does with them afterward: DeepSeek V4 silently maps `low`/`medium` **up** to `high` and `xhigh` up to `max` rather than erroring, and GLM 5.2 similarly folds its wider documented enum down to two distinct behaviors. Both are recorded as the two-value enums the vendor actually distinguishes.
 
@@ -468,7 +470,7 @@ Provider defaults are largely undocumented, so they were measured: one request p
 Two results only a repeated probe can produce:
 
 - **A default can be genuinely nondeterministic.** `deepseek-v4-flash` reasoned on 1 of 3 and then 2 of 3 identical requests; `deepseek-v4-pro` on 2 of 3 and 2 of 3. There is no fixed value to record for these models, which is what "dynamic" exists to say.
-- **Accepted is not the same as effective.** All nine OpenRouter-routed models return 200 for `reasoning:{effort:"low"|"high"}`, but only `grok-4.20-multi-agent` shows a differentiated response (1,744 reasoning tokens at `low` against 9,334 at `high`); the rest are flat within run-to-run noise. Acceptance of a level therefore does not establish that the model has one, and these entries stay `Kind: Toggle` until a level probe with adequate repetition says otherwise. This is an open measurement item, not a settled fact.
+- **Accepted is not the same as effective.** OpenRouter's parser returns 200 for effort values a model does not honor, so parser acceptance alone never makes an enum. `grok-4.5` and `grok-4.6` are documented enums — OpenRouter's per-model `reasoning` descriptor and xAI's own docs agree (2026-08-13): both mandatory, default `high`; 4.6 lists `low`/`medium`/`high`/`xhigh`, 4.5 lists `low`/`medium`/`high`. The remaining OpenRouter-primary toggle entries (`grok-4.3`, `grok-4.20`, `grok-4.20-multi-agent`, DeepSeek, Kimi) stay `Kind: Toggle` until a documented descriptor plus confirmation says otherwise — an open measurement item, not a settled fact. A 2026-07-29 probe of those toggle routes found only `grok-4.20-multi-agent` differentiated `low` vs `high` token counts.
 
 **A model whose default is off may still be enableable.** `grok-4.20` emitted zero reasoning tokens on 6 of 6 unset requests and 399/438 on explicit `reasoning:{enabled:true}`. Its reasoning is reachable only through an explicit on-value, so a client with no way to *enable* reasoning cannot reach that model's reasoning at all — the on-form is load-bearing, not a redundant twin of the off-form.
 
