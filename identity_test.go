@@ -20,6 +20,14 @@ func TestIdentityStringRendersProviderAndAuth(t *testing.T) {
 			identity: agentkit.Identity{Provider: agentkit.ProviderZAI, Auth: agentkit.AuthAPIKey},
 			want:     "z-ai.apikey",
 		},
+		{
+			identity: agentkit.Identity{Provider: agentkit.ProviderXAI, Auth: agentkit.AuthAPIKey},
+			want:     "x-ai.apikey",
+		},
+		{
+			identity: agentkit.Identity{Provider: agentkit.ProviderXAI, Auth: agentkit.AuthSubscription},
+			want:     "x-ai.subscription",
+		},
 	}
 	for _, tt := range tests {
 		if got := tt.identity.String(); got != tt.want {

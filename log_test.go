@@ -53,6 +53,8 @@ func TestTurnStartLogsProviderAndAuthAsSeparateStrings(t *testing.T) {
 		{Provider: ProviderOpenAI, Auth: AuthSubscription},
 		{Provider: ProviderOpenAI, Auth: AuthAPIKey},
 		{Provider: ProviderZAI, Auth: AuthAPIKey},
+		{Provider: ProviderXAI, Auth: AuthAPIKey},
+		{Provider: ProviderXAI, Auth: AuthSubscription},
 	}
 	for _, identity := range identities {
 		t.Run(identity.String(), func(t *testing.T) {

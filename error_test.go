@@ -29,6 +29,10 @@ func TestErrorIdentityFieldsAndJSONRemainSeparate(t *testing.T) {
 			err:  &agentkit.Error{Provider: agentkit.ProviderZAI, Auth: agentkit.AuthAPIKey},
 		},
 		{
+			name: "xAI subscription",
+			err:  &agentkit.Error{Provider: agentkit.ProviderXAI, Auth: agentkit.AuthSubscription},
+		},
+		{
 			name: "MCP",
 			err:  &agentkit.Error{MCPServer: "tools"},
 		},

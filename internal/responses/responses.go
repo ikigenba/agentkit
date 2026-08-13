@@ -467,7 +467,11 @@ func functionBlock(fn *partialFunction) agentkit.ToolUseBlock {
 	if !json.Valid(input) {
 		input = json.RawMessage(`{}`)
 	}
-	return agentkit.ToolUseBlock{ID: agentkit.NewToolUseID(), Name: fn.name, Input: append(json.RawMessage(nil), input...)}
+	id := fn.callID
+	if id == "" {
+		id = agentkit.NewToolUseID()
+	}
+	return agentkit.ToolUseBlock{ID: id, Name: fn.name, Input: append(json.RawMessage(nil), input...)}
 }
 func summaryText(parts []summaryPart, fallback string) string {
 	if len(parts) == 0 {

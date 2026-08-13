@@ -16,6 +16,7 @@ func TestRequestPathImportGraphExcludesCatalog(t *testing.T) {
 		"github.com/ikigenba/agentkit/openai",
 		"github.com/ikigenba/agentkit/openai/subscription",
 		"github.com/ikigenba/agentkit/openrouter",
+		"github.com/ikigenba/agentkit/xai",
 		"github.com/ikigenba/agentkit/zai",
 	}
 	for _, root := range roots {
