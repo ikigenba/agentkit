@@ -375,6 +375,8 @@ func TestEmbeddingProviderReportsSameOpenAIAPIKeyIdentityAsChat(t *testing.T) {
 }
 
 func TestSubscriptionAndAPIKeyCredentialsSelectTransport(t *testing.T) {
+	// R-DE1J-AWJ6
+	// R-DF9F-OO9V
 	tests := []struct {
 		name         string
 		credential   Credential
