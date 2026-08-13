@@ -10,9 +10,9 @@
 
 **Remote MCP tool servers are supported.** AgentKit is an MCP **client**: the consumer attaches remote MCP servers (network transport only — AgentKit spawns no subprocesses, so local stdio servers are out of scope), AgentKit connects, discovers each server's tools, and feeds them into the *same* automatic tool loop as custom tools, uniformly across every provider. Only **tools** are surfaced (MCP resources/prompts are out of scope); the consumer names each server and that name **prefixes** its tools; credentials are supplied explicitly with no interactive OAuth. Servers attach and detach between turns, mirroring provider/model switching. See **§9** for protocol, transport, integration, auth, and failure mapping.
 
-The product (`project/product/README.md`) fixes the target: a Go 1.26 library, module `github.com/ikigenba/agentkit`, giving **one uniform surface** for a tool-using, multi-turn, **text-only**, streaming chat plus a text-embeddings surface — provider+model is configuration, switchable mid-conversation. Model strings are **free-flow**: AgentKit maintains no allow-list, the vendor judges the id, and an advisory catalog carries metadata for the models we track. **Dollar-cost accounting is in scope** and honest at the edges: where the provider reports the true charge (OpenRouter) that figure wins, otherwise cost is computed from consumer-supplied rates (typically one catalog lookup), and a call with no rate source still runs — reporting zero cost with a `WarnCostUnknown` warning rather than blocking. Out of scope: images/audio, persistence, ambient credentials.
+The product (`project/product/README.md`) fixes the target: a Go 1.26 library, module `github.com/ikigenba/agentkit`, giving **one uniform surface** for a tool-using, multi-turn, **text-only**, streaming chat plus a text-embeddings surface — provider+model is configuration, switchable mid-conversation. Model strings are **free-flow**: AgentKit maintains no allow-list, the vendor judges the id, and an advisory catalog carries metadata for the models we track. **Dollar-cost accounting is in scope** and honest at the edges: where the provider reports the true charge (OpenRouter, xAI) that figure wins, otherwise cost is computed from consumer-supplied rates (typically one catalog lookup), and a call with no rate source still runs — reporting zero cost with a `WarnCostUnknown` warning rather than blocking. Out of scope: images/audio, persistence, ambient credentials.
 
-**Five chat providers, each a first-class peer: Anthropic, Google, OpenAI, Z.ai (Zhipu/BigModel, GLM family), and OpenRouter (aggregator).** A provider reached through API-compatibility or through an aggregator is no less first-class on the public surface; how it is implemented is not user-visible. Implementation splits two ways: Anthropic, Google, and OpenAI are bespoke adapters over native protocols, while Z.ai and OpenRouter share `internal/openaicompat`, an OpenAI-Chat-Completions core parameterized by base URL (see §2.4, §14). OpenAI is reachable two ways, chosen at construction: a platform API key, or a ChatGPT subscription token file (§15). **Embeddings are a narrower set — OpenAI and Google only** (§12).
+**Six chat providers, each a first-class peer: Anthropic, Google, OpenAI, xAI, Z.ai (Zhipu/BigModel, GLM family), and OpenRouter (aggregator).** A provider reached through API-compatibility or through an aggregator is no less first-class on the public surface; how it is implemented is not user-visible. Implementation splits three ways: Anthropic and Google are bespoke adapters over native protocols; OpenAI and xAI share an internal Responses-API core (see §2.3, §20); Z.ai and OpenRouter share `internal/openaicompat`, an OpenAI-Chat-Completions core parameterized by base URL (see §2.4, §14). OpenAI is reachable two ways, chosen at construction: a platform API key, or a ChatGPT subscription token file (§15). xAI is reachable two ways on the **same** public host: a platform API key, or a SuperGrok / X Premium OAuth token file (§20). **Embeddings are a narrower set — OpenAI and Google only** (§12).
 
 ---
 
@@ -22,7 +22,7 @@ Structural unification across the providers is **genuinely achievable and clean 
 
 The recommended canonical model is **Anthropic-shaped**: a conversation is `[]Message`; each `Message` is a `Role` plus an ordered `[]Block`; blocks are `text` / `tool_use` / `tool_result`. Anthropic's content-block shape is the richest of the providers and the cleanest to down-convert from. OpenAI's Responses API, Google's `Part` struct, and Z.ai's OpenAI-compatible Chat Completions shape all map onto it; the provider adapter owns the translation.
 
-**The five providers split into two implementation families.** Three are *native* protocols with bespoke adapters: Anthropic (Messages API), Google (Gemini), OpenAI (Responses API). The other two — **Z.ai/GLM and OpenRouter** — are OpenAI-Chat-Completions-compatible, so they are not bespoke adapters but consumers of a shared `internal/openaicompat` core parameterized by base URL + key + model, each with a few small deltas (for Z.ai: a Zhipu-shaped error envelope, GLM `thinking`/`reasoning_content` fields, `tool_choice=auto`-only; for OpenRouter: its own `reasoning` object encoding and per-response cost). Building the OpenAI-compatible path around a **configurable base URL** is what makes each additional compatible endpoint nearly free.
+**The six providers split into three implementation families.** Two are *native* protocols with bespoke adapters: Anthropic (Messages API) and Google (Gemini). Two speak the **Responses API** — OpenAI and xAI — and share an internal Responses core parameterized by host, path, extra headers, bearer source, error classifier, and cost extractor (§2.3, §20). The remaining two — **Z.ai/GLM and OpenRouter** — are OpenAI-Chat-Completions-compatible, so they are consumers of a shared `internal/openaicompat` core parameterized by base URL + key + model, each with a few small deltas (for Z.ai: a Zhipu-shaped error envelope, GLM `thinking`/`reasoning_content` fields, `tool_choice=auto`-only; for OpenRouter: its own `reasoning` object encoding and per-response cost). Building each shared path around a **configurable host** is what makes each additional compatible endpoint nearly free.
 
 **MCP rides on the existing tool abstraction — it is not a fifth provider.** The MCP addition (§9) does **not** introduce a new leak zone; it introduces a new *capability source*. MCP tools are discovered over the wire and then become ordinary entries in the same `Tool` registry and the same auto-loop as custom tools — the model and the providers never know the difference. So MCP's work concentrates in three already-familiar places plus one new transport concern: (1) **name prefixing + collision detection** (reuses the strict tool-name charset from §5), (2) **JSON-Schema translation** — MCP `inputSchema` is arbitrary third-party JSON Schema, so it hits the *same* lossy Gemini converter as custom tools (§4.3), only now with schemas AgentKit does not control, (3) **failure-channel mapping** into the existing error taxonomy (§6.1) — the MCP `isError` result-vs-protocol-error split maps exactly onto AgentKit's "tool returns an error result (fed back to model)" vs "transport failed (uniform error)" distinction — and the one genuinely new piece, (4) a **remote Streamable-HTTP MCP client** (§9.1–9.2). No new error sentinel and no change to the canonical message model are needed.
 
@@ -83,6 +83,10 @@ The fourth provider, treated as an equal option. **It is OpenAI Chat-Completions
 - **GLM-specific gotchas.** Proprietary `thinking` toggle (`{"type":"enabled"|"disabled"}`, default enabled on 4.6/5.x); `reasoning_content` appears in both non-stream `message` and stream `delta`; `tool_choice=auto`-only; Zhipu string-coded error envelope. **Everything else matches OpenAI Chat Completions exactly.**
 - **Implementation take.** Not a fourth bespoke adapter — **reuse the OpenAI Chat-Completions adapter with three deltas**: Zhipu error parsing, `thinking`/`reasoning_content` handling, and the `tool_choice=auto` constraint. This is the cheapest provider to add and is the reason the OpenAI-family path should be built on a **configurable base URL** from the start. No first-party Go SDK needed — point the OpenAI Chat-Completions client (or raw HTTP) at the base URL.
 
+### 2.5 xAI — Responses API (native) + SuperGrok OAuth
+
+Full footprint in **§20**. Headline: xAI's preferred chat wire is the **Responses API** at `POST https://api.x.ai/v1/responses`, the same item/SSE shape OpenAI's adapter already speaks (`store:false`, `instructions`, `include:["reasoning.encrypted_content"]`, `function_call` / `function_call_output`, `reasoning.effort`). Chat Completions at `/v1/chat/completions` also works and is documented as legacy. A SuperGrok / X Premium OAuth bearer is **accepted on the public host** — unlike OpenAI, there is no private Codex-style backend and no extra originator headers. The official grok CLI proxy (`cli-chat-proxy.grok.com`) requires impersonating the official client (426 without a grok-CLI version header) and is not used. Both credentials (API key and OAuth) are Bearer on the same endpoint. xAI reports `usage.cost_in_usd_ticks` (1e-10 USD). No entitled embedding model on the measured subscription. Implementation take: share OpenAI's Responses core; do not add a Chat-Completions xAI path.
+
 ---
 
 ## 3. Prior art and its lessons
@@ -117,7 +121,7 @@ type ToolResultBlock struct{ ToolUseID, Name, Content string; IsError bool }
 type ReasoningBlock  struct{ Opaque, Summary, BoundToID string }      // preserved thinking state (§7.2)
 ```
 
-`ReasoningBlock` is first-class in the canonical model, not a provider extension: three of the five providers require prior reasoning output to be echoed back verbatim during a tool-use loop (§7.2), so the block has to survive in neutral history. `ToolResultBlock` carries `Name` alongside the id because Gemini matches results by function name (§5).
+`ReasoningBlock` is first-class in the canonical model, not a provider extension: several providers require prior reasoning output to be echoed back verbatim during a tool-use loop (§7.2), so the block has to survive in neutral history. `ToolResultBlock` carries `Name` alongside the id because Gemini matches results by function name (§5).
 
 Adapters reconcile: role `assistant`→`model` for Gemini (which also puts `functionResponse` under role `user`); **system prompt is a first-class field on the state object, not a message** (matches Anthropic top-level `system` + Gemini `systemInstruction`; OpenAI gets it as an injected `developer`/`instructions`); tool-call IDs always present (§5).
 
@@ -670,7 +674,7 @@ The embeddings surface mirrors the chat surface as closely as possible: provider
 
 ### 12.1 The central finding
 
-The "config-only swap" promise is **mostly honest, but only if AgentKit's adapter layer absorbs four real divergences** (dimensionality bounds, normalization, batch limits, truncation behavior) and exposes **one** unavoidable per-call input (query-vs-document role). The embeddings surface is **OpenAI and Google only** — a deliberate subset of the five chat providers. Anthropic offers no first-party embeddings API at all; Z.ai and OpenRouter embeddings could not be confirmed on the endpoints AgentKit uses, so both were evaluated and excluded rather than rejected outright (see §12.2).
+The "config-only swap" promise is **mostly honest, but only if AgentKit's adapter layer absorbs four real divergences** (dimensionality bounds, normalization, batch limits, truncation behavior) and exposes **one** unavoidable per-call input (query-vs-document role). The embeddings surface is **OpenAI and Google only** — a deliberate subset of the six chat providers. Anthropic offers no first-party embeddings API at all; xAI's `/v1/embeddings` route exists but this SuperGrok-entitled team has no embedding model (chat models 400 as language models; foreign embedding ids 404); Z.ai and OpenRouter embeddings could not be confirmed on the endpoints AgentKit uses. All four were evaluated and excluded rather than rejected outright (see §12.2, §20.6).
 
 ### 12.2 Provider surfaces (verified)
 
@@ -1268,3 +1272,101 @@ Errors are JSON `ErrorResponse` objects:
   measured `50;w=1` on the paid plan). Exceeding it yields HTTP 429; the standard
   `Retry-After` header should be surfaced when present. The tool does not retry — the
   agent decides.
+
+---
+
+## 20. xAI native API and SuperGrok OAuth — measured 2026-08-13
+
+Curl-validated against a live SuperGrok OAuth token saved as a raw token-endpoint response. Secrets are not restated here.
+
+### 20.1 Credential file
+
+The file AgentKit consumes is the **raw RFC 6749 token-endpoint response, verbatim** — the same contract as OpenAI subscription (§15.1). Observed top-level fields:
+
+- `access_token` — JWT bearer, `exp` ≈ 6 hours (`expires_in`: 21600)
+- `refresh_token` — opaque, not a JWT; rotates on refresh (not live-exercised; refresh tokens are single-lineage)
+- `id_token` — OIDC JWT (profile claims only; no extra header is derived from it)
+- `token_type` — `Bearer`
+- `scope` — `openid profile email offline_access grok-cli:access api:access`
+
+Access-token claims (non-secret): `iss` `https://auth.x.ai`, `aud`/`client_id` `b1a00492-073a-47ea-816f-4c329264a828`, `principal_type` `User`, `principal_id`, `team_id`, `tier`, `scope`. There is **no** ChatGPT-style account-id header to extract. The official grok CLI wrapper at `~/.grok/auth.json` is a different shape (keyed by `issuer::client_id`, nested `key`/`refresh_token`/`auth_mode`); AgentKit does not read it. Path selection is consumer policy — AgentKit is handed an explicit path.
+
+### 20.2 OIDC
+
+Discovery: `GET https://auth.x.ai/.well-known/openid-configuration`.
+
+- issuer `https://auth.x.ai`
+- authorize `https://auth.x.ai/oauth2/authorize`
+- token `https://auth.x.ai/oauth2/token`
+- device `https://auth.x.ai/oauth2/device/code`
+- userinfo `https://auth.x.ai/oauth2/userinfo` (200 with this bearer)
+- PKCE `S256`; `token_endpoint_auth_methods_supported` includes `none` (public client)
+- grants: `authorization_code`, `refresh_token`, device-code
+- public client id **`b1a00492-073a-47ea-816f-4c329264a828`** (the grok CLI / Grok Build desktop client)
+
+Login is outside AgentKit (generic `oauth` CLI). Refresh (AgentKit's job): `POST application/x-www-form-urlencoded` to the token endpoint with `grant_type=refresh_token`, `refresh_token`, `client_id`. No client secret. Same 5-minute proactive skew as §15.3; **no** reactive refresh-on-401. Carry forward `refresh_token` / `id_token` when the response omits them.
+
+### 20.3 The wire — public `api.x.ai`, not the CLI proxy
+
+Unlike OpenAI (§15.2), the OAuth bearer is **accepted on the public API**. Measured:
+
+| Request | Result |
+|---|---|
+| `GET https://api.x.ai/v1/models` | 200 — 12 models (chat + Imagine) |
+| `POST https://api.x.ai/v1/responses` | 200 — Responses API |
+| `POST https://api.x.ai/v1/chat/completions` | 200 — Chat Completions (legacy) |
+| `https://cli-chat-proxy.grok.com/v1/responses` or `/chat/completions` | **426** — "Your Grok CLI version (none) is outdated" |
+
+The CLI proxy is the grok CLI's private front door. It lists only `grok-4.5` and `grok-4.6`, advertises `api_backend: responses`, and requires official-client version headers. **Do not use it; do not impersonate the official client.** Chat Completions works on the public host and is documented as legacy; new features land on Responses first. AgentKit uses **Responses only**.
+
+No extra headers. `Authorization: Bearer <token>` is sufficient for both an API key and an OAuth access token.
+
+### 20.4 Responses contract (measured)
+
+Same item/SSE shape as OpenAI Responses (§2.3). Confirmed:
+
+- `store: false` honored (`store` echoed false)
+- system via top-level `instructions` honored
+- `include: ["reasoning.encrypted_content"]` returns `encrypted_content` on the reasoning output item
+- `reasoning: {"effort":"low"}` honored on grok-4.5 (response echoes `effort: low`; default when omitted is `high` per docs, confirmed on a no-field grok-4.5 call as `high`)
+- tools: `{"type":"function","name","description","parameters"}` — model emits `function_call` with `call_id` + `arguments` JSON string
+- stateless tool follow-up: replay prior `output` items plus `{"type":"function_call_output","call_id","output"}` — works with `store: false`
+- SSE event types: `response.created`, `response.in_progress`, `response.output_item.added`, `response.reasoning_summary_part.added`, `response.reasoning_summary_text.delta`/`done`, `response.content_part.added`, `response.output_text.delta`/`done`, `response.output_item.done`, `response.completed`
+
+Usage: `input_tokens`, `input_tokens_details.cached_tokens`, `output_tokens`, `output_tokens_details.reasoning_tokens`, plus **`cost_in_usd_ticks`**. Ticks are **1e-10 USD**: a grok-4.5 turn of 6_752_000 ticks = $0.0006752, matching published API rates on the observed cache/reasoning split. Convert to AgentKit nano-USD by integer division by 10.
+
+Docs: `reasoning_effort` defaults to `"high"` on grok-4.5/4.6 and **cannot be disabled**. `xhigh` is grok-4.6+; grok-4.5 treats `xhigh` as `high`. `presencePenalty` / `frequencyPenalty` / `stop` error on reasoning models.
+
+### 20.5 Native model terms (from `GET /v1/models` + inference probes)
+
+Chat models entitled on this token:
+
+| id (canonical) | context | input / cache / output per 1M (short; long ≥200k) | native reasoning (measured / documented) |
+|---|---|---|---|
+| `grok-4.6` | 500k | $2 / $0.50 / $6 ; $4 / $1 / $12 | effort `{low,medium,high,xhigh}`, default `high`, cannot disable |
+| `grok-4.5` | 500k | $2 / $0.30 / $6 ; $4 / $0.60 / $12 | effort `{low,medium,high}`, default `high`, cannot disable |
+| `grok-4.3` | **1M** | $1.25 / $0.20 / $2.50 ; $2.50 / $0.40 / $5 | effort accepted; omitted field echoed `effort: low` — **default `low`**, not the OpenRouter thinking-toggle |
+| `grok-4.20` (alias of `grok-4.20-0309-reasoning`) | **1M** | same as 4.3 | **`reasoning.effort` rejected 400** "does not support parameter reasoningEffort" — always-on, no effort control |
+| `grok-4.20-multi-agent` | **1M** | same as 4.3 | effort field accepted; docs: controls agent count `{low,medium,high,xhigh}`. One probe sending `low` echoed `medium` |
+| `grok-build-0.1` | 256k | $1 / $0.20 / $2 ; $2 / $0.40 / $4 | not currently cataloged; not added by this change |
+
+Imagine/video models are out of AgentKit's text-only scope. OpenRouter catalog rows for grok-4.3 (256k, $3/$15, thinking toggle) and grok-4.20 (2M, $3/$15, thinking toggle) **diverge** from the native API; each offering keeps its own terms. Native offerings use this table. OpenRouter offerings stay as currently shipped until that route is re-measured.
+
+### 20.6 Errors and embeddings
+
+Error envelope: `{"code":"<slug>","error":"<message>"}` — not OpenAI's `{"error":{message,type,param,code}}`.
+
+- no `Authorization` header → **401** `unauthenticated:no-credentials` "No credentials presented."
+- garbage / malformed JWT bearer → **400** `invalid-argument` "Incorrect API key provided. You can obtain an API key from https://console.x.ai."
+- unknown model → **400** `invalid-argument` "Model not found: …"
+
+Classify both the 401 and the 400-incorrect-key as authentication; model-not-found as invalid request.
+
+`POST /v1/embeddings`: a foreign embedding id 404s as model-not-found-or-no-access; `grok-4.5` 400s as "a language model and is therefore not available on this endpoint." No entitled embedding model. xAI is chat-only.
+
+### 20.7 Not chosen
+
+- **CLI chat proxy + grok-CLI impersonation headers** — works for third-party harnesses that copy the official client; 426 without them; lists a subset of models; requires lying about client identity. Public `api.x.ai` already accepts the OAuth bearer.
+- **Chat Completions as the xAI wire** — works, but is the legacy surface and would ignore the shared Responses core OpenAI already has.
+- **Reading `~/.grok/auth.json`** — wrapper shape, different lineage from a raw token-response file; AgentKit takes an explicit path to a raw response.
+- **Baking `~/.agentrepl/xai-auth.json`** — consumer policy, same as OpenAI's auth-file path.

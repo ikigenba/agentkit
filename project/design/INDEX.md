@@ -45,7 +45,7 @@ One line per Decision, in number order — file, label, and the Verification ids
 - **D21** `project/design/D21.md` — The shared retry executor (`internal/retry`)
   - ids: R-IUBG-95CC, R-IWR9-0OTQ, R-IXZ5-EGKF, R-IZ71-S8B4, R-J0EY-601T
 - **D22** `project/design/D22.md` — Per-provider schema rendering at the adapter boundary
-  - ids: R-XVKV-LSFU, R-XWSR-ZK6J, R-XY0O-DBX8, R-2UV8-RBKS, R-2XB1-IV26, R-80QS-7XKB, R-836K-ZH1P, R-84EH-D8SE, R-85MD-R0J3, R-86UA-4S9S
+  - ids: R-80QS-7XKB, R-836K-ZH1P, R-XVKV-LSFU, R-2UV8-RBKS, R-84EH-D8SE, R-2XB1-IV26, R-85MD-R0J3, R-86UA-4S9S, R-XWSR-ZK6J, R-XY0O-DBX8
 - **D23** `project/design/D23.md` — Deferred tools & the built-in `load_tools` meta-tool
   - ids: R-9RQ8-9G3W, R-9SY4-N7UL, R-D5PT-82VU, R-D6XP-LUMJ, R-D85L-ZMD8, R-D9DI-DE3X, R-DALE-R5UM, R-DE93-WH2P, R-DBTB-4XLB, R-DD17-IPC0, R-B5BR-U5M1, R-B6JO-7XCQ, R-B7RK-LP3F, R-DFH0-A8TE
 - **D24** `project/design/D24.md` — The `openrouter` provider
@@ -53,7 +53,7 @@ One line per Decision, in number order — file, label, and the Verification ids
 - **D25** `project/design/D25.md` — OpenAI credentials: API key and ChatGPT subscription
   - ids: R-DG9Z-8KYU, R-PV6N-URM6, R-PWEK-8JCV, R-DHHV-MCPJ, R-PXMG-MB3K, R-DL5K-RNXM, R-DJXO-DW6X
 - **D26** `project/design/D26.md` — The advisory model catalog: `agentkit/catalog`
-  - ids: R-DMDH-5FOB, R-LOW2-SDWG, R-LRBV-JXDU, R-DNLD-J7F0, R-E7VN-JTZ0, R-LXFD-GS3B, R-LTRO-BGV8, R-LW7H-30CM, R-E5FU-SAHM, R-EBJC-P573, R-DOT9-WZ5P, R-DQ16-AQWE, R-DHKK-RZ7M, R-DISH-5QYB, R-DK0D-JIP0, R-EABG-BDGE, R-E6NR-628B, R-DNO2-OTX3, R-LYN9-UJU0, R-DOVZ-2LNS, R-DR92-OIN3, R-4NJ4-SJ41, R-DSGZ-2ADS
+  - ids: R-DMDH-5FOB, R-LOW2-SDWG, R-LRBV-JXDU, R-DNLD-J7F0, R-E7VN-JTZ0, R-LXFD-GS3B, R-LTRO-BGV8, R-LW7H-30CM, R-E5FU-SAHM, R-EBJC-P573, R-DOT9-WZ5P, R-DQ16-AQWE, R-DHKK-RZ7M, R-DISH-5QYB, R-DK0D-JIP0, R-EABG-BDGE, R-E6NR-628B, R-DNO2-OTX3, R-LYN9-UJU0, R-DOVZ-2LNS, R-DR92-OIN3, R-4NJ4-SJ41, R-DSGZ-2ADS, R-DZZQ-6RVO, R-E17M-KJMD, R-E2FI-YBD2
 - **D27** `project/design/D27.md` — The `toolkit` subpackage: standard coding tools, root confinement, output cap
   - ids: R-LQ1Y-XASG, R-LR9V-B2J5, R-Y446-A6MP, R-LSHR-OU9U, R-LTPO-2M0J, R-LUXK-GDR8, R-LW5G-U5HX
 - **D28** `project/design/D28.md` — `toolkit`: `Read`, `Write`, `Edit` semantics
@@ -69,7 +69,7 @@ One line per Decision, in number order — file, label, and the Verification ids
 - **D33** `project/design/D33.md` — Raster normalization: images become one-page PDFs
   - ids: R-UJJV-4KZZ, R-UKRR-ICQO, R-ULZN-W4HD, R-UOFG-NNYR, R-UPND-1FPG
 - **D34** `project/design/D34.md` — The canonical tool-schema subset, owned by root
-  - ids: R-XLTO-JMIA, R-XRX6-GH7R, R-XN1K-XE8Z, R-XO9H-B5ZO, R-XQPA-2PH2, R-ZPPN-6FV9, R-6QNT-WR7C, R-U3C5-4A1V
+  - ids: R-XLTO-JMIA, R-XRX6-GH7R, R-XN1K-XE8Z, R-XO9H-B5ZO, R-XQPA-2PH2, R-U3C5-4A1V, R-6QNT-WR7C, R-ZPPN-6FV9
 - **D35** `project/design/D35.md` — The assembled message is transport-shape-independent
   - ids: R-QUWY-MLCD, R-QW4V-0D32, R-QXCR-E4TR, R-QYKN-RWKG, R-QZSK-5OB5, R-R10G-JG1U
 - **D36** `project/design/D36.md` — `toolkit`: `WebSearch` — Brave-backed web search
@@ -77,9 +77,13 @@ One line per Decision, in number order — file, label, and the Verification ids
 - **D37** `project/design/D37.md` — `toolkit`: `WebFetch` — page fetch to markdown
   - ids: R-1LWA-VRRX, R-1N47-9JIM, R-1OC3-NB9B, R-1QRW-EUQP, R-1RZS-SMHE, R-1T7P-6E83, R-1UFL-K5YS, R-1VNH-XXPH, R-1I1F-JRHF
 - **D38** `project/design/D38.md` — Credentials: absent at construction, named at the call
-  - ids: R-UF7D-AWAA, R-UGF9-OO0Z, R-UHN6-2FRO, R-UIV2-G7ID, R-ULAV-7QZR, R-UMIR-LIQG, R-UNQN-ZAH5
+  - ids: R-UF7D-AWAA, R-UGF9-OO0Z, R-UHN6-2FRO, R-UIV2-G7ID, R-E3NF-C33R, R-ULAV-7QZR, R-UMIR-LIQG, R-UNQN-ZAH5
 - **D39** `project/design/D39.md` — Runtime tool-argument validation
   - ids: R-7M3Z-MONZ, R-7NBW-0GEO, R-7OJS-E85D, R-7PRO-RZW2, R-7QZL-5RMR, R-7S7H-JJDG, R-7TFD-XB45, R-7UNA-B2UU, R-7VV6-OULJ, R-7X33-2MC8, R-7YAZ-GE2X, R-7ZIV-U5TM
+- **D40** `project/design/D40.md` — The `xai` provider: Responses on `api.x.ai`, API key and SuperGrok subscription
+  - ids: R-DE1J-AWJ6, R-DF9F-OO9V, R-DP0M-QU7F, R-DGHC-2G0K, R-DHP8-G7R9, R-DIX4-TZHY, R-DK51-7R8N, R-DLCX-LIZC, R-DQ8J-4LY4, R-DSOB-W5FI, R-DMKT-ZAQ1, R-DNSQ-D2GQ
+- **D41** `project/design/D41.md` — xAI SuperGrok subscription store
+  - ids: R-DTW8-9X67, R-DV44-NOWW, R-DWC1-1GNL, R-DXJX-F8EA, R-DYRT-T04Z
 
 ## Verification ids → Decision
 R-00IP-I9D7  D1  project/design/D01.md
@@ -194,30 +198,51 @@ R-DCMA-39QR  D24  project/design/D24.md
 R-DCOZ-8W8U  D6  project/design/D06.md
 R-DD17-IPC0  D23  project/design/D23.md
 R-DDWV-MNZJ  D6  project/design/D06.md
+R-DE1J-AWJ6  D40  project/design/D40.md
 R-DE93-WH2P  D23  project/design/D23.md
 R-DF22-UT85  D24  project/design/D24.md
 R-DF4S-0FQ8  D6  project/design/D06.md
+R-DF9F-OO9V  D40  project/design/D40.md
 R-DFH0-A8TE  D23  project/design/D23.md
 R-DG9Z-8KYU  D25  project/design/D25.md
 R-DGCO-E7GX  D6  project/design/D06.md
+R-DGHC-2G0K  D40  project/design/D40.md
 R-DHHV-MCPJ  D25  project/design/D25.md
 R-DHKK-RZ7M  D26  project/design/D26.md
+R-DHP8-G7R9  D40  project/design/D40.md
 R-DISH-5QYB  D26  project/design/D26.md
 R-DIVW-07P0  D4  project/design/D04.md
+R-DIX4-TZHY  D40  project/design/D40.md
 R-DJXO-DW6X  D25  project/design/D25.md
 R-DK0D-JIP0  D26  project/design/D26.md
+R-DK51-7R8N  D40  project/design/D40.md
 R-DL5K-RNXM  D25  project/design/D25.md
+R-DLCX-LIZC  D40  project/design/D40.md
 R-DMDH-5FOB  D26  project/design/D26.md
+R-DMKT-ZAQ1  D40  project/design/D40.md
 R-DNLD-J7F0  D26  project/design/D26.md
 R-DNO2-OTX3  D26  project/design/D26.md
 R-DNS8-QC6Z  D9  project/design/D09.md
+R-DNSQ-D2GQ  D40  project/design/D40.md
 R-DOT9-WZ5P  D26  project/design/D26.md
 R-DOVZ-2LNS  D26  project/design/D26.md
+R-DP0M-QU7F  D40  project/design/D40.md
 R-DQ16-AQWE  D26  project/design/D26.md
+R-DQ8J-4LY4  D40  project/design/D40.md
 R-DR92-OIN3  D26  project/design/D26.md
 R-DRFX-VNF2  D9  project/design/D09.md
 R-DSGZ-2ADS  D26  project/design/D26.md
+R-DSOB-W5FI  D40  project/design/D40.md
 R-DTVQ-N6WG  D9  project/design/D09.md
+R-DTW8-9X67  D41  project/design/D41.md
+R-DV44-NOWW  D41  project/design/D41.md
+R-DWC1-1GNL  D41  project/design/D41.md
+R-DXJX-F8EA  D41  project/design/D41.md
+R-DYRT-T04Z  D41  project/design/D41.md
+R-DZZQ-6RVO  D26  project/design/D26.md
+R-E17M-KJMD  D26  project/design/D26.md
+R-E2FI-YBD2  D26  project/design/D26.md
+R-E3NF-C33R  D38  project/design/D38.md
 R-E5FU-SAHM  D26  project/design/D26.md
 R-E6NR-628B  D26  project/design/D26.md
 R-E7VN-JTZ0  D26  project/design/D26.md
