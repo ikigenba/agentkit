@@ -170,9 +170,20 @@ var entries = map[string]Entry{
 		enumReasoning("effort", []string{"none", "low", "medium", "high", "xhigh"}, "medium", true),
 	),
 	"grok-4.5": chatEntry(
-		"grok-4.5", VendorXAI, agentkit.ProviderOpenRouter, 256_000,
-		pricing(agentkit.RateTier{InputUncached: 3000, Output: 15000}),
-		&ReasoningSpec{Term: "thinking", Kind: ReasoningToggle, CanEnable: true, Default: fixed(agentkit.EnableReasoning())},
+		"grok-4.5", VendorXAI, agentkit.ProviderOpenRouter, 500_000,
+		pricing(
+			agentkit.RateTier{InputUncached: 2000, CacheReadInput: 300, Output: 6000},
+			agentkit.RateTier{MinInputTokens: 200001, InputUncached: 4000, CacheReadInput: 600, Output: 12000},
+		),
+		enumReasoning("effort", []string{"low", "medium", "high"}, "high", false),
+	),
+	"grok-4.6": chatEntry(
+		"grok-4.6", VendorXAI, agentkit.ProviderOpenRouter, 500_000,
+		pricing(
+			agentkit.RateTier{InputUncached: 2000, CacheReadInput: 500, Output: 6000},
+			agentkit.RateTier{MinInputTokens: 200001, InputUncached: 4000, CacheReadInput: 1000, Output: 12000},
+		),
+		enumReasoning("effort", []string{"low", "medium", "high", "xhigh"}, "high", false),
 	),
 	"grok-4.3": chatEntry(
 		"grok-4.3", VendorXAI, agentkit.ProviderOpenRouter, 256_000,

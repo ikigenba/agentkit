@@ -5,11 +5,71 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 	"testing"
 
 	"github.com/ikigenba/agentkit"
 )
+
+func TestLookupGrokOfferings(t *testing.T) {
+	// R-DMDH-5FOB
+	tests := []struct {
+		model  string
+		levels []string
+	}{
+		{model: "grok-4.5", levels: []string{"low", "medium", "high"}},
+		{model: "grok-4.6", levels: []string{"low", "medium", "high", "xhigh"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.model, func(t *testing.T) {
+			entry, ok := Lookup(tt.model)
+			if !ok {
+				t.Fatalf("Lookup(%q) returned ok=false", tt.model)
+			}
+			if entry.Vendor != VendorXAI {
+				t.Errorf("Vendor = %q, want %q", entry.Vendor, VendorXAI)
+			}
+			if len(entry.Offerings) != 1 {
+				t.Fatalf("len(Offerings) = %d, want 1", len(entry.Offerings))
+			}
+			offering := entry.Offerings[0]
+			if offering.Provider != agentkit.ProviderOpenRouter {
+				t.Errorf("Provider = %q, want %q", offering.Provider, agentkit.ProviderOpenRouter)
+			}
+			if offering.Reasoning == nil {
+				t.Fatal("Reasoning is nil")
+			}
+			if offering.Reasoning.Kind != ReasoningEnum {
+				t.Errorf("Reasoning.Kind = %d, want ReasoningEnum", offering.Reasoning.Kind)
+			}
+			if !slices.Equal(offering.Reasoning.Levels, tt.levels) {
+				t.Errorf("Reasoning.Levels = %v, want %v", offering.Reasoning.Levels, tt.levels)
+			}
+			if offering.Reasoning.CanEnable {
+				t.Error("Reasoning.CanEnable = true, want false")
+			}
+			level, isLevel := offering.Reasoning.Default.Value.Level()
+			if offering.Reasoning.Default.Mode != DefaultFixed || !isLevel || level != "high" {
+				t.Errorf("Reasoning.Default = %#v, want fixed high", offering.Reasoning.Default)
+			}
+		})
+	}
+
+	embedding, ok := Lookup("text-embedding-3-small")
+	if !ok {
+		t.Fatal("Lookup(text-embedding-3-small) returned ok=false")
+	}
+	if embedding.Vendor != VendorOpenAI || embedding.Embedding == nil {
+		t.Fatalf("embedding entry = %#v, want OpenAI vendor and embedding info", embedding)
+	}
+	if embedding.Embedding.NativeDimension != 1536 || embedding.Embedding.MaxInputTokens != 8192 {
+		t.Errorf("Embedding = %#v, want native dimension 1536 and max input tokens 8192", embedding.Embedding)
+	}
+	if unknown, ok := Lookup("uncataloged-model"); ok {
+		t.Errorf("Lookup(uncataloged-model) = %#v, true; want zero entry, false", unknown)
+	}
+}
 
 func TestCatalogDataMatchesRecordedReference(t *testing.T) {
 	// R-DQ16-AQWE
@@ -62,7 +122,7 @@ func TestCatalogDataMatchesRecordedReference(t *testing.T) {
 		t.Fatal(err)
 	}
 	digest := sha256.Sum256(encoded)
-	const recordedReference = "cf4d988ac12703d94ccf650d481e77012bd7a984a8d7a33fb6e2aafc7aa7a11e"
+	const recordedReference = "b542409b57caa1fe5bfed9e06a37accb7cb80ba1066c9b111f4b6171ba0d7622"
 	if got := hex.EncodeToString(digest[:]); got != recordedReference {
 		t.Fatalf("catalog data differs from recorded reference table: got %s, want %s", got, recordedReference)
 	}
