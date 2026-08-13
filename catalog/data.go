@@ -170,7 +170,7 @@ var entries = map[string]Entry{
 		enumReasoning("effort", []string{"none", "low", "medium", "high", "xhigh"}, "medium", true),
 	),
 	"grok-4.5": chatEntry(
-		"grok-4.5", VendorXAI, agentkit.ProviderOpenRouter, 500_000,
+		"grok-4.5", VendorXAI, agentkit.ProviderXAI, 500_000,
 		pricing(
 			agentkit.RateTier{InputUncached: 2000, CacheReadInput: 300, Output: 6000},
 			agentkit.RateTier{MinInputTokens: 200001, InputUncached: 4000, CacheReadInput: 600, Output: 12000},
@@ -178,7 +178,7 @@ var entries = map[string]Entry{
 		enumReasoning("effort", []string{"low", "medium", "high"}, "high", false),
 	),
 	"grok-4.6": chatEntry(
-		"grok-4.6", VendorXAI, agentkit.ProviderOpenRouter, 500_000,
+		"grok-4.6", VendorXAI, agentkit.ProviderXAI, 500_000,
 		pricing(
 			agentkit.RateTier{InputUncached: 2000, CacheReadInput: 500, Output: 6000},
 			agentkit.RateTier{MinInputTokens: 200001, InputUncached: 4000, CacheReadInput: 1000, Output: 12000},
@@ -186,19 +186,43 @@ var entries = map[string]Entry{
 		enumReasoning("effort", []string{"low", "medium", "high", "xhigh"}, "high", false),
 	),
 	"grok-4.3": chatEntry(
-		"grok-4.3", VendorXAI, agentkit.ProviderOpenRouter, 256_000,
-		pricing(agentkit.RateTier{InputUncached: 3000, Output: 15000}),
-		&ReasoningSpec{Term: "thinking", Kind: ReasoningToggle, CanEnable: true, CanDisable: true, Default: fixed(agentkit.EnableReasoning())},
+		"grok-4.3", VendorXAI, agentkit.ProviderXAI, 1_000_000,
+		pricing(
+			agentkit.RateTier{InputUncached: 1250, CacheReadInput: 200, Output: 2500},
+			agentkit.RateTier{MinInputTokens: 200001, InputUncached: 2500, CacheReadInput: 400, Output: 5000},
+		),
+		enumReasoning("effort", []string{"low", "medium", "high"}, "low", false),
+		Offering{
+			Provider:  agentkit.ProviderOpenRouter,
+			Pricing:   pricing(agentkit.RateTier{InputUncached: 3000, Output: 15000}),
+			Reasoning: &ReasoningSpec{Term: "thinking", Kind: ReasoningToggle, CanEnable: true, CanDisable: true, Default: fixed(agentkit.EnableReasoning())},
+			Context:   256_000,
+		},
 	),
 	"grok-4.20": chatEntry(
-		"grok-4.20", VendorXAI, agentkit.ProviderOpenRouter, 2_000_000,
-		pricing(agentkit.RateTier{InputUncached: 3000, Output: 15000}, agentkit.RateTier{MinInputTokens: 200001, InputUncached: 6000, Output: 30000}),
-		toggleReasoning(true, true, DefaultOff),
+		"grok-4.20", VendorXAI, agentkit.ProviderXAI, 1_000_000,
+		pricing(
+			agentkit.RateTier{InputUncached: 1250, CacheReadInput: 200, Output: 2500},
+			agentkit.RateTier{MinInputTokens: 200001, InputUncached: 2500, CacheReadInput: 400, Output: 5000},
+		),
+		&ReasoningSpec{Term: "thinking", Kind: ReasoningToggle, CanEnable: true, Default: fixed(agentkit.EnableReasoning())},
+		Offering{
+			Provider: agentkit.ProviderOpenRouter,
+			Pricing: pricing(
+				agentkit.RateTier{InputUncached: 3000, Output: 15000},
+				agentkit.RateTier{MinInputTokens: 200001, InputUncached: 6000, Output: 30000},
+			),
+			Reasoning: toggleReasoning(true, true, DefaultOff),
+			Context:   2_000_000,
+		},
 	),
 	"grok-4.20-multi-agent": chatEntry(
-		"grok-4.20-multi-agent", VendorXAI, agentkit.ProviderOpenRouter, 2_000_000,
-		pricing(agentkit.RateTier{InputUncached: 6000, Output: 30000}),
-		&ReasoningSpec{Term: "thinking", Kind: ReasoningToggle, CanEnable: true, Default: fixed(agentkit.EnableReasoning())},
+		"grok-4.20-multi-agent", VendorXAI, agentkit.ProviderXAI, 1_000_000,
+		pricing(
+			agentkit.RateTier{InputUncached: 1250, CacheReadInput: 200, Output: 2500},
+			agentkit.RateTier{MinInputTokens: 200001, InputUncached: 2500, CacheReadInput: 400, Output: 5000},
+		),
+		enumReasoning("effort", []string{"low", "medium", "high", "xhigh"}, "high", false),
 	),
 	"deepseek-v4-flash": chatEntry(
 		"deepseek-v4-flash", VendorDeepSeek, agentkit.ProviderOpenRouter, 128_000,

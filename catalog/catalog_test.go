@@ -123,6 +123,34 @@ func TestResolveCoversCuratedPassthruAndUnrouted(t *testing.T) {
 	}
 }
 
+func TestResolveSelectsNativeXAIAndNamedOpenRouterOfferings(t *testing.T) {
+	// R-E2FI-YBD2
+	models := []string{
+		"grok-4.5",
+		"grok-4.6",
+		"grok-4.3",
+		"grok-4.20",
+		"grok-4.20-multi-agent",
+	}
+	for _, model := range models {
+		t.Run(model, func(t *testing.T) {
+			gotDefault := Resolve("", model)
+			if gotDefault.Coverage != Curated || gotDefault.Provider != agentkit.ProviderXAI {
+				t.Errorf("Resolve(default, %q) = %#v, want curated xAI route", model, gotDefault)
+			}
+
+			wantRouter, ok := Offer(model, agentkit.ProviderOpenRouter)
+			if !ok {
+				t.Fatalf("Offer(%q, OpenRouter) returned ok=false", model)
+			}
+			gotRouter := Resolve(agentkit.ProviderOpenRouter, model)
+			if gotRouter.Coverage != Curated || gotRouter.Provider != agentkit.ProviderOpenRouter || !reflect.DeepEqual(gotRouter.Offering, wantRouter) {
+				t.Errorf("Resolve(OpenRouter, %q) = %#v, want curated offering %#v", model, gotRouter, wantRouter)
+			}
+		})
+	}
+}
+
 func TestWireModelHonorsOverridesAndOtherwiseDerives(t *testing.T) {
 	// R-E7VN-JTZ0
 	opus, _ := Lookup("claude-opus-4-8")
@@ -165,6 +193,7 @@ func TestVendorAndProviderIDsAgreeWhereBothExist(t *testing.T) {
 		VendorOpenAI:    agentkit.ProviderOpenAI,
 		VendorGoogle:    agentkit.ProviderGoogle,
 		VendorZAI:       agentkit.ProviderZAI,
+		VendorXAI:       agentkit.ProviderXAI,
 	}
 	for vendor, provider := range matches {
 		if string(vendor) != string(provider) {
@@ -174,14 +203,18 @@ func TestVendorAndProviderIDsAgreeWhereBothExist(t *testing.T) {
 	if VendorZAI != "z-ai" || agentkit.ProviderZAI != "z-ai" {
 		t.Fatalf("ZAI ids = %q/%q, want z-ai on both sides", VendorZAI, agentkit.ProviderZAI)
 	}
+	if VendorXAI != "x-ai" || agentkit.ProviderXAI != "x-ai" {
+		t.Fatalf("xAI ids = %q/%q, want x-ai on both sides", VendorXAI, agentkit.ProviderXAI)
+	}
 	providers := map[string]bool{
 		string(agentkit.ProviderAnthropic):  true,
 		string(agentkit.ProviderOpenAI):     true,
 		string(agentkit.ProviderGoogle):     true,
 		string(agentkit.ProviderZAI):        true,
+		string(agentkit.ProviderXAI):        true,
 		string(agentkit.ProviderOpenRouter): true,
 	}
-	for _, vendor := range []VendorID{VendorXAI, VendorDeepSeek, VendorMoonshot} {
+	for _, vendor := range []VendorID{VendorDeepSeek, VendorMoonshot} {
 		if providers[string(vendor)] {
 			t.Errorf("vendor-only id %q unexpectedly matches a provider package", vendor)
 		}

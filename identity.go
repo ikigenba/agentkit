@@ -8,6 +8,7 @@ const (
 	ProviderOpenAI     ProviderID = "openai"
 	ProviderGoogle     ProviderID = "google"
 	ProviderZAI        ProviderID = "z-ai"
+	ProviderXAI        ProviderID = "x-ai"
 	ProviderOpenRouter ProviderID = "openrouter"
 )
 

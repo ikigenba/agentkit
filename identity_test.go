@@ -27,3 +27,10 @@ func TestIdentityStringRendersProviderAndAuth(t *testing.T) {
 		}
 	}
 }
+
+func TestXAIProviderIDUsesVendorNamespaceSpelling(t *testing.T) {
+	// R-LXFD-GS3B
+	if got, want := agentkit.ProviderXAI, agentkit.ProviderID("x-ai"); got != want {
+		t.Fatalf("ProviderXAI = %q, want %q", got, want)
+	}
+}

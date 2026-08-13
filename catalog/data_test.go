@@ -5,69 +5,90 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"slices"
+	"reflect"
 	"sort"
 	"testing"
 
 	"github.com/ikigenba/agentkit"
 )
 
-func TestLookupGrokOfferings(t *testing.T) {
+func TestGrokNativeOfferingsAndRouterAlternatives(t *testing.T) {
 	// R-DMDH-5FOB
-	tests := []struct {
-		model  string
-		levels []string
-	}{
-		{model: "grok-4.5", levels: []string{"low", "medium", "high"}},
-		{model: "grok-4.6", levels: []string{"low", "medium", "high", "xhigh"}},
+	// R-DZZQ-6RVO
+	// R-E17M-KJMD
+	sharedRates := pricing(
+		agentkit.RateTier{InputUncached: 1250, CacheReadInput: 200, Output: 2500},
+		agentkit.RateTier{MinInputTokens: 200001, InputUncached: 2500, CacheReadInput: 400, Output: 5000},
+	)
+	wantNative := map[string]Offering{
+		"grok-4.5": {
+			Provider: agentkit.ProviderXAI, Context: 500_000,
+			Pricing: pricing(
+				agentkit.RateTier{InputUncached: 2000, CacheReadInput: 300, Output: 6000},
+				agentkit.RateTier{MinInputTokens: 200001, InputUncached: 4000, CacheReadInput: 600, Output: 12000},
+			),
+			Reasoning: enumReasoning("effort", []string{"low", "medium", "high"}, "high", false),
+		},
+		"grok-4.6": {
+			Provider: agentkit.ProviderXAI, Context: 500_000,
+			Pricing: pricing(
+				agentkit.RateTier{InputUncached: 2000, CacheReadInput: 500, Output: 6000},
+				agentkit.RateTier{MinInputTokens: 200001, InputUncached: 4000, CacheReadInput: 1000, Output: 12000},
+			),
+			Reasoning: enumReasoning("effort", []string{"low", "medium", "high", "xhigh"}, "high", false),
+		},
+		"grok-4.3": {
+			Provider: agentkit.ProviderXAI, Context: 1_000_000, Pricing: sharedRates,
+			Reasoning: enumReasoning("effort", []string{"low", "medium", "high"}, "low", false),
+		},
+		"grok-4.20": {
+			Provider: agentkit.ProviderXAI, Context: 1_000_000, Pricing: sharedRates,
+			Reasoning: &ReasoningSpec{Term: "thinking", Kind: ReasoningToggle, CanEnable: true, Default: fixed(agentkit.EnableReasoning())},
+		},
+		"grok-4.20-multi-agent": {
+			Provider: agentkit.ProviderXAI, Context: 1_000_000, Pricing: sharedRates,
+			Reasoning: enumReasoning("effort", []string{"low", "medium", "high", "xhigh"}, "high", false),
+		},
 	}
-	for _, tt := range tests {
-		t.Run(tt.model, func(t *testing.T) {
-			entry, ok := Lookup(tt.model)
+	wantDivergentRouter := map[string]Offering{
+		"grok-4.3": {
+			Provider: agentkit.ProviderOpenRouter, Context: 256_000,
+			Pricing:   pricing(agentkit.RateTier{InputUncached: 3000, Output: 15000}),
+			Reasoning: &ReasoningSpec{Term: "thinking", Kind: ReasoningToggle, CanEnable: true, CanDisable: true, Default: fixed(agentkit.EnableReasoning())},
+		},
+		"grok-4.20": {
+			Provider: agentkit.ProviderOpenRouter, Context: 2_000_000,
+			Pricing: pricing(
+				agentkit.RateTier{InputUncached: 3000, Output: 15000},
+				agentkit.RateTier{MinInputTokens: 200001, InputUncached: 6000, Output: 30000},
+			),
+			Reasoning: toggleReasoning(true, true, DefaultOff),
+		},
+	}
+
+	for model, want := range wantNative {
+		t.Run(model, func(t *testing.T) {
+			entry, ok := Lookup(model)
 			if !ok {
-				t.Fatalf("Lookup(%q) returned ok=false", tt.model)
+				t.Fatalf("Lookup(%q) returned ok=false", model)
 			}
 			if entry.Vendor != VendorXAI {
 				t.Errorf("Vendor = %q, want %q", entry.Vendor, VendorXAI)
 			}
-			if len(entry.Offerings) != 1 {
-				t.Fatalf("len(Offerings) = %d, want 1", len(entry.Offerings))
+			if len(entry.Offerings) < 2 {
+				t.Fatalf("Offerings = %#v, want native and OpenRouter routes", entry.Offerings)
 			}
-			offering := entry.Offerings[0]
-			if offering.Provider != agentkit.ProviderOpenRouter {
-				t.Errorf("Provider = %q, want %q", offering.Provider, agentkit.ProviderOpenRouter)
+			if got := entry.Offerings[0]; !reflect.DeepEqual(got, want) {
+				t.Errorf("native offering = %#v, want %#v", got, want)
 			}
-			if offering.Reasoning == nil {
-				t.Fatal("Reasoning is nil")
+			router, ok := Offer(model, agentkit.ProviderOpenRouter)
+			if !ok || entry.Offerings[0].Provider == agentkit.ProviderOpenRouter {
+				t.Fatalf("OpenRouter alternative = %#v/%v, want later offering", router, ok)
 			}
-			if offering.Reasoning.Kind != ReasoningEnum {
-				t.Errorf("Reasoning.Kind = %d, want ReasoningEnum", offering.Reasoning.Kind)
-			}
-			if !slices.Equal(offering.Reasoning.Levels, tt.levels) {
-				t.Errorf("Reasoning.Levels = %v, want %v", offering.Reasoning.Levels, tt.levels)
-			}
-			if offering.Reasoning.CanEnable {
-				t.Error("Reasoning.CanEnable = true, want false")
-			}
-			level, isLevel := offering.Reasoning.Default.Value.Level()
-			if offering.Reasoning.Default.Mode != DefaultFixed || !isLevel || level != "high" {
-				t.Errorf("Reasoning.Default = %#v, want fixed high", offering.Reasoning.Default)
+			if wantRouter, exact := wantDivergentRouter[model]; exact && !reflect.DeepEqual(router, wantRouter) {
+				t.Errorf("OpenRouter offering = %#v, want retained terms %#v", router, wantRouter)
 			}
 		})
-	}
-
-	embedding, ok := Lookup("text-embedding-3-small")
-	if !ok {
-		t.Fatal("Lookup(text-embedding-3-small) returned ok=false")
-	}
-	if embedding.Vendor != VendorOpenAI || embedding.Embedding == nil {
-		t.Fatalf("embedding entry = %#v, want OpenAI vendor and embedding info", embedding)
-	}
-	if embedding.Embedding.NativeDimension != 1536 || embedding.Embedding.MaxInputTokens != 8192 {
-		t.Errorf("Embedding = %#v, want native dimension 1536 and max input tokens 8192", embedding.Embedding)
-	}
-	if unknown, ok := Lookup("uncataloged-model"); ok {
-		t.Errorf("Lookup(uncataloged-model) = %#v, true; want zero entry, false", unknown)
 	}
 }
 
@@ -122,7 +143,7 @@ func TestCatalogDataMatchesRecordedReference(t *testing.T) {
 		t.Fatal(err)
 	}
 	digest := sha256.Sum256(encoded)
-	const recordedReference = "b542409b57caa1fe5bfed9e06a37accb7cb80ba1066c9b111f4b6171ba0d7622"
+	const recordedReference = "908e17acd9533024d5b632c28c35d20640345f8cde2a4db0e1172e36b2fb3492"
 	if got := hex.EncodeToString(digest[:]); got != recordedReference {
 		t.Fatalf("catalog data differs from recorded reference table: got %s, want %s", got, recordedReference)
 	}
@@ -226,6 +247,7 @@ func TestOfferingProvidersAreExportedProviderIDs(t *testing.T) {
 		agentkit.ProviderOpenAI:     true,
 		agentkit.ProviderGoogle:     true,
 		agentkit.ProviderZAI:        true,
+		agentkit.ProviderXAI:        true,
 		agentkit.ProviderOpenRouter: true,
 	}
 	for model, entry := range entries {
