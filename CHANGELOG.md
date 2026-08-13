@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.18.0
+
+- Added `grok-4.6` to the advisory catalog: xAI via OpenRouter, 500k context,
+  effort-enum reasoning (`low`, `medium`, `high`, `xhigh`; default `high`), and
+  two-tier rates with a 200k-token threshold.
+- Updated the `grok-4.5` offering to its current documented terms: 500k
+  context, effort-enum reasoning (`low`, `medium`, `high`; default `high`), and
+  revised two-tier rates. It previously shipped as 256k context with a
+  thinking-toggle reasoning spec.
+- This is a minor version bump with no exported API changes.
+
 ## v0.17.0
 
 - Stopped sending strict tool-definition flags to every provider, improving
