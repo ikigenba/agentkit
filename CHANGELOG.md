@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.19.0
+
+- Added `xai` as a first-class chat provider. Conversations can run against
+  xAI's Responses API with either a platform API key or a SuperGrok / X Premium
+  subscription token file.
+- Added `agentkit.ProviderXAI` (`"x-ai"`). An API-key handle reports
+  `x-ai.apikey`; a subscription handle reports `x-ai.subscription`.
+- Added the opt-in `xai/subscription` helper, which loads an explicit raw
+  OAuth token-response file and keeps it fresh. Login stays outside AgentKit.
+- Made the advisory catalog default Grok models to native xAI, with OpenRouter
+  remaining an explicit alternative. Native `grok-4.3` and `grok-4.20` terms
+  follow the live xAI API (1M context and the current rate table).
+- xAI turns use the vendor-reported `cost_in_usd_ticks` figure when present.
+
 ## v0.18.0
 
 - Added `grok-4.6` to the advisory catalog: xAI via OpenRouter, 500k context,
