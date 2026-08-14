@@ -119,6 +119,17 @@ var entries = map[string]Entry{
 		pricing(agentkit.RateTier{InputUncached: 1500, CacheReadInput: 150, Output: 9000}),
 		enumReasoning("thinking level", []string{"minimal", "low", "medium", "high"}, "medium", false),
 	),
+	"gemini-3.7-flash": chatEntry(
+		"gemini-3.7-flash", VendorGoogle, agentkit.ProviderGoogle, 1_048_576,
+		pricing(agentkit.RateTier{InputUncached: 750, CacheReadInput: 75, Output: 3750}),
+		enumReasoning("thinking level", []string{"low", "medium", "high"}, "medium", false),
+		Offering{
+			Provider:  agentkit.ProviderOpenRouter,
+			Pricing:   pricing(agentkit.RateTier{InputUncached: 375, CacheReadInput: 38, Output: 1875}),
+			Reasoning: enumReasoning("thinking level", []string{"low", "medium", "high"}, "medium", false),
+			Context:   1_048_576,
+		},
+	),
 	"gemini-3.1-flash-lite": chatEntry(
 		"gemini-3.1-flash-lite", VendorGoogle, agentkit.ProviderGoogle, 1_048_576,
 		pricing(agentkit.RateTier{InputUncached: 250, CacheReadInput: 25, Output: 1500}),
