@@ -52,7 +52,7 @@ The recommended canonical model is **Anthropic-shaped**: a conversation is `[]Me
 - **Errors.** `genai.APIError`; wire shape `google.rpc.Status {code,message,status,details[]}` (`status` e.g. `RESOURCE_EXHAUSTED`). Retryable: 429/500/503/504. **SDK does NOT auto-retry — AgentKit must.**
 - **Retry signals.** No `Retry-After` header; delay is in the body `details[]` as `RetryInfo.retryDelay` (e.g. `"31s"`). `QuotaFailure.quotaId` distinguishes per-minute (retry) vs per-day (fail fast).
 - **Usage.** `UsageMetadata{PromptTokenCount, CandidatesTokenCount, TotalTokenCount, CachedContentTokenCount}`. Cached is a read-cache counted *within* prompt tokens.
-- **Auth.** Developer API key (`BackendGeminiAPI`, single string) vs Vertex (project+location+ADC). For a neutral library taking explicit credentials, **the Developer API key path is by far simplest.** **Models.** GA/stable text ids = `gemini-2.5-flash`, `gemini-2.5-pro` (tiered >200K), `gemini-3.5-flash` (current-gen default Flash, stable), and the stable cheap workhorse `gemini-3.1-flash-lite`. **The 3.x Pro reasoning model is PREVIEW-only: the served id is `gemini-3.1-pro-preview` (tiered >200K) — there is NO GA `gemini-3.1-pro` or `gemini-3-pro` text id.** Flash naming is also resolved: `gemini-3.5-flash` (stable) and `gemini-3-flash-preview` (preview, prior-gen 3 Flash) are **two distinct models**, not two names for one.
+- **Auth.** Developer API key (`BackendGeminiAPI`, single string) vs Vertex (project+location+ADC). For a neutral library taking explicit credentials, **the Developer API key path is by far simplest.** **Models.** GA/stable text ids = `gemini-2.5-flash`, `gemini-2.5-pro` (tiered >200K), `gemini-3.5-flash` (current-gen default Flash, stable), and the stable cheap workhorse `gemini-3.1-flash-lite`, and the GA agentic-workhorse Flash `gemini-3.7-flash` (thinking-level enum, introductory-priced — §6.5). **The 3.x Pro reasoning model is PREVIEW-only: the served id is `gemini-3.1-pro-preview` (tiered >200K) — there is NO GA `gemini-3.1-pro` or `gemini-3-pro` text id.** Flash naming is also resolved: `gemini-3.5-flash` (stable) and `gemini-3-flash-preview` (preview, prior-gen 3 Flash) are **two distinct models**, not two names for one.
 - **Mandatory adapters regardless of wrap/raw choice:** (a) JSON-Schema→`genai.Schema` translator, (b) `assistant`↔`model` role normalization, (c) system prompt out of `contents`.
 
 ### 2.3 OpenAI — Responses vs Chat Completions
@@ -300,7 +300,7 @@ The catalog (D26) carries maintained rates for the models we track; this subsect
 | claude-haiku-4-5 | 1000 | 100 | 1250 | 2000 | 5000 |
 | claude-fable-5 | 10000 | 1000 | 12500 | 20000 | 50000 |
 
-**Google Gemini** — no cache-write token bucket (caching is a read discount plus a separate per-hour storage fee AgentKit does not model); `CacheWrite5m/1h = 0`. The 3.x Pro id is the **preview** `gemini-3.1-pro-preview`; there is no GA `gemini-3.1-pro`. `gemini-2.5-pro` and `gemini-3.1-pro-preview` are tiered above 200K input tokens.
+**Google Gemini** — no cache-write token bucket (caching is a read discount plus a separate per-hour storage fee AgentKit does not model); `CacheWrite5m/1h = 0`. The 3.x Pro id is the **preview** `gemini-3.1-pro-preview`; there is no GA `gemini-3.1-pro`. `gemini-2.5-pro` and `gemini-3.1-pro-preview` are tiered above 200K input tokens. `gemini-3.7-flash` (GA agentic workhorse; version `3.7-flash-08-2026`) is **flat-rate** (no >200K tier) and carries **introductory** pricing — $0.75/$3.75 per 1M (750 / 75 / 3750) through **2026-12-31**; standard rates $1.50/$7.50 (1500 / 150 / 7500) take effect **2027-01-01**, a release-time re-verify item (§5). Its native reasoning vocabulary is measured, not documented: live probes 2026-08-13 (`thinkingLevel` low/medium/high accepted; unset ≈ medium at 355 thought tokens; `minimal`/`none`/off all 400-rejected).
 
 | Model | InputUncached | CacheReadInput | Output | high tier (>200K) |
 |---|---|---|---|---|
@@ -309,6 +309,7 @@ The catalog (D26) carries maintained rates for the models we track; this subsect
 | gemini-3.5-flash | 1500 | 150 | 9000 | — |
 | gemini-3.1-flash-lite | 250 | 25 | 1500 | — |
 | gemini-3.1-pro-preview | 2000 | 200 | 12000 | 4000 / 400 / 18000 |
+| gemini-3.7-flash | 750 | 75 | 3750 | — |
 
 **OpenAI** — no cache-write bucket (cached-input read discount only). **`gpt-5.5-pro` has no cached-input discount** — its `CacheReadInput` equals `InputUncached` — and it is **single-tier**, with no >272K band. `gpt-5.5` and `gpt-5.4` are tiered above 272K input tokens (whole session).
 
@@ -381,6 +382,7 @@ Moonshot Kimi — the instruct-vs-thinking model split is gone: `kimi-k2-thinkin
 | gemini-3.5-flash | 1,048,576 | 1500 | 150 | 0 | 9000 | |
 | gemini-3.1-flash-lite | 1,048,576 | 250 | 25 | 0 | 1500 | |
 | gemini-3.1-pro-preview | 1,048,576 | 2000 | 200 | 0 | 12000 | single-tier (native tiers >200K) |
+| gemini-3.7-flash | 1,048,576 | 375 | 38 | 0 | 1875 | ⚠ half native intro; cr rounded from 37.5 |
 | gpt-5.5-pro | 1,050,000 | 30000 | 30000 | 0 | 180000 | no cache-read discount, as native |
 | gpt-5.5 | 1,050,000 | 5000 | 500 | 0 | 30000 | single-tier (native tiers >272K) |
 | gpt-5.4 | 1,050,000 | 2500 | 250 | 0 | 15000 | single-tier (native tiers >272K) |
@@ -440,6 +442,7 @@ The third answer is not expressible in the vocabulary of the first. "Dynamic" is
 | **gemini-3.5-flash** | thinking level (`thinkingConfig.thinkingLevel`) | enum | `minimal` `low` `medium` `high` | fixed `medium` (measured: reasons) | n/a | **no** (`minimal` = floor, not off) |
 | **gemini-3.1-flash-lite** | thinking level (`thinkingConfig.thinkingLevel`) | enum | `minimal` `low` `medium` `high` | fixed `medium` *(by tier)* | n/a | **no** (`minimal` = floor) |
 | **gemini-3.1-pro-preview** | thinking level (`thinkingConfig.thinkingLevel`) | enum | `low` `medium` `high` (**no `minimal`**) | fixed `high` (measured: 1022 reasoning tokens) | n/a | **no** (always-on) |
+| **gemini-3.7-flash** | thinking level (`thinkingConfig.thinkingLevel`) | enum | `low` `medium` `high` (**no `minimal`**) | fixed `medium` (measured 2026-08-13: unset 355, low 187, med 335, high 636 thought tokens) | n/a | **no** (`minimal`/`none`/off all 400) |
 | **glm-5.2** | `thinking` on/off + `reasoning_effort` | enum + on/off | effort `high` `max`; `thinking.type` `enabled`/`disabled` | dynamic, reasons (measured: reasoning content on every run) | yes | **yes** (`type:"disabled"`) |
 | **glm-5.1** | `thinking` on/off | on/off only | `enabled` / `disabled` (**no effort**) | dynamic, reasons (measured) | yes | **yes** |
 | **glm-4.7** | `thinking` on/off | on/off only | `enabled` / `disabled` (**no effort**) | dynamic, reasons (measured) | yes | **yes** |
@@ -567,7 +570,7 @@ Google's per-part positional binding is the sharpest: the signature rides on a *
 3. **Surface reasoning summary text** as a distinct streaming event/part (honoring the full-transparency promise), separate from the opaque replay payload. Default providers to emit summaries (Anthropic `display:"summarized"`, OpenAI `summary:"auto"`, Google `includeThoughts:true`). Raw CoT is unavailable on all but Z.ai, so "transparency" means summaries nearly everywhere.
 4. **OpenAI:** default `store:false` + auto-inject `include:["reasoning.encrypted_content"]` so the stateless multi-turn tool loop has its reasoning chain.
 
-⚠ **Model-id flags:** `gpt-5.4-nano` **does exist**, as do `gpt-5.4-mini`, `gpt-5.5`, `gpt-5.5-pro`, `gpt-5.4`; `gpt-5.5-mini`/`gpt-5.5-nano` do **not** exist; `o3`/`o4-mini` exist but are **deprecated** (drop). Gemini flash naming: `gemini-3.5-flash` (stable) ≠ `gemini-3-flash-preview` (preview); the 3.x **Pro** is preview-only (`gemini-3.1-pro-preview`; no GA `gemini-3.1-pro`). Gemini 3.x uses `thinkingLevel`, 2.5 uses `thinkingBudget` (an int; deprecated-but-accepted on 3.x — never send both, it 400s).
+⚠ **Model-id flags:** `gpt-5.4-nano` **does exist**, as do `gpt-5.4-mini`, `gpt-5.5`, `gpt-5.5-pro`, `gpt-5.4`; `gpt-5.5-mini`/`gpt-5.5-nano` do **not** exist; `o3`/`o4-mini` exist but are **deprecated** (drop). Gemini flash naming: `gemini-3.5-flash` (stable) ≠ `gemini-3-flash-preview` (preview); the 3.x **Pro** is preview-only (`gemini-3.1-pro-preview`; no GA `gemini-3.1-pro`); `gemini-3.7-flash` is GA (agentic workhorse, thinking-level enum with no `minimal`). Gemini 3.x uses `thinkingLevel`, 2.5 uses `thinkingBudget` (an int; deprecated-but-accepted on 3.x — never send both, it 400s).
 
 Reasoning-specific open items (see the §7.1 table for the per-model spec):
 - **CORRECTION — Opus 4.8 *can* be disabled.** Current Anthropic docs (effort + adaptive-thinking pages) show Opus 4.8 thinking is **off unless `thinking:{type:"adaptive"}` is set**, and `{type:"disabled"}` is accepted — so the prior "always-on / cannot disable" claim was **wrong for Opus 4.8** and attaches instead to **Fable 5 / Mythos 5** (not in the curated set). Confirmed unchanged for Opus 4.8: `budget_tokens` removed (400), effort enum (default `high`).
@@ -576,6 +579,7 @@ Reasoning-specific open items (see the §7.1 table for the per-model spec):
 - **`gpt-5.5-pro` effort levels/default are estimates** (`high`/`xhigh`, default `high`, no `none` → always-on): the model page renders the field but did not surface the exact enumeration; grounded on the consistent Pro lineage (gpt-5-pro = `high`-only; gpt-5.2-pro = `medium/high/xhigh`). Verify against a live 400 before relying on it.
 - **`gpt-5.4-mini`/`-nano` defaults** (`none`) and their acceptance of `xhigh` are estimates (official launch post says `xhigh` was added for both; one secondary source disputes nano) — gate `xhigh` on nano behind a check if strictness matters.
 - **Gemini 2.5 budget ranges** are verified (Flash `0–24576`, Pro `128–32768`); `-1`=dynamic, `0`=off (Flash only; Pro rejects `0`). **`gemini-3.1-flash-lite` default** (`medium`) is assigned by tier analogy — verify via a live `models.get`.
+- **`gemini-3.7-flash` reasoning is fully measured** (live 2026-08-13, no analogy): enum `low`/`medium`/`high`, default fixed `medium` (unset reasons at 355 thought tokens ≈ medium's 335), mandatory — `minimal`/`none`/off all rejected 400 on both the native and OpenRouter routes. The only release-time re-verify item is its **introductory price** expiring 2026-12-31 (§6.5).
 - **GLM `reasoning_effort` is glm-5.2-confirmed, glm-5.1-likely** (`high`/`max`, default `max`); glm-4.6/4.7 have on/off only. Hosted z.ai uses `thinking:{type:"disabled"}` to disable — **not** the open-weights `enable_thinking` field.
 - Still genuinely open (preservation side, §7.2): Z.ai hard-fail-vs-degrade on dropped `reasoning_content` under preserve mode; Z.ai's exact error-envelope shape (the error-code page 404s — Zhipu string-numeric `code` assumed; verify against a live 4xx).
 
@@ -823,6 +827,7 @@ A full audit of the 22 OpenRouter routes that are secondaries of natively-served
 | google/gemini-3.5-flash | high,medium,low,minimal | medium | true | true |
 | google/gemini-3.1-flash-lite | high,medium,low,minimal | minimal | true | false |
 | google/gemini-3.1-pro-preview | high,medium,low | medium | — | true |
+| google/gemini-3.7-flash | high,medium,low | medium | true | true |
 | openai/gpt-5.5-pro | xhigh,high,medium | medium | — | true |
 | openai/gpt-5.5 | xhigh,high,medium,low,none | medium | true | false |
 | openai/gpt-5.4 (+mini,nano) | xhigh,high,medium,low,none | medium | false | false |
@@ -833,7 +838,7 @@ A full audit of the 22 OpenRouter routes that are secondaries of natively-served
 | z-ai/glm-4.6 | — | — | — | false |
 
 **Confirmations (live probes).** All 22 slugs resolve and serve. The deterministic signals, which are the only probe results treated as knowledge:
-- **Every documented `mandatory: true` matched an observed hard rejection** of both off-forms (`effort: "none"`, `enabled: false`) with the identical error *"Reasoning is mandatory for this endpoint and cannot be disabled."* — fable-5, gpt-5.5-pro, gemini-2.5-pro, gemini-3.5-flash, gemini-3.1-pro-preview. No `mandatory: false` route ever rejected an off-form.
+- **Every documented `mandatory: true` matched an observed hard rejection** of both off-forms (`effort: "none"`, `enabled: false`) with the identical error *"Reasoning is mandatory for this endpoint and cannot be disabled."* — fable-5, gpt-5.5-pro, gemini-2.5-pro, gemini-3.5-flash, gemini-3.1-pro-preview, and gemini-3.7-flash (re-probed 2026-08-13; native `none`/off and OpenRouter `reasoning.enabled:false` both 400 with the identical message). No `mandatory: false` route ever rejected an off-form.
 - **claude-haiku-4.5 enforces a real budget bound**, self-documented in its rejection: *"reasoning.max_tokens must be between 1024 and 63999 for this model."* The only route where a bound surfaced.
 - **Off-forms cleanly zero reasoning tokens** on every non-mandatory route that reasons by default (all four glm routes; gemini-2.5-flash's budget probes versus its silent default).
 - Everything else — 200s for undocumented effort values, huge budgets on effort-only routes, toggles with no observable effect — is the permissive gateway parser (§14.4) and establishes nothing. Reasoning-token counts on the trivial probe prompt are not monotonic in effort anywhere and are weak evidence either way; where they contradict a documented default (e.g. sonnet-5's `default_enabled: true` versus zero observed tokens), the ambiguity resolves per D26's rule.
@@ -852,6 +857,7 @@ A full audit of the 22 OpenRouter routes that are secondaries of natively-served
 | gemini-3.5-flash | Enum thinking level: minimal,low,medium,high | f | **f** | Fixed(medium) | descriptor complete; mandatory rejection-confirmed; native agrees |
 | gemini-3.1-flash-lite | Enum thinking level: minimal,low,medium,high | f | t | Fixed(medium) | descriptor `mandatory:false`; silence value → native (medium; `default_effort:minimal` is a pre-select hint) |
 | gemini-3.1-pro-preview | Enum thinking level: low,medium,high | f | **f** | Fixed(high) | mandatory rejection-confirmed; silence value → native (high) |
+| gemini-3.7-flash | Enum thinking level: low,medium,high | f | **f** | Fixed(medium) | descriptor complete (`supported_efforts: high,medium,low`, `default_effort: medium`, `mandatory: true`); off-form rejection-confirmed on native and OpenRouter (2026-08-13); native agrees |
 | gpt-5.5-pro | Enum effort: medium,high,xhigh | f | **f** | Fixed(high) | mandatory rejection-confirmed; descriptor adds `medium` to native's set; silence value → native (high) |
 | gpt-5.5 | Enum effort: none,low,medium,high,xhigh | f | t | Fixed(medium) | descriptor = native exactly |
 | gpt-5.4 | Enum effort: none,low,medium,high,xhigh | f | t | Fixed(none) | `default_enabled:false` = native fixed none |
