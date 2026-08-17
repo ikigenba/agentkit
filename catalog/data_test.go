@@ -143,9 +143,26 @@ func TestCatalogDataMatchesRecordedReference(t *testing.T) {
 		t.Fatal(err)
 	}
 	digest := sha256.Sum256(encoded)
-	const recordedReference = "d196c9bcf2016c8b33aae2fc25803f53b709be86aac5d9aaf0438ecde4a2ea6a"
+	const recordedReference = "37f5ffcd3d5c927fabbf1b356fba57c0bd19db0673c0ed1d55498c1a4fe49138"
 	if got := hex.EncodeToString(digest[:]); got != recordedReference {
 		t.Fatalf("catalog data differs from recorded reference table: got %s, want %s", got, recordedReference)
+	}
+}
+
+func TestOpenRouterOnlyVendorsHaveNoProviderID(t *testing.T) {
+	// R-LXFD-GS3B
+	providers := map[string]bool{
+		string(agentkit.ProviderAnthropic):  true,
+		string(agentkit.ProviderOpenAI):     true,
+		string(agentkit.ProviderGoogle):     true,
+		string(agentkit.ProviderZAI):        true,
+		string(agentkit.ProviderXAI):        true,
+		string(agentkit.ProviderOpenRouter): true,
+	}
+	for _, vendor := range []VendorID{VendorNVIDIA, VendorQwen} {
+		if providers[string(vendor)] {
+			t.Errorf("vendor-only id %q unexpectedly matches a provider package", vendor)
+		}
 	}
 }
 

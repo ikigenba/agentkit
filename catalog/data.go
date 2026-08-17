@@ -2,6 +2,11 @@ package catalog
 
 import "github.com/ikigenba/agentkit"
 
+const (
+	VendorNVIDIA VendorID = "nvidia"
+	VendorQwen   VendorID = "qwen"
+)
+
 func pricing(tiers ...agentkit.RateTier) *agentkit.Pricing {
 	return &agentkit.Pricing{Tiers: tiers}
 }
@@ -249,6 +254,21 @@ var entries = map[string]Entry{
 		"deepseek-v4-pro", VendorDeepSeek, agentkit.ProviderOpenRouter, 128_000,
 		pricing(agentkit.RateTier{InputUncached: 600, CacheReadInput: 60, Output: 2400}),
 		&ReasoningSpec{Term: "thinking", Kind: ReasoningToggle, CanEnable: true, CanDisable: true, Default: fixed(agentkit.EnableReasoning())},
+	),
+	"nemotron-3.5-lightning": chatEntry(
+		"nemotron-3.5-lightning", VendorNVIDIA, agentkit.ProviderOpenRouter, 1_000_000,
+		pricing(agentkit.RateTier{InputUncached: 80, CacheReadInput: 40, Output: 200}),
+		&ReasoningSpec{Term: "thinking", Kind: ReasoningToggle, CanEnable: true, CanDisable: true, Default: fixed(agentkit.EnableReasoning())},
+	),
+	"qwen3.8-max": chatEntry(
+		"qwen3.8-max", VendorQwen, agentkit.ProviderOpenRouter, 1_000_000,
+		pricing(agentkit.RateTier{InputUncached: 2000, CacheReadInput: 250, Output: 6000}),
+		enumReasoning("effort", []string{"low", "medium", "xhigh"}, "xhigh", false),
+	),
+	"qwen3.8-27b": chatEntry(
+		"qwen3.8-27b", VendorQwen, agentkit.ProviderOpenRouter, 262_144,
+		pricing(agentkit.RateTier{InputUncached: 450, Output: 3200}),
+		enumReasoning("effort", []string{"low", "medium", "xhigh"}, "xhigh", true),
 	),
 	"kimi-k3": chatEntry(
 		"kimi-k3", VendorMoonshot, agentkit.ProviderOpenRouter, 256_000,
