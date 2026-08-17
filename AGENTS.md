@@ -49,5 +49,24 @@ decision hedged for hypothetical third-party consumers is a finding to report.
 ## Versioning
 
 Versions are annotated git tags only, `vMAJOR.MINOR.PATCH` (e.g. `v0.1.4`) — no
-`VERSION` file, no version constant, no `git describe` suffix. Cut a release with
-`git tag -a vX.Y.Z -m "vX.Y.Z"` on `main`. Latest is `git tag --sort=-v:refname | head -1`.
+`VERSION` file, no version constant, no `git describe` suffix. Latest is
+`git tag --sort=-v:refname | head -1`.
+
+### Cutting a release
+
+A release is not real until the tag is on `origin` — the tag *is* the release, so
+pushing is part of cutting it, not an optional follow-up. Do this only when the
+operator asks for a release; never tag on your own initiative. On `main`, with a
+clean tree and the suite green (`go test ./...`, and the integration suite
+`go test -tags integration ./...` when the change touches provider/catalog wire
+behavior):
+
+1. Pick the next version from the latest tag — patch for fixes, minor for
+   additive/backward-compatible changes (new models, new exported constants),
+   major for breaking changes.
+2. Add a `## vX.Y.Z` section at the top of `CHANGELOG.md` (above the previous
+   release), summarizing the change; commit it alone as `Changelog for vX.Y.Z`.
+3. Tag that commit: `git tag -a vX.Y.Z -m "vX.Y.Z"` (the tag points at the
+   changelog commit, mirroring every prior release).
+4. Push both the branch and the tag: `git push origin main && git push origin vX.Y.Z`.
+   A tag left only on the local machine is not a release.
