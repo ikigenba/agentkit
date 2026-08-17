@@ -14,11 +14,17 @@ model. All values are the live-verified/audited figures now recorded in research
 - **Pricing** (nano-USD `RateTier`, research §6.5): `InputUncached: 5000,
   CacheReadInput: 500, CacheWrite5m: 6250, CacheWrite1h: 10000, Output: 25000` —
   identical to `claude-opus-4-8`.
-- **Reasoning** (research §7.1): enum `effort` over `low, medium, high, xhigh, max`,
-  default **fixed `medium`**, disable-able — i.e.
-  `enumReasoning("effort", []string{"low","medium","high","xhigh","max"}, "medium", true)`.
-  This differs from `claude-opus-4-8` (which defaults off) and from `claude-fable-5`
-  (which cannot disable); it matches `claude-sonnet-5`.
+- **Reasoning** (research §7.1, grounded in Anthropic's published migration/effort
+  docs — not probe counts): enum `effort` over `low, medium, high, xhigh, max`,
+  adaptive thinking on by default at **default effort `high`** (the documented Claude
+  API / Claude Code default), disable-able — i.e.
+  `enumReasoning("effort", []string{"low","medium","high","xhigh","max"}, "high", true)`.
+  This is the same `ReasoningSpec` shape the `claude-opus-4-8` row already ships
+  (5-level effort, `Fixed(high)`, `CanDisable` true) — for Opus 5 those values are
+  the documented-correct ones (Opus 4.8's real default is off, a separate cell bug).
+  It differs from `claude-fable-5` (which cannot disable). The flat `CanDisable` bool
+  does not model one documented caveat: `disabled` is accepted only at effort ≤ `high`
+  (`disabled`+`xhigh`/`max` → 400).
 - **OpenRouter offering:** auto-appended by `chatEntry`; its wire name is **derived,
   not overridden** — `WireModel` joins `anthropic/claude-opus-5`, which is the served
   slug (research §14.7), so no `openRouterWireName` case and no `WireName` override is
