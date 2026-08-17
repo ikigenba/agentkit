@@ -43,11 +43,14 @@ func openRouterWireName(model string) string {
 }
 
 func openRouterOffering(model string, context int64, rates *agentkit.Pricing, reasoning *ReasoningSpec) Offering {
-	if model == "claude-haiku-4-5" {
+	switch model {
+	case "claude-haiku-4-5":
 		reasoning = &ReasoningSpec{
 			Term: "thinking budget", Kind: ReasoningRange, Min: 1024, Max: 4096,
 			CanDisable: true, Default: ReasoningDefault{Mode: DefaultOff},
 		}
+	case "gemini-3.1-flash-lite":
+		reasoning = enumReasoning("thinking level", []string{"minimal", "low", "medium", "high"}, "medium", true)
 	}
 	return Offering{
 		Provider: agentkit.ProviderOpenRouter, WireName: openRouterWireName(model),
