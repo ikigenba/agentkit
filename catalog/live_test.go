@@ -75,7 +75,7 @@ func openRouterRoundTrip(t *testing.T, key, model string, reasoning agentkit.Rea
 			Role:   agentkit.RoleUser,
 			Blocks: []agentkit.Block{agentkit.TextBlock{Text: "Reply with OK."}},
 		}},
-		Gen: agentkit.GenSettings{MaxTokens: 64, Reasoning: reasoning},
+		Gen: agentkit.GenSettings{MaxTokens: 256, Reasoning: reasoning},
 	})
 }
 
