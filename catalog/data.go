@@ -79,6 +79,11 @@ func embeddingEntry(model string, vendor VendorID, provider agentkit.ProviderID,
 }
 
 var entries = map[string]Entry{
+	"claude-opus-5": chatEntry(
+		"claude-opus-5", VendorAnthropic, agentkit.ProviderAnthropic, 1_000_000,
+		pricing(agentkit.RateTier{InputUncached: 5000, CacheReadInput: 500, CacheWrite5m: 6250, CacheWrite1h: 10000, Output: 25000}),
+		enumReasoning("effort", []string{"low", "medium", "high", "xhigh", "max"}, "medium", true),
+	),
 	"claude-opus-4-8": chatEntry(
 		"claude-opus-4-8", VendorAnthropic, agentkit.ProviderAnthropic, 1_000_000,
 		pricing(agentkit.RateTier{InputUncached: 5000, CacheReadInput: 500, CacheWrite5m: 6250, CacheWrite1h: 10000, Output: 25000}),
