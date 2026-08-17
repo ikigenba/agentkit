@@ -369,6 +369,23 @@ Moonshot Kimi — the instruct-vs-thinking model split is gone: `kimi-k2-thinkin
 
 ⚠ OpenRouter prices for the open-weight Kimi models are provider-dependent and move; K2.7-code and K2.6 both run below Moonshot direct because third parties host the weights. Deliberately excluded: `kimi-k2.5` (EOL 2026-08-31), `kimi-k2.7-code-highspeed` (Moonshot-direct only, so unreachable without a native adapter), and Moonshot's `moonshot-v1-*` era.
 
+NVIDIA (Nemotron) — one tracked model, OpenRouter-primary with no native adapter: `nemotron-3.5-lightning` (`nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B`, a Mamba-2 + MoE hybrid, 3B active of 30B total; open weights). Rates are OpenRouter's default (cheapest) route, live-pulled 2026-08-16. OpenRouter reports cache-read but **no** cache-write on this route.
+
+| Model | OpenRouter slug | Context | InputUncached | CacheReadInput | Output |
+|---|---|---|---|---|---|
+| nemotron-3.5-lightning | `nvidia/nemotron-3.5-lightning` | 1000000 | 80 | 40 | 200 |
+
+⚠ Context is contested: NVIDIA's model card and OpenRouter's model-level metadata both say **1M** (used here, since the two agree); OpenRouter's primary serving providers (DeepInfra, CoreWeave) actually cap the served window at 262,144 while only Venice serves the full 1M. The advertised 1M is carried, matching how the catalog records a route's model-level context elsewhere.
+
+Qwen — two tracked models, OpenRouter-primary with no native adapter: `qwen3.8-max` (Alibaba's flagship, served by Alibaba through OpenRouter) and `qwen3.8-27b` (open-weight dense vision-language model, Chutes/AkashML route). Rates live-pulled 2026-08-16. `qwen3.8-27b` has no cached-read discount on its route.
+
+| Model | OpenRouter slug | Context | InputUncached | CacheReadInput | Output |
+|---|---|---|---|---|---|
+| qwen3.8-max | `qwen/qwen3.8-max` | 1000000 | 2000 | 250 | 6000 |
+| qwen3.8-27b | `qwen/qwen3.8-27b` | 262144 | 450 | — | 3200 |
+
+⚠ `qwen3.8-max` also reports an OpenRouter cache-write rate ($0.0000025/tok → 2500) that is **not** carried — no OpenRouter-primary entry records cache-write (matching deepseek/kimi), and OpenRouter's single untyped cache-write number maps to no `CacheWrite5m`/`CacheWrite1h` bucket. `qwen3.8-27b` carries only `InputUncached`/`Output`.
+
 **OpenRouter route rates — every tracked chat model's aggregator offering (audited 2026-07-29, `GET /api/v1/models`).** Every catalog offering carries rates — including OpenRouter secondaries — because when the route reports its charge it is provably cheap to establish the rate, and having it cataloged means the consumer has all pricing at model-picking time (D26). These are the OpenRouter-published per-token prices in nano-USD for the 22 routes that are secondaries of natively-served models (the OpenRouter-primary vendors above already carry theirs). Reported cost still wins at runtime (D16); these cells serve pre-flight prediction and pickers. Bucket-mapping rules applied: OpenRouter's `input_cache_read` → `CacheReadInput`; its `input_cache_write` → `CacheWrite5m` where it is a real per-token write price (Anthropic routes, where it equals the vendor's 1.25× convention, and the OpenAI 5.6 family, likewise 1.25×), and **0 for Google routes**, whose OpenRouter `input_cache_write` figure is a storage-style number that maps to no `RateTier` bucket (same as the native Google entries); `CacheWrite1h` is 0 on every OpenRouter route (unpublished). An absent `input_cache_read` (gpt-5.5-pro) is carried equal to `InputUncached`, matching the native no-discount fact. OpenRouter publishes a single price per route — no context tiering — so every OpenRouter offering is single-tier even where the native route tiers. Fractional nano cells (provider-mix averages) are rounded half-up and flagged.
 
 | Model (OpenRouter route) | Context | InputUncached | CacheReadInput | CacheWrite5m | Output | notes |
@@ -459,6 +476,9 @@ The third answer is not expressible in the vocabulary of the first. "Dynamic" is
 | **kimi-k3** | `reasoning` on/off (`reasoning.enabled`) | on/off | `enabled:true` / `enabled:false` | **dynamic** (measured: reasons 3/3) | **yes** | **yes** (measured: 200, 0 reasoning tokens) |
 | **kimi-k2.7-code** | `reasoning` on/off (`reasoning.enabled`) | on/off | `enabled:true` accepted; `enabled:false` **rejected** | **dynamic** (measured: reasons 2/2) | **yes** | **no** (measured: 400, mandatory) |
 | **kimi-k2.6** | `reasoning` on/off (`reasoning.enabled`) | on/off | `enabled:true` / `enabled:false` | **dynamic** (measured: reasons 3/3) | **yes** | **yes** |
+| **nemotron-3.5-lightning** | `reasoning` on/off (`reasoning.enabled`) | on/off | `enabled:true` / `enabled:false` | **fixed on** (NVIDIA card: `enable_thinking` on by default; live 2026-08-16: unset reasons; `enabled:false` zeroes it) | **yes** | **yes** (measured: 200, 0 reasoning tokens) |
+| **qwen3.8-max** | effort (`reasoning.effort`) | enum | `low` `medium` `xhigh` (**no `high`/`minimal`**) | fixed `xhigh` (Qwen card + OpenRouter descriptor: `default_effort xhigh`, mandatory) | n/a | **no** (mandatory; live 2026-08-16: `reasoning.enabled:false` → 400 *"Reasoning is mandatory for this endpoint and cannot be disabled."*) |
+| **qwen3.8-27b** | effort (`reasoning.effort`) | enum | `low` `medium` `xhigh` (**no `high`/`minimal`**) | fixed `xhigh` (Qwen card + OpenRouter descriptor agree) | n/a | **yes** (live 2026-08-16: `reasoning.enabled:false` → 200, direct answer, no reasoning) |
 
 Rows marked *(measured)* were probed against the live API with a novel prompt (see "Measuring a default", below). Rows without that marker rest on vendor documentation.
 
@@ -806,6 +826,8 @@ OpenRouter normalizes reasoning across models via a top-level `reasoning` reques
 xAI (Grok), DeepSeek, and Moonshot (Kimi) have **no native AgentKit adapter**, so the aggregator is their only route. Their catalog entries therefore differ in kind from GLM's: the default provider **is** `openrouter` and the wire id is the vendor-namespaced slug, whereas GLM defaults to `zai` and lists OpenRouter as an alternate route. A cataloged entry that named a bare vendor id with no route would resolve to a slug OpenRouter does not serve, so the route entry is load-bearing rather than decorative.
 
 Because §14.2's reported cost overrides table rates on this path, the rates recorded for these vendors in §6.5 are advisory display data. The slugs themselves are the part that must be right, and a golden test cannot falsify them — only a live call can.
+
+NVIDIA (Nemotron) and Qwen join this OpenRouter-only group (2026-08-16): `nvidia/nemotron-3.5-lightning`, `qwen/qwen3.8-max`, and `qwen/qwen3.8-27b` have no native adapter, so each entry's default (and only) provider is `openrouter` and its wire id is the vendor-namespaced slug — derived by D26's join, no override. Their rates live in §6.5 and their per-model reasoning vocabulary in §7.1; both are single-offering entries, so the live wire-name and CanDisable checks (R-4NJ4-SJ41, R-DOVZ-2LNS) — enumerated from the catalog — cover them automatically. `qwen3.8-max` is the one mandatory-reasoning member: its off-form is rejected 400 by the route (live-confirmed), which the CanDisable check requires.
 
 ### 14.5 Auth acquisition
 
