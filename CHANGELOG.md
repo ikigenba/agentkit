@@ -2,6 +2,24 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.22.0
+
+- Added three OpenRouter-served models to the advisory catalog:
+  `nemotron-3.5-lightning` (NVIDIA), `qwen3.8-max`, and `qwen3.8-27b` (Qwen).
+  Each ships a single OpenRouter offering with a derived wire name
+  (`nvidia/nemotron-3.5-lightning`, `qwen/qwen3.8-max`, `qwen/qwen3.8-27b`).
+- Added two `VendorID` constants, `VendorNVIDIA` (`"nvidia"`) and `VendorQwen`
+  (`"qwen"`); neither has a native provider package.
+- `nemotron-3.5-lightning`: 1M context, `$0.08/$0.20` rates, reasoning a
+  thinking toggle on by default (enable and disable both accepted).
+- `qwen3.8-max`: 1M context, `$2/$6` rates, effort enum (`low`, `medium`,
+  `xhigh`) with an `xhigh` default and reasoning **mandatory** (cannot disable).
+- `qwen3.8-27b`: 256k context, `$0.45/$3.20` rates, the same effort enum and
+  default with thinking disable-able.
+- All values live-verified against the real OpenRouter API. This is a minor
+  version bump; the only exported-API change is the two additive vendor
+  constants.
+
 ## v0.21.0
 
 - Added `claude-opus-5` to the advisory catalog: Anthropic's newer Opus
