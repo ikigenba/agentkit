@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.21.0
+
+- Added `claude-opus-5` to the advisory catalog: Anthropic's newer Opus
+  flagship, tracked alongside `claude-opus-4-8`. Ships a native Anthropic
+  offering plus an OpenRouter alternative (wire name `anthropic/claude-opus-5`,
+  derived), 1M context, and `$5/$25` rates matching `claude-opus-4-8`.
+- Its reasoning is effort-enum (`low`, `medium`, `high`, `xhigh`, `max`) with a
+  `high` default and thinking disable-able, per Anthropic's published effort and
+  migration docs.
+- This is a minor version bump with no exported API changes.
+
 ## v0.19.0
 
 - Added `xai` as a first-class chat provider. Conversations can run against
